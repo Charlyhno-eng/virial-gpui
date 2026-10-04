@@ -52,6 +52,7 @@ pub struct FileManager {
     pub(crate) busy: bool,
     pub(crate) search_input: gpui::Entity<crate::ui::components::input::NameInput>,
     pub(crate) global_search: Option<super::global_search::GlobalSearch>,
+    pub(crate) search_return_focus: bool,
     pub(crate) details_open: bool,
     pub(crate) preview_expanded: bool,
     pub(crate) preview_path: Option<PathBuf>,

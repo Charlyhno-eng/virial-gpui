@@ -4,6 +4,10 @@ use gpui::{Context, Decorations, Render, Window, div, prelude::*, px};
 
 impl Render for FileManager {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.search_return_focus {
+            self.search_return_focus = false;
+            self.focus.focus(window);
+        }
         self.sync_preview(cx);
         if !cx.has_active_drag() {
             self.external_drop = None;
@@ -132,6 +136,6 @@ impl Render for FileManager {
             .children(titlebar::resize_handles(window))
             .children(self.display_overlay(window, cx))
             .children(self.context_overlay(window, cx))
-            .children(self.global_search_overlay(cx))
+            .children(self.global_search_overlay(window, cx))
     }
 }

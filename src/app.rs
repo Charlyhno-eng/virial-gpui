@@ -56,9 +56,14 @@ impl FileManager {
             clipboard: None,
             busy: false,
             search_input: cx.new(|cx| {
-                crate::ui::components::input::NameInput::new_unfocused(String::new(), cx)
+                let mut input =
+                    crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
+                input.compact = true;
+                input.placeholder = Language::system().text("Search everywhere…").into();
+                input
             }),
             global_search: None,
+            search_return_focus: false,
             details_open: false,
             preview_expanded: false,
             preview_path: None,
@@ -70,6 +75,10 @@ impl FileManager {
             name_descending: false,
             titlebar_drag: None,
         };
+        cx.observe(&view.search_input, |view, _, cx| {
+            view.update_global_search(cx)
+        })
+        .detach();
         view.navigate(path, cx);
         view
     }
@@ -164,12 +173,6 @@ impl FileManager {
                             &mut view.selection,
                             view.name_descending,
                         );
-                        let title = view.location.title(&view.home, view.language);
-                        let placeholder = format!("{} {title}…", view.language.text("Search in"));
-                        view.search_input.update(cx, |input, cx| {
-                            input.placeholder = placeholder;
-                            cx.notify();
-                        });
                         view.load_directory_sizes(cx);
                     }
                     Err(error) => {

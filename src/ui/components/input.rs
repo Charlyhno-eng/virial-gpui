@@ -7,6 +7,7 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct NameInput {
     pub text: String,
     pub(crate) placeholder: String,
+    pub(crate) compact: bool,
     focus: FocusHandle,
     selection: Range<usize>,
     anchor: usize,
@@ -27,6 +28,7 @@ impl NameInput {
         Self {
             text,
             placeholder: String::new(),
+            compact: false,
             focus,
             selection: 0..end,
             anchor: 0,
@@ -36,6 +38,19 @@ impl NameInput {
             dragging: false,
         }
     }
+    pub(crate) fn focus(&self, window: &mut Window) {
+        self.focus.focus(window);
+    }
+
+    pub(crate) fn is_focused(&self, window: &Window) -> bool {
+        self.focus.is_focused(window)
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.text.clear();
+        self.move_to(0, false);
+    }
+
     fn offset(&self, utf16: usize) -> usize {
         let mut count = 0;
         for (index, ch) in self.text.char_indices() {
@@ -273,7 +288,7 @@ impl Element for InputElement {
     ) -> (LayoutId, ()) {
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.size.height = px(24.).into();
+        style.size.height = px(if self.0.read(cx).compact { 20. } else { 24. }).into();
         (window.request_layout(style, [], cx), ())
     }
     fn prepaint(
@@ -362,15 +377,16 @@ impl Render for NameInput {
             .id("name-input")
             .track_focus(&self.focus)
             .w_full()
-            .p_2()
+            .when(self.compact, |input| input.px_2().py(px(2.)))
+            .when(!self.compact, |input| input.p_2())
             .bg(color(BACKGROUND))
             .border_1()
-            .border_color(color(ACCENT))
+            .border_color(color(if self.compact { BORDER } else { ACCENT }))
             .rounded_md()
             .cursor(CursorStyle::IBeam)
             .overflow_hidden()
             .text_size(px(11.))
-            .line_height(px(24.))
+            .line_height(px(if self.compact { 20. } else { 24. }))
             .on_key_down(cx.listener(Self::key))
             .on_mouse_down(
                 MouseButton::Left,

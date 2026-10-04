@@ -139,15 +139,7 @@ impl FileManager {
 
     pub(crate) fn file_list(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let title = self.location.title(&self.home, self.language);
-        let query = self.search_input.read(cx).text.trim().to_lowercase();
-        let visible_entries: Vec<usize> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| query.is_empty() || entry.name.to_lowercase().contains(&query))
-            .map(|(index, _)| index)
-            .collect();
-        let visible_count = visible_entries.len();
+        let visible_count = self.entries.len();
         let scroll = self.scroll.0.borrow().base_handle.clone();
         let rectangle = self
             .marquee
@@ -229,7 +221,7 @@ impl FileManager {
                             .child(self.language.text("SIZE")),
                     ),
             )
-            .child(if visible_entries.is_empty() {
+            .child(if visible_count == 0 {
                 let (heading, description) = if self.loading {
                     ("Loading folder…", "Reading directory contents")
                 } else if self.error.is_some() {
@@ -237,8 +229,6 @@ impl FileManager {
                         "Folder unavailable",
                         "Choose another location or try refreshing",
                     )
-                } else if !query.is_empty() {
-                    ("No matching items", "Try a different name")
                 } else if self.location == crate::domain::location::Location::Recent {
                     (
                         "No recent files",
@@ -280,14 +270,9 @@ impl FileManager {
                     self.location.id(),
                     visible_count,
                     cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
-                        let query = view.search_input.read(cx).text.trim().to_lowercase();
-                        let visible: Vec<usize> = view.entries.iter().enumerate()
-                            .filter(|(_, entry)| query.is_empty() || entry.name.to_lowercase().contains(&query))
-                            .map(|(index, _)| index).collect();
                         let paths = view.selected_paths().into();
                         range
-                            .map(|visible_index| {
-                                let index = visible[visible_index];
+                            .map(|index| {
                                 let entry = view.entries[index].clone();
                                 let selected = view.selection.indices.contains(&index);
                                 let payload = view.drag_payload(index, &paths);

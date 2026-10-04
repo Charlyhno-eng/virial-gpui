@@ -2,57 +2,69 @@ use crate::{
     app::FileManager,
     infrastructure::search::{SearchResults, search},
     state::app_state::DirectorySizeTask,
-    ui::components::input::NameInput,
 };
-use gpui::{AppContext, Context, Entity, KeyDownEvent, Window};
+use gpui::{Context, KeyDownEvent, Window};
 use std::{
     sync::{Arc, atomic::AtomicBool, mpsc},
     time::Duration,
 };
 
 pub(crate) struct GlobalSearch {
-    pub input: Entity<NameInput>,
     pub query: String,
     pub results: SearchResults,
     pub selected: usize,
     pub selection_moved: bool,
+    pub pending_open: bool,
     pub task: Option<DirectorySizeTask>,
     pub scroll: gpui::UniformListScrollHandle,
 }
 
+fn queued_result(picker: &GlobalSearch) -> Option<crate::domain::models::Entry> {
+    let entry = picker.results.entries.get(picker.selected)?;
+    (picker.pending_open && (picker.results.finished || entry.name.to_lowercase() == picker.query))
+        .then(|| entry.clone())
+}
+
 impl FileManager {
     pub(crate) fn show_global_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.dialog.is_some() || self.global_search.is_some() {
+        if self.dialog.is_some() {
             return;
         }
-        let input = cx.new(|cx| NameInput::new(String::new(), window, cx));
-        cx.observe(&input, |view, _, cx| view.update_global_search(cx))
-            .detach();
-        self.menu = None;
-        self.marquee = None;
-        self.global_search = Some(GlobalSearch {
-            input,
-            query: String::new(),
-            results: SearchResults::default(),
-            selected: 0,
-            selection_moved: false,
-            task: None,
-            scroll: gpui::UniformListScrollHandle::new(),
-        });
+        self.search_input.read(cx).focus(window);
+        self.update_global_search(cx);
         cx.notify();
     }
 
-    pub(crate) fn close_global_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn clear_global_search(&mut self, cx: &mut Context<Self>) {
         self.global_search = None;
+        self.search_input.update(cx, |input, cx| {
+            input.clear();
+            cx.notify();
+        });
+    }
+
+    pub(crate) fn close_global_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.clear_global_search(cx);
         self.focus.focus(window);
         cx.notify();
     }
 
-    fn update_global_search(&mut self, cx: &mut Context<Self>) {
-        let Some(picker) = self.global_search.as_mut() else {
+    pub(crate) fn update_global_search(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_input.read(cx).text.trim().to_lowercase();
+        if query.is_empty() {
+            self.global_search = None;
+            cx.notify();
             return;
-        };
-        let query = picker.input.read(cx).text.trim().to_lowercase();
+        }
+        let picker = self.global_search.get_or_insert_with(|| GlobalSearch {
+            query: String::new(),
+            results: SearchResults::default(),
+            selected: 0,
+            selection_moved: false,
+            pending_open: false,
+            task: None,
+            scroll: gpui::UniformListScrollHandle::new(),
+        });
         if query == picker.query {
             return;
         }
@@ -61,11 +73,9 @@ impl FileManager {
         picker.results = SearchResults::default();
         picker.selected = 0;
         picker.selection_moved = false;
+        picker.pending_open = false;
         picker.scroll = gpui::UniformListScrollHandle::new();
         cx.notify();
-        if query.is_empty() {
-            return;
-        }
         let roots = vec![std::path::PathBuf::from("/"), self.home.clone()];
         let hidden = self.hidden;
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -113,6 +123,14 @@ impl FileManager {
                                 .position(|entry| Some(&entry.path) == selected_path.as_ref())
                                 .unwrap_or(0);
                             picker.results = results;
+                            if picker.results.finished && picker.results.entries.is_empty() {
+                                picker.pending_open = false;
+                            }
+                            if let Some(entry) = queued_result(picker) {
+                                view.search_return_focus = true;
+                                view.clear_global_search(cx);
+                                view.open(entry, cx);
+                            }
                             cx.notify();
                         }
                     });
@@ -152,19 +170,46 @@ impl FileManager {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.global_search.is_none() {
-            if event.keystroke.key == "p" && event.keystroke.modifiers.control {
-                self.show_global_search(window, cx);
-                cx.stop_propagation();
-                return true;
+        if event.keystroke.key == "p" && event.keystroke.modifiers.control {
+            self.show_global_search(window, cx);
+            cx.stop_propagation();
+            return true;
+        }
+        // Read the current text synchronously: Enter can precede the observer callback.
+        if self.search_input.read(cx).is_focused(window) {
+            self.update_global_search(cx);
+            if self.global_search.is_none() {
+                if event.keystroke.key == "enter" {
+                    cx.stop_propagation();
+                    return true;
+                }
+                return false;
             }
+        } else if self.global_search.is_none() {
+            return false;
+        } else if event.keystroke.key != "escape"
+            && !self.global_search.as_ref().unwrap().pending_open
+        {
             return false;
         }
         match event.keystroke.key.as_str() {
             "escape" => self.close_global_search(window, cx),
             "enter" => {
                 let index = self.global_search.as_ref().unwrap().selected;
-                self.open_global_result(index, window, cx);
+                if self
+                    .global_search
+                    .as_ref()
+                    .unwrap()
+                    .results
+                    .entries
+                    .is_empty()
+                {
+                    let picker = self.global_search.as_mut().unwrap();
+                    picker.pending_open = !picker.results.finished;
+                    cx.notify();
+                } else {
+                    self.open_global_result(index, window, cx);
+                }
             }
             "up" | "down" => {
                 let picker = self.global_search.as_mut().unwrap();
@@ -190,3 +235,7 @@ impl FileManager {
         true
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/state/global_search.rs"]
+mod tests;

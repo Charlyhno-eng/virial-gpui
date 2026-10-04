@@ -13,22 +13,25 @@ show the file name and item count with a softly appearing “Drop here” hint o
 destination. Short fades accompany opening menus or dialogs, with a
 subtle activity indicator while work is in progress.
 
-Search the current folder by typing in the toolbar search field. Click the
-**Display → Search everywhere** command or press **Ctrl+P** for a global file and
-folder picker, independently of the folder you are browsing. Type a name or path;
-space-separated terms match case-insensitively, with exact names ranked before
-partial and fuzzy (letters in order) path matches. The picker shows the best 100
-results with their full paths as the background search progresses. Use
-**Up/Down** and **Enter**, or click a result, to open a folder in Virial or a file
-in its default application. **Escape** or **Close** dismisses the picker.
+Use the compact toolbar search field to find files and folders anywhere,
+independently of your current location. Its placeholder indicates the global scope;
+**Ctrl+P** focuses the same field. Type a name or path: space-separated terms match
+case-insensitively, with exact names ranked before partial and fuzzy (letters in
+order) path matches. The best 100 results appear directly below the toolbar with
+their full paths while the background search progresses. **Enter** opens the
+highlighted folder in Virial or file in its default application; **Up/Down** selects
+another result, and clicking a result also opens it. If Enter precedes the first
+results, opening waits for an exact name or the completed scan. **Escape**, **Close**,
+or clearing the field cancels the search. There is no separate search dialog or
+“Search everywhere” button, and typing no longer filters the current folder.
 
 Global search scans the home folder first, then the rest of the accessible
 filesystem, including mounted disks. It requires no zoxide installation or
 external index and finds items you have never visited. The **Ctrl+H** hidden-file
-setting at the time the picker opens also applies to global search. Unreadable
+setting at the time the query starts also applies to global search. Unreadable
 locations are skipped and counted; `/proc`, `/sys`, and `/dev` are excluded.
 Directory symlinks appear as results but are not traversed, preventing cycles.
-Changing the query or closing the picker cancels the pending search. Large disks
+Changing the query or closing the results cancels the pending search. Large disks
 or slow mounts can take time to search; results remain usable during the scan.
 
 Press **Ctrl+W** or select **Workspaces** in the sidebar to open logical groups
@@ -60,11 +63,10 @@ item count; counts respect the hidden-file setting.
 
 Previews show images up to 20 MiB or the first 64 KiB of UTF-8 text, loaded in the
 background. Folders, binary files, and unsupported formats show item information
-instead. **Display** groups compact-list and hidden-file settings with global
-search and adding the current folder to a workspace. Click the **Name** column
+instead. **Display** groups compact-list and hidden-file settings with adding the current folder to a workspace. Click the **Name** column
 heading to switch between ascending and descending alphabetical order; folders
 stay first and selections remain attached to their files. Navigation buttons,
-interactive breadcrumbs, folder search, refresh, and Display share the toolbar.
+interactive breadcrumbs, global search, refresh, and Display share the toolbar.
 The sidebar, breadcrumbs, and navigation buttons remain available while browsing.
 
 The file list appears without waiting for recursive folder sizes. Its size column

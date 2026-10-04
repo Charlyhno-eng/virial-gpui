@@ -250,20 +250,7 @@ impl FileManager {
                     }
                 })),
             )
-            .child(div().h(px(1.)).my_1().bg(color(BORDER)))
-            .child(
-                toolbar_button(
-                    "global-search",
-                    "search",
-                    self.language.text("Search everywhere · Ctrl+P"),
-                    true,
-                    false,
-                )
-                .on_click(cx.listener(|view, _, window, cx| {
-                    view.display_menu = false;
-                    view.show_global_search(window, cx);
-                })),
-            );
+            .child(div().h(px(1.)).my_1().bg(color(BORDER)));
         if let Some(folder) = self.location.directory().map(|path| path.to_path_buf()) {
             panel = panel.child(
                 toolbar_button(

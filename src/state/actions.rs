@@ -436,14 +436,7 @@ impl FileManager {
             return true;
         }
         if key == "a" && modifiers.control {
-            let query = self.search_input.read(cx).text.trim().to_lowercase();
-            self.selection.indices = self
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, entry)| query.is_empty() || entry.name.to_lowercase().contains(&query))
-                .map(|(index, _)| index)
-                .collect();
+            self.selection.indices = (0..self.entries.len()).collect();
             self.selection.focus = self.selection.indices.first().copied();
             self.selection.anchor = self.selection.focus;
             cx.notify();

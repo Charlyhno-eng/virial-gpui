@@ -40,6 +40,7 @@ impl Language {
             "Display" => "Afficher",
             "Compact list" => "Liste compacte",
             "Folder information" => "Informations du dossier",
+            "Search everywhere…" => "Rechercher partout…",
             "Search in" => "Rechercher dans",
             "Type" => "Type",
             "Size" => "Taille",
