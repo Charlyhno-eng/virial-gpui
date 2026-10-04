@@ -11,6 +11,8 @@ Single-click a file or folder to show its preview and details. The preview opens
 
 Code previews use syntax highlighting with VS Code Dark+ colors, a monospace font, and line numbers. Source indentation and blank lines are preserved, with tabs displayed at four-column stops. Use horizontal scrolling or Shift + mouse wheel to read long lines. Supported languages include Rust, Python, JavaScript, TypeScript, C/C++, HTML, CSS, JSON, TOML, and shell scripts; unrecognized text files keep a plain text preview. Text and code previews show up to the first 64 KiB of the file.
 
+File icons reflect their extensions, including Python, JavaScript, TypeScript, React (`.jsx` and `.tsx`), Rust, C/C++, web styles, configuration files, shell scripts, PDF, and Markdown. Extension matching is case-insensitive; other files keep their category or generic icon.
+
 Use the extension field in the toolbar to filter files in the current folder or recent files. Enter `pdf` or `.pdf`; matching is case-insensitive and uses the final extension (`gz` for `archive.tar.gz`). Folders stay visible for navigation. The filter stays active when navigating; clear the field to show all files again.
 
 Press `Ctrl+P` to open the global path picker. It searches accessible locations as you type and ranks fuzzy matches in file names and paths, making it a zoxide-like way to jump quickly to a folder or file. Virial performs this search itself, so it does not require zoxide or a prebuilt search index; arrow keys move through results and Enter opens the selection.

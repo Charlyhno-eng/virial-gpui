@@ -103,6 +103,59 @@ const ASSETS: &[(&str, &[u8])] = &[
         "icons/archive.svg",
         include_bytes!("../../assets/icons/archive.svg"),
     ),
+    (
+        "icons/python.svg",
+        include_bytes!("../../assets/icons/python.svg"),
+    ),
+    (
+        "icons/javascript.svg",
+        include_bytes!("../../assets/icons/javascript.svg"),
+    ),
+    (
+        "icons/typescript.svg",
+        include_bytes!("../../assets/icons/typescript.svg"),
+    ),
+    (
+        "icons/react.svg",
+        include_bytes!("../../assets/icons/react.svg"),
+    ),
+    (
+        "icons/rust.svg",
+        include_bytes!("../../assets/icons/rust.svg"),
+    ),
+    (
+        "icons/html.svg",
+        include_bytes!("../../assets/icons/html.svg"),
+    ),
+    (
+        "icons/css.svg",
+        include_bytes!("../../assets/icons/css.svg"),
+    ),
+    (
+        "icons/json.svg",
+        include_bytes!("../../assets/icons/json.svg"),
+    ),
+    (
+        "icons/config.svg",
+        include_bytes!("../../assets/icons/config.svg"),
+    ),
+    (
+        "icons/shell.svg",
+        include_bytes!("../../assets/icons/shell.svg"),
+    ),
+    ("icons/c.svg", include_bytes!("../../assets/icons/c.svg")),
+    (
+        "icons/cpp.svg",
+        include_bytes!("../../assets/icons/cpp.svg"),
+    ),
+    (
+        "icons/pdf.svg",
+        include_bytes!("../../assets/icons/pdf.svg"),
+    ),
+    (
+        "icons/markdown.svg",
+        include_bytes!("../../assets/icons/markdown.svg"),
+    ),
 ];
 
 impl AssetSource for IconAssets {

@@ -24,15 +24,42 @@ impl Entry {
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => "Image",
             "mp3" | "flac" | "ogg" | "wav" | "m4a" => "Audio",
             "zip" | "gz" | "xz" | "tar" | "7z" | "bz2" | "zst" => "Archive",
-            "rs" | "py" | "js" | "ts" | "html" | "css" | "json" | "toml" | "sh" | "c" | "cpp" => {
-                "Source code"
-            }
+            "rs" | "py" | "pyw" | "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "html" | "htm"
+            | "css" | "scss" | "sass" | "json" | "toml" | "yaml" | "yml" | "sh" | "bash" | "c"
+            | "h" | "cpp" | "cc" | "cxx" | "hpp" => "Source code",
             "txt" | "md" | "pdf" | "odt" | "doc" | "docx" => "Document",
             _ => "File",
         }
     }
 
     pub fn icon(&self) -> &'static str {
+        if self.directory {
+            return "folder";
+        }
+        match self
+            .path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "py" | "pyw" => return "python",
+            "js" | "mjs" | "cjs" => return "javascript",
+            "ts" => return "typescript",
+            "jsx" | "tsx" => return "react",
+            "rs" => return "rust",
+            "html" | "htm" => return "html",
+            "css" | "scss" | "sass" => return "css",
+            "json" => return "json",
+            "toml" | "yaml" | "yml" => return "config",
+            "sh" | "bash" => return "shell",
+            "c" | "h" => return "c",
+            "cpp" | "cc" | "cxx" | "hpp" => return "cpp",
+            "pdf" => return "pdf",
+            "md" => return "markdown",
+            _ => {}
+        }
         match self.kind() {
             "Folder" => "folder",
             "Image" => "image",
@@ -62,3 +89,7 @@ pub fn format_size(bytes: Option<u64>) -> String {
     }
     format!("{value:.1} {unit}")
 }
+
+#[cfg(test)]
+#[path = "../../tests/domain/models.rs"]
+mod tests;
