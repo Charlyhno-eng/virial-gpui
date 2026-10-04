@@ -30,10 +30,6 @@ impl FileManager {
                     ..
                 } => "Workspace name",
                 Dialog::Name {
-                    action: NameAction::Rename(_),
-                    ..
-                } => "Rename…",
-                Dialog::Name {
                     action: NameAction::New { folder: true, .. },
                     ..
                 } => "New folder…",

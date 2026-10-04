@@ -49,6 +49,7 @@ pub struct FileManager {
     pub(crate) listing: Option<Task<()>>,
     pub(crate) directory_sizes: Option<DirectorySizeTask>,
     pub(crate) menu: Option<crate::state::actions::Menu>,
+    pub(crate) rename: Option<crate::state::actions::InlineRename>,
     pub(crate) dialog: Option<crate::state::actions::Dialog>,
     pub(crate) clipboard: Option<(Vec<PathBuf>, bool)>,
     pub(crate) busy: bool,

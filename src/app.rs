@@ -55,6 +55,7 @@ impl FileManager {
             directory_sizes: None,
             menu: None,
             dialog: None,
+            rename: None,
             clipboard: None,
             busy: false,
             extension_filter: String::new(),
@@ -119,6 +120,7 @@ impl FileManager {
         self.details_open = false;
         self.directory_sizes = None;
         self.menu = None;
+        self.rename = None;
         self.marquee = None;
         self.loading = true;
         self.navigation_generation = self.navigation_generation.wrapping_add(1);
@@ -397,6 +399,15 @@ impl FileManager {
             window.toggle_fullscreen();
             cx.stop_propagation();
             cx.notify();
+            return;
+        }
+        if self.rename.is_some() {
+            match event.keystroke.key.as_str() {
+                "escape" => self.cancel_rename(window, cx),
+                "enter" if !event.keystroke.modifiers.modified() => self.confirm_rename(window, cx),
+                _ => {}
+            }
+            cx.stop_propagation();
             return;
         }
         if self.global_search_key(event, window, cx) {

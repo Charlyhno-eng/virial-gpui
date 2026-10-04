@@ -287,7 +287,21 @@ impl FileManager {
                                 let selected = view.selection.indices.contains(&index);
                                 let payload = view.drag_payload(index, &paths);
                                 let directory = entry.browsable().then(|| entry.path.clone());
-                                let name = if recent {
+                                let rename_input = view.rename.as_ref()
+                                    .filter(|rename| rename.source == entry.path)
+                                    .map(|rename| rename.input.clone());
+                                let renaming = rename_input.is_some();
+                                let name = if let Some(input) = rename_input {
+                                    div().flex_1().min_w_0()
+                                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                        .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                                        .on_mouse_down_out(cx.listener(|view, _, window, cx| {
+                                            if view.rename.is_some() {
+                                                view.cancel_rename(window, cx);
+                                            }
+                                        }))
+                                        .child(input)
+                                } else if recent {
                                     div()
                                         .flex_1()
                                         .min_w_0()
@@ -380,7 +394,7 @@ impl FileManager {
                                     })
                                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(
                                         move |view, event: &gpui::MouseDownEvent, window, cx| {
-                                            if view.busy || view.loading { return; }
+                                            if view.busy || view.loading || renaming { return; }
                                             view.focus.focus(window);
                                             // Defer Ctrl toggles until release so Ctrl-drag
                                             // can copy an existing multiple selection.
@@ -392,7 +406,7 @@ impl FileManager {
                                             cx.notify();
                                         },
                                     ))
-                                    .when(!view.busy && !view.loading && view.marquee.is_none(), |row| {
+                                    .when(!renaming && !view.busy && !view.loading && view.marquee.is_none(), |row| {
                                         row.on_drag(payload, |drag, _, _, cx| {
                                             cx.new(|_| drag.clone())
                                         })

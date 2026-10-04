@@ -15,9 +15,12 @@ pub struct Menu {
     pub position: Point<Pixels>,
     pub entry: Option<Entry>,
 }
+pub(crate) struct InlineRename {
+    pub(crate) source: PathBuf,
+    pub(crate) input: Entity<NameInput>,
+}
 #[derive(Clone)]
 pub enum NameAction {
-    Rename(PathBuf),
     Workspace {
         folder: Option<PathBuf>,
         names: Vec<String>,
@@ -207,14 +210,27 @@ impl FileManager {
                     match action {
                         Action::Open => self.open(entry, cx),
                         Action::Rename => {
-                            // Keep the entire filename editable, including the extension.
                             if let Some(name) =
                                 entry.path.file_name().and_then(|name| name.to_str())
                             {
-                                let input =
-                                    cx.new(|cx| NameInput::new(name.to_string(), window, cx));
-                                self.dialog = Some(Dialog::Name {
-                                    action: NameAction::Rename(entry.path),
+                                let input = cx.new(|cx| {
+                                    NameInput::for_rename(
+                                        name.to_string(),
+                                        entry.directory,
+                                        window,
+                                        cx,
+                                    )
+                                });
+                                self.preview_expanded = false;
+                                self.marquee = None;
+                                if let Some(index) =
+                                    self.entries.iter().position(|item| item.path == entry.path)
+                                {
+                                    self.scroll
+                                        .scroll_to_item(index, gpui::ScrollStrategy::Center);
+                                }
+                                self.rename = Some(InlineRename {
+                                    source: entry.path,
                                     input,
                                 });
                             } else {
@@ -330,6 +346,32 @@ impl FileManager {
         }
         cx.notify();
     }
+    pub(crate) fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.rename = None;
+        self.focus.focus(window);
+        cx.notify();
+    }
+
+    pub(crate) fn confirm_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(rename) = &self.rename else {
+            return;
+        };
+        let name = rename.input.read(cx).text.clone();
+        if rename.source.parent().is_none_or(|directory| {
+            crate::infrastructure::operations::named_path(directory, &name).is_err()
+        }) {
+            self.error = Some(self.language.text("Invalid file name").into());
+            cx.notify();
+            return;
+        }
+        let source = rename.source.clone();
+        let unchanged = source.file_name().and_then(|name| name.to_str()) == Some(name.as_str());
+        self.cancel_rename(window, cx);
+        if !unchanged {
+            self.run_operation(Operation::Rename { source, name }, cx);
+        }
+    }
+
     pub(crate) fn close_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.dialog = None;
         self.focus.focus(window);
@@ -360,7 +402,6 @@ impl FileManager {
                 let name = input.read(cx).text.clone();
                 let directory = match action {
                     NameAction::Workspace { .. } => unreachable!(),
-                    NameAction::Rename(path) => path.parent(),
                     NameAction::New { directory, .. } => Some(directory.as_path()),
                 };
                 if directory.is_none_or(|directory| {
@@ -372,7 +413,6 @@ impl FileManager {
                 }
                 match action.clone() {
                     NameAction::Workspace { .. } => unreachable!(),
-                    NameAction::Rename(source) => Some(Operation::Rename { source, name }),
                     NameAction::New { directory, folder } => Some(Operation::New {
                         directory,
                         name,

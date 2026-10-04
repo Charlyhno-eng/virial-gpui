@@ -22,6 +22,18 @@ impl NameInput {
         input.focus.focus(window);
         input
     }
+    pub(crate) fn for_rename(
+        text: String,
+        directory: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let end = rename_selection_end(&text, directory);
+        let mut input = Self::new(text, window, cx);
+        input.compact = true;
+        input.selection = 0..end;
+        input
+    }
     pub fn new_unfocused(text: String, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         let end = text.len();
@@ -415,3 +427,18 @@ impl Render for NameInput {
             .child(InputElement(cx.entity()))
     }
 }
+
+// A leading dot alone is part of the name, not an extension separator.
+fn rename_selection_end(name: &str, directory: bool) -> usize {
+    if directory {
+        name.len()
+    } else {
+        name.rfind('.')
+            .filter(|index| *index > 0)
+            .unwrap_or(name.len())
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/ui/input.rs"]
+mod tests;

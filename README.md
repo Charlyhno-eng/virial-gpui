@@ -11,6 +11,8 @@ USB drives and other removable storage appear automatically under **Devices**, i
 
 Single-click a file or folder to show its preview and details. The preview side panel takes 48% of the window width and resizes with the window, with an expand button for a larger view. Double-click to open the item and hide the details. Navigating to another folder or clicking empty space hides the details; single-click an item to show them again.
 
+Press `F2` or choose **Rename…** to edit an item's name directly in its row. The file name is selected without its final extension; folder names are selected in full. Press Enter to save, or Escape or click elsewhere to cancel. The extension remains editable.
+
 Double-click a ZIP archive to browse it like a folder, using breadcrumbs and the usual navigation keys. Preview supported images and text, rename files or entire folders, and use cut/paste or drag-and-drop to move items within a ZIP, between ZIPs, or between a ZIP and a local folder. Ctrl-drag and copy/paste copy items. You can also create files and folders inside a ZIP. Changes are saved directly to the archive; existing destination names are never overwritten. Opening a member in another application uses a temporary copy kept until Virial closes; external edits are not saved back to the ZIP. Nested ZIP browsing and moving members to the desktop Trash are not supported. Archives containing encrypted members, links, or special files cannot be modified; encrypted members and links cannot be extracted.
 
 Code previews keep the application's dark background and use cyberpunk syntax colors, including neon cyan, magenta, and violet, with a monospace font and line numbers. Source indentation and blank lines are preserved, with tabs displayed at four-column stops. Use horizontal scrolling or Shift + mouse wheel to read long lines. Supported languages include Rust, Python, JavaScript, TypeScript, C/C++, HTML, CSS, JSON, TOML, and shell scripts; unrecognized text files keep a plain text preview. Text and code previews show up to the first 64 KiB of the file.
@@ -25,7 +27,8 @@ Press `Ctrl+P` to open the global path picker. It searches accessible locations 
 
 ## See Virial in action
 
-![Virial logo](assets/images/virial-gpui-interface.png)
+![Virial logo](assets/images/virial-gpui-interface1.png)
+![Virial logo](assets/images/virial-gpui-interface2.png)
 
 ---
 
