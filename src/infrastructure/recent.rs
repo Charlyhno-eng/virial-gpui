@@ -90,6 +90,9 @@ pub fn read(data: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
             if !hidden && name.starts_with('.') {
                 return None;
             }
+            if super::archive::is_member(&path) {
+                return super::archive::entry(&path).ok();
+            }
             let metadata = fs::metadata(&path).ok()?;
             Some(Entry {
                 path,

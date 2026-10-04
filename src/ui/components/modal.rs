@@ -190,6 +190,9 @@ impl FileManager {
         }
         let menu = self.menu.as_ref()?;
         let entry = menu.entry.clone();
+        let archive_entry = entry
+            .as_ref()
+            .is_some_and(|entry| crate::infrastructure::archive::is_member(&entry.path));
         let mut actions = Vec::new();
         if let Some(entry) = &entry {
             actions.push(Action::Open);
@@ -197,20 +200,34 @@ impl FileManager {
                 if !entry.directory {
                     actions.push(Action::OpenWith);
                 }
-                actions.extend([Action::Rename, Action::Compress, Action::Properties]);
+                actions.push(Action::Rename);
+                if !archive_entry {
+                    actions.push(Action::Compress);
+                }
+                actions.push(Action::Properties);
             }
-            actions.extend([Action::Cut, Action::Copy, Action::Trash, Action::CopyPath]);
+            actions.extend([Action::Cut, Action::Copy]);
+            if !archive_entry {
+                actions.push(Action::Trash);
+            }
+            actions.push(Action::CopyPath);
         } else if self.location.directory().is_some() {
             actions.extend([Action::NewFolder, Action::NewFile]);
         }
         if self.clipboard.is_some()
-            && (entry.as_ref().is_some_and(|entry| entry.directory)
+            && (entry.as_ref().is_some_and(|entry| entry.browsable())
                 || self.location.directory().is_some())
         {
             actions.push(Action::Paste);
         }
-        if entry.as_ref().is_some_and(|entry| entry.directory)
-            || (entry.is_none() && self.location.directory().is_some())
+        if entry
+            .as_ref()
+            .is_some_and(|entry| entry.directory && !archive_entry)
+            || (entry.is_none()
+                && self
+                    .location
+                    .directory()
+                    .is_some_and(|path| crate::infrastructure::archive::split(path).is_none()))
         {
             actions.push(Action::AddWorkspace);
         }

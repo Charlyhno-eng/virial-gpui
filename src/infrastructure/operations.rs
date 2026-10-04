@@ -68,7 +68,7 @@ fn rename(source: &Path, destination: &Path) -> io::Result<()> {
     }
 }
 
-fn copy(source: &Path, destination: &Path) -> io::Result<()> {
+pub(super) fn copy(source: &Path, destination: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(source)?;
     if metadata.is_symlink() {
         return symlink(fs::read_link(source)?, destination);
@@ -107,7 +107,7 @@ fn copy(source: &Path, destination: &Path) -> io::Result<()> {
     result
 }
 
-fn remove(source: &Path) -> io::Result<()> {
+pub(super) fn remove(source: &Path) -> io::Result<()> {
     if fs::symlink_metadata(source)?.is_dir() {
         fs::remove_dir_all(source)
     } else {
@@ -128,7 +128,7 @@ fn command(command: &mut Command) -> io::Result<()> {
     }
 }
 
-fn transfer(sources: Vec<PathBuf>, directory: PathBuf, cut: bool) -> io::Result<()> {
+pub(super) fn transfer(sources: Vec<PathBuf>, directory: PathBuf, cut: bool) -> io::Result<()> {
     let directory = directory.canonicalize()?;
     if !directory.is_dir() {
         return Err(io::Error::new(
@@ -218,7 +218,36 @@ fn transfer(sources: Vec<PathBuf>, directory: PathBuf, cut: bool) -> io::Result<
     Ok(())
 }
 
-pub fn execute(operation: Operation) -> io::Result<()> {
+pub fn execute(operation: Operation) -> io::Result<Option<super::archive::Materialized>> {
+    match &operation {
+        Operation::Rename { source, name } if super::archive::is_member(source) => {
+            return super::archive::rename(source, name).map(|_| None);
+        }
+        Operation::Transfer {
+            sources,
+            directory,
+            cut,
+        } if super::archive::split(directory).is_some()
+            || sources.iter().any(|path| super::archive::is_member(path)) =>
+        {
+            return super::archive::transfer(sources.clone(), directory.clone(), *cut)
+                .map(|_| None);
+        }
+        Operation::New {
+            directory,
+            name,
+            folder,
+        } if super::archive::split(directory).is_some() => {
+            return super::archive::create(directory, name, *folder).map(|_| None);
+        }
+        Operation::Trash(paths) if paths.iter().any(|path| super::archive::is_member(path)) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "ZIP members cannot be moved to the desktop Trash",
+            ));
+        }
+        _ => {}
+    }
     match operation {
         Operation::Rename { source, name } => rename(
             &source,
@@ -252,7 +281,17 @@ pub fn execute(operation: Operation) -> io::Result<()> {
         } => transfer(sources, directory, cut),
         Operation::Trash(paths) => command(Command::new("gio").arg("trash").arg("--").args(paths)),
         Operation::Launch { desktop, file } => {
-            command(Command::new("gio").arg("launch").arg(desktop).arg(file))
+            let extracted = if super::archive::is_member(&file) {
+                Some(super::archive::materialize(&file, u64::MAX)?)
+            } else {
+                None
+            };
+            let file = extracted
+                .as_ref()
+                .map(|file| file.path.as_path())
+                .unwrap_or(&file);
+            command(Command::new("gio").arg("launch").arg(desktop).arg(file))?;
+            return Ok(extracted);
         }
         Operation::Compress(path) => {
             let name = path
@@ -284,6 +323,7 @@ pub fn execute(operation: Operation) -> io::Result<()> {
             result
         }
     }
+    .map(|_| None)
 }
 
 #[cfg(test)]

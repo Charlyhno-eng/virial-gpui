@@ -9,6 +9,12 @@ pub struct Entry {
 }
 
 impl Entry {
+    pub fn browsable(&self) -> bool {
+        self.directory
+            || (crate::infrastructure::archive::is_zip(&self.path)
+                && !crate::infrastructure::archive::is_member(&self.path))
+    }
+
     pub fn kind(&self) -> &'static str {
         if self.directory {
             return "Folder";

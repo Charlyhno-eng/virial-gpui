@@ -278,7 +278,7 @@ impl FileManager {
                                 };
                                 let selected = view.selection.indices.contains(&index);
                                 let payload = view.drag_payload(index, &paths);
-                                let directory = entry.directory.then(|| entry.path.clone());
+                                let directory = entry.browsable().then(|| entry.path.clone());
                                 let name = if recent {
                                     div()
                                         .flex_1()

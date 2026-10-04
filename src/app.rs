@@ -79,6 +79,7 @@ impl FileManager {
             preview_path: None,
             preview: crate::state::preview::Preview::Unavailable,
             preview_task: None,
+            opened_archive_files: Vec::new(),
             name_descending: false,
             titlebar_drag: None,
         };
@@ -315,7 +316,7 @@ impl FileManager {
     }
 
     pub(crate) fn open(&mut self, entry: Entry, cx: &mut Context<Self>) {
-        if entry.directory {
+        if entry.browsable() {
             self.navigate(entry.path, cx);
             return;
         }
@@ -325,8 +326,20 @@ impl FileManager {
         let language = self.language;
         let opened_path = entry.path.clone();
         let open = cx.background_executor().spawn(async move {
-            Command::new("xdg-open")
-                .arg(&entry.path)
+            let extracted = if crate::infrastructure::archive::is_member(&entry.path) {
+                Some(
+                    crate::infrastructure::archive::materialize(&entry.path, u64::MAX)
+                        .map_err(|error| format!("{}: {error}", language.text("Cannot open")))?,
+                )
+            } else {
+                None
+            };
+            let path = extracted
+                .as_ref()
+                .map(|file| file.path.as_path())
+                .unwrap_or(&entry.path);
+            let result = Command::new("xdg-open")
+                .arg(path)
                 .output()
                 .map_err(|error| {
                     format!(
@@ -350,15 +363,25 @@ impl FileManager {
                             String::from_utf8_lossy(&output.stderr).trim()
                         ))
                     }
-                })
+                });
+            Ok::<_, String>((result, extracted))
         });
         cx.spawn(async move |view, cx| {
-            if let Err(error) = open.await {
-                let _ = view.update(cx, |view, cx| {
-                    view.error = Some(error);
-                    cx.notify();
-                });
-            }
+            let result = open.await;
+            let _ = view.update(cx, |view, cx| {
+                match result {
+                    Ok((result, extracted)) => {
+                        if let Some(extracted) = extracted {
+                            view.opened_archive_files.push(extracted);
+                        }
+                        if let Err(error) = result {
+                            view.error = Some(error);
+                        }
+                    }
+                    Err(error) => view.error = Some(error),
+                }
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -422,7 +445,7 @@ impl FileManager {
                     .selection
                     .primary()
                     .and_then(|index| self.entries.get(index))
-                    .filter(|entry| entry.directory)
+                    .filter(|entry| entry.browsable())
                     .cloned()
                 {
                     self.open(entry, cx);

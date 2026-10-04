@@ -8,15 +8,26 @@ pub(crate) enum Preview {
     Loading,
     Folder(usize),
     Image(PathBuf),
+    ArchiveImage(crate::infrastructure::archive::Materialized),
     Text(String),
     Code(CodePreview),
     Unavailable,
 }
 
 fn read_preview(entry: &Entry, hidden: bool) -> Preview {
-    if entry.directory {
+    if entry.browsable() {
         return crate::infrastructure::storage::read_directory(&entry.path, hidden)
             .map(|entries| Preview::Folder(entries.len()))
+            .unwrap_or(Preview::Unavailable);
+    }
+    if crate::infrastructure::archive::is_member(&entry.path) {
+        if entry.kind() == "Image" {
+            return crate::infrastructure::archive::materialize(&entry.path, 20 * 1024 * 1024)
+                .map(Preview::ArchiveImage)
+                .unwrap_or(Preview::Unavailable);
+        }
+        return crate::infrastructure::archive::read_prefix(&entry.path, 64 * 1024)
+            .map(|bytes| text_preview(entry, &bytes))
             .unwrap_or(Preview::Unavailable);
     }
     if !std::fs::metadata(&entry.path).is_ok_and(|metadata| metadata.is_file()) {
@@ -40,11 +51,18 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
         };
     }
     let mut bytes = Vec::new();
-    if file.take(64 * 1024).read_to_end(&mut bytes).is_err() || bytes.contains(&0) {
+    if file.take(64 * 1024).read_to_end(&mut bytes).is_err() {
+        return Preview::Unavailable;
+    }
+    text_preview(entry, &bytes)
+}
+
+fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
+    if bytes.contains(&0) {
         return Preview::Unavailable;
     }
     // A prefix can end in the middle of a UTF-8 character.
-    let text = match std::str::from_utf8(&bytes) {
+    let text = match std::str::from_utf8(bytes) {
         Ok(text) => text,
         Err(error) if error.error_len().is_none() => {
             std::str::from_utf8(&bytes[..error.valid_up_to()]).unwrap_or("")

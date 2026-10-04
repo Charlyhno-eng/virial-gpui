@@ -105,7 +105,11 @@ impl FileManager {
                         body
                     })
                     .child(match &self.preview {
-                        Preview::Image(path) => div()
+                        Preview::Image(path)
+                        | Preview::ArchiveImage(crate::infrastructure::archive::Materialized {
+                            path,
+                            ..
+                        }) => div()
                             .p_3()
                             .child(
                                 img(path.clone())

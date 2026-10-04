@@ -121,10 +121,22 @@ impl FileManager {
         }
         let directory = entry
             .as_ref()
-            .filter(|entry| entry.directory)
+            .filter(|entry| entry.browsable())
             .map(|entry| entry.path.clone())
             .or_else(|| self.location.directory().map(|path| path.to_path_buf()));
         let selected = self.selected_entries();
+        let archive_context = directory
+            .as_ref()
+            .is_some_and(|path| crate::infrastructure::archive::split(path).is_some());
+        let archive_entry = entry
+            .as_ref()
+            .is_some_and(|entry| crate::infrastructure::archive::is_member(&entry.path));
+        if (archive_context && matches!(action, Action::AddWorkspace))
+            || (archive_entry && matches!(action, Action::Trash | Action::Compress))
+        {
+            cx.notify();
+            return;
+        }
         if entry.is_some() {
             match action {
                 Action::Copy | Action::Cut => {
@@ -247,8 +259,20 @@ impl FileManager {
                                 details: self.language.text("Loading…").into(),
                             });
                             let path = entry.path.clone();
+                            let bytes = entry.bytes;
                             let language = self.language;
                             let task = cx.background_executor().spawn(async move {
+                                if crate::infrastructure::archive::is_member(&path) {
+                                    return Ok(format!(
+                                        "{}: {}\n{}: {}",
+                                        language.text("Path"),
+                                        path.display(),
+                                        language.text("Size (bytes)"),
+                                        bytes
+                                            .map(|size| size.to_string())
+                                            .unwrap_or_else(|| "—".into())
+                                    ));
+                                }
                                 fs::symlink_metadata(&path).map(|metadata| {
                                     let mut details = format!(
                                         "{}: {}\n{}: {}\n{}: {:o}\nUID: {} · GID: {}",
@@ -385,16 +409,24 @@ impl FileManager {
         };
         let data = self.data_home.clone();
         let task = cx.background_executor().spawn(async move {
-            crate::infrastructure::operations::execute(operation)?;
-            if let Some(path) = recent_path {
-                crate::infrastructure::recent::record(&data, &path)?;
+            match crate::infrastructure::operations::execute(operation) {
+                Ok(extracted) => {
+                    let result = recent_path
+                        .map(|path| crate::infrastructure::recent::record(&data, &path))
+                        .transpose()
+                        .map(|_| ());
+                    (result, extracted)
+                }
+                Err(error) => (Err(error), None),
             }
-            Ok::<_, std::io::Error>(())
         });
         cx.spawn(async move |view, cx| {
-            let result = task.await;
+            let (result, extracted) = task.await;
             let _ = view.update(cx, |view, cx| {
                 view.busy = false;
+                if let Some(extracted) = extracted {
+                    view.opened_archive_files.push(extracted);
+                }
                 match result {
                     Ok(()) => {
                         if cut_sources.as_ref().is_some_and(|sources| {

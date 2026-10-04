@@ -62,6 +62,7 @@ pub struct FileManager {
     pub(crate) preview_path: Option<PathBuf>,
     pub(crate) preview: super::preview::Preview,
     pub(crate) preview_task: Option<Task<()>>,
+    pub(crate) opened_archive_files: Vec<crate::infrastructure::archive::Materialized>,
     pub(crate) name_descending: bool,
     pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
 }

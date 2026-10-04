@@ -1,6 +1,66 @@
 use super::*;
 
 #[test]
+fn zip_previews_count_folders_highlight_code_and_keep_images_alive() {
+    use std::io::Write;
+    use zip::{ZipWriter, write::SimpleFileOptions};
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("preview.zip");
+    let mut writer = ZipWriter::new(std::fs::File::create(&archive).unwrap());
+    for (name, contents) in [
+        ("folder/code.rs", b"fn main() {}".as_slice()),
+        ("text.txt", "é".repeat(40 * 1024).as_bytes()),
+        ("binary.bin", b"binary\0data".as_slice()),
+        (
+            "image.svg",
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".as_slice(),
+        ),
+        ("nested.zip", b"PK\x03\x04".as_slice()),
+    ] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(contents).unwrap();
+    }
+    writer.finish().unwrap();
+    let entry = Entry {
+        path: archive.clone(),
+        name: "preview.zip".into(),
+        directory: false,
+        bytes: None,
+    };
+    assert!(entry.browsable());
+    assert!(matches!(read_preview(&entry, true), Preview::Folder(5)));
+    let entries = crate::infrastructure::storage::read_directory(&archive, true).unwrap();
+    let find = |name: &str| entries.iter().find(|entry| entry.name == name).unwrap();
+    assert!(matches!(
+        read_preview(find("folder"), true),
+        Preview::Folder(1)
+    ));
+    assert!(
+        matches!(read_preview(find("text.txt"), true), Preview::Text(text) if text.len() == 64 * 1024)
+    );
+    assert!(matches!(
+        read_preview(find("binary.bin"), true),
+        Preview::Unavailable
+    ));
+    assert!(!find("nested.zip").browsable());
+    let code = crate::infrastructure::storage::read_directory(&archive.join("folder"), true)
+        .unwrap()
+        .remove(0);
+    assert!(
+        matches!(read_preview(&code, true), Preview::Code(code) if !code.highlights.is_empty())
+    );
+    let Preview::ArchiveImage(image) = read_preview(find("image.svg"), true) else {
+        panic!("expected ZIP image preview");
+    };
+    assert!(image.path.exists());
+    let path = image.path.clone();
+    drop(image);
+    assert!(!path.exists());
+}
+
+#[test]
 fn previews_bound_text_reject_binary_and_count_folder_contents() {
     let root = std::env::temp_dir().join(format!("virial-preview-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();

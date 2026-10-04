@@ -8,6 +8,9 @@ use std::{
 };
 
 pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
+    if let Some((archive, member)) = super::archive::split(path) {
+        return super::archive::read_directory(&archive, &member, hidden);
+    }
     let mut entries = Vec::new();
     for item in fs::read_dir(path)? {
         let item = item?;
@@ -43,6 +46,12 @@ pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
 }
 
 pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
+    if let Some((archive, member)) = super::archive::split(path) {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(io::ErrorKind::Interrupted.into());
+        }
+        return super::archive::directory_size(&archive, &member);
+    }
     fn check_cancelled(cancelled: &AtomicBool) -> io::Result<()> {
         if cancelled.load(Ordering::Relaxed) {
             Err(io::Error::new(
