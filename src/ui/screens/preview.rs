@@ -6,7 +6,7 @@ use crate::{
         theme::*,
     },
 };
-use gpui::{App, Context, Div, SharedString, StyledText, div, img, prelude::*, px};
+use gpui::{App, Context, Div, SharedString, StyledText, Window, div, img, prelude::*, px};
 use std::sync::OnceLock;
 
 fn code_font(cx: &App) -> SharedString {
@@ -40,7 +40,12 @@ fn code_font(cx: &App) -> SharedString {
 }
 
 impl FileManager {
-    pub(crate) fn preview_panel(&self, expanded: bool, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn preview_panel(
+        &self,
+        expanded: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
         div()
             .flex()
             .flex_col()
@@ -49,12 +54,11 @@ impl FileManager {
             .when(expanded, |panel| panel.flex_1())
             .when(!expanded, |panel| {
                 panel
-                    .w(px(400.))
+                    .w(window.viewport_size().width * 0.48)
                     .flex_shrink_0()
                     .border_l_1()
                     .border_color(color(BORDER))
             })
-            .bg(translucent(SURFACE, 0.24))
             .child(
                 div()
                     .flex()
@@ -147,7 +151,6 @@ impl FileManager {
                                 code.style().restrict_scroll_to_axis = Some(true);
                                 code
                             })
-                            .bg(color(CODE_BACKGROUND))
                             .font_family(code_font(cx))
                             .text_size(px(12.))
                             .line_height(px(18.))

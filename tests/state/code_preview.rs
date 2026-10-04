@@ -14,11 +14,11 @@ fn colors_keywords_strings_numbers_and_multiline_comments() {
     let source = "fn main() {\n    let message = \"héllo\";\n    let count = 42;\n    /* comment\n       continued */\n}\n";
     let code = CodePreview::new(Path::new("main.rs"), source).unwrap();
     assert_eq!(code.text.as_ref(), source);
-    assert_eq!(color_at(&code, "fn"), rgb(0x569cd6).into());
-    assert_eq!(color_at(&code, "héllo"), rgb(0xce9178).into());
-    assert_eq!(color_at(&code, "42"), rgb(0xb5cea8).into());
-    assert_eq!(color_at(&code, "comment"), rgb(0x6a9955).into());
-    assert_eq!(color_at(&code, "continued"), rgb(0x6a9955).into());
+    assert_eq!(color_at(&code, "fn"), rgb(0xff5cce).into());
+    assert_eq!(color_at(&code, "héllo"), rgb(0x5cf3ff).into());
+    assert_eq!(color_at(&code, "42"), rgb(0xc792ff).into());
+    assert_eq!(color_at(&code, "comment"), rgb(0x8f86b8).into());
+    assert_eq!(color_at(&code, "continued"), rgb(0x8f86b8).into());
     for (range, _) in &code.highlights {
         assert!(code.text.is_char_boundary(range.start));
         assert!(code.text.is_char_boundary(range.end));
@@ -44,7 +44,7 @@ fn preserves_indentation_blank_lines_and_long_lines() {
         )
     );
     assert_eq!(code.line_numbers.as_ref(), "1\n2\n3\n4\n5\n6");
-    assert_eq!(color_at(&code, "1;"), rgb(0xb5cea8).into());
+    assert_eq!(color_at(&code, "1;"), rgb(0xc792ff).into());
 }
 
 #[test]
@@ -72,10 +72,10 @@ fn recognizes_common_languages_filenames_and_shebangs() {
         "#!/usr/bin/env python3\nprint(\"hello\")\n",
     )
     .unwrap();
-    assert_eq!(color_at(&code, "hello"), rgb(0xce9178).into());
+    assert_eq!(color_at(&code, "hello"), rgb(0x5cf3ff).into());
     let code =
         CodePreview::new(Path::new("main.ts"), "const message: string = \"hello\";\n").unwrap();
-    assert_eq!(color_at(&code, "hello"), rgb(0xce9178).into());
+    assert_eq!(color_at(&code, "hello"), rgb(0x5cf3ff).into());
     assert_ne!(color_at(&code, "const"), rgb(CODE_TEXT).into());
 }
 

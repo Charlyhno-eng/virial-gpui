@@ -11,25 +11,25 @@ use two_face::re_exports::syntect::{
 
 static SYNTAXES: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
-// Familiar VS Code Dark+ colors applied to the grammar's token scopes.
+// Neon cyan, magenta and violet tokens on the application's dark background.
 static THEME: LazyLock<Theme> = LazyLock::new(|| Theme {
     settings: ThemeSettings {
         foreground: Some(syntax_color(CODE_TEXT)),
         ..Default::default()
     },
     scopes: [
-        ("comment", 0x6a9955),
-        ("string", 0xce9178),
-        ("constant.numeric", 0xb5cea8),
-        ("constant.language, keyword, storage", 0x569cd6),
-        ("keyword.control", 0xc586c0),
-        ("entity.name.function, support.function", 0xdcdcaa),
+        ("comment", 0x8f86b8),
+        ("string", 0x5cf3ff),
+        ("constant.numeric", 0xc792ff),
+        ("constant.language, keyword, storage", 0xff5cce),
+        ("keyword.control", 0xc792ff),
+        ("entity.name.function, support.function", 0x70ffd8),
         (
             "entity.name.type, entity.name.class, support.type, support.class",
-            0x4ec9b0,
+            0xf694ff,
         ),
-        ("variable, entity.other.attribute-name", 0x9cdcfe),
-        ("entity.name.tag", 0x569cd6),
+        ("variable, entity.other.attribute-name", 0xc8e7ff),
+        ("entity.name.tag", 0xff5cce),
     ]
     .into_iter()
     .map(|(scope, color)| ThemeItem {

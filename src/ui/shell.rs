@@ -92,7 +92,7 @@ impl Render for FileManager {
                                                 != crate::domain::location::Location::Workspaces,
                                         |layout| {
                                             layout.child(components::reveal(
-                                                self.preview_panel(false, cx),
+                                                self.preview_panel(false, window, cx),
                                                 "preview-panel",
                                             ))
                                         },
@@ -109,7 +109,7 @@ impl Render for FileManager {
                         .inset_0()
                         .bg(color(BACKGROUND))
                         .flex()
-                        .child(self.preview_panel(true, cx)),
+                        .child(self.preview_panel(true, window, cx)),
                     "expanded-preview",
                 ))
             })
