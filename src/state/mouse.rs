@@ -255,9 +255,10 @@ impl FileManager {
         let handle = self.scroll.0.borrow().base_handle.clone();
         let bounds = handle.bounds();
         let start = event.position - bounds.origin - handle.offset();
+        let row_height = self.row_height();
         // Rows reserve a narrow left gutter for starting a selection rectangle.
         if event.position.x >= bounds.left() + px(14.)
-            && start.y < px(ROW_HEIGHT * self.entries.len() as f32)
+            && start.y < px(row_height * self.entries.len() as f32)
         {
             return;
         }
@@ -294,10 +295,11 @@ impl FileManager {
         let handle = self.scroll.0.borrow().base_handle.clone();
         let bounds = handle.bounds();
         let mut offset = handle.offset();
+        let row_height = self.row_height();
         if event.position.y < bounds.top() + px(12.) {
-            offset.y += px(ROW_HEIGHT);
+            offset.y += px(row_height);
         } else if event.position.y > bounds.bottom() - px(12.) {
-            offset.y -= px(ROW_HEIGHT);
+            offset.y -= px(row_height);
         }
         handle.set_offset(offset);
         let position = point(
@@ -308,7 +310,7 @@ impl FileManager {
         marquee.end = position - bounds.origin - handle.offset();
         let top = f32::from(marquee.start.y.min(marquee.end.y));
         let bottom = f32::from(marquee.start.y.max(marquee.end.y));
-        let range = rectangle_rows(top, bottom, self.entries.len());
+        let range = rectangle_rows(top, bottom, self.entries.len(), row_height);
         self.selection.rectangle(&marquee.baseline, range);
         cx.notify();
     }
@@ -324,12 +326,12 @@ fn external_position(position: Point<Pixels>, scale: f32, compositor: &str) -> P
     }
 }
 
-fn rectangle_rows(top: f32, bottom: f32, count: usize) -> std::ops::Range<usize> {
+fn rectangle_rows(top: f32, bottom: f32, count: usize, row_height: f32) -> std::ops::Range<usize> {
     if bottom - top < 1. {
         return 0..0;
     }
-    let start = (top.max(0.) / ROW_HEIGHT).floor() as usize;
-    let end = (bottom.max(0.) / ROW_HEIGHT).ceil() as usize;
+    let start = (top.max(0.) / row_height).floor() as usize;
+    let end = (bottom.max(0.) / row_height).ceil() as usize;
     start.min(count)..end.min(count)
 }
 

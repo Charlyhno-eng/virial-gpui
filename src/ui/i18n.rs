@@ -37,10 +37,8 @@ impl Language {
             return english;
         }
         match english {
-            "Display" => "Afficher",
             "Full screen · Space" => "Plein écran · Espace",
             "Compact list" => "Liste compacte",
-            "Folder information" => "Informations du dossier",
             "Search everywhere…" => "Rechercher partout…",
             "Search in" => "Rechercher dans",
             "Type" => "Type",
@@ -138,7 +136,6 @@ impl Language {
             "Videos" => "Vidéos",
             "File System" => "Système de fichiers",
             "Recent" => "Récents",
-            "Network" => "Réseau",
             "PLACES" => "EMPLACEMENTS",
             "DEVICES" => "PÉRIPHÉRIQUES",
             "LOCAL FILES" => "FICHIERS",
@@ -177,11 +174,6 @@ impl Language {
             "Files opened with Virial and desktop applications appear here" => {
                 "Les fichiers ouverts avec Virial et les applications du bureau apparaissent ici"
             }
-            "No mounted network locations" => "Aucun emplacement réseau monté",
-            "Mount a network share using your desktop, then refresh" => {
-                "Montez un partage réseau depuis votre bureau, puis actualisez"
-            }
-            "Mounted network shares" => "Partages réseau montés",
             "Recently opened files" => "Fichiers ouverts récemment",
             "Cannot read" => "Impossible de lire",
             "Cannot open" => "Impossible d’ouvrir",

@@ -1,6 +1,6 @@
-use crate::ui::components::{navigation_button, reveal, toolbar_button};
+use crate::ui::components::{navigation_button, toolbar_button};
 use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
-use gpui::{Context, Div, MouseButton, Window, div, prelude::*, px};
+use gpui::{Context, Div, Window, div, prelude::*, px};
 
 impl FileManager {
     pub(crate) fn toolbar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -110,22 +110,6 @@ impl FileManager {
                     .child(icon("search", 14., MUTED))
                     .child(self.search_input.clone()),
             )
-            .child(
-                toolbar_button(
-                    "display",
-                    "view",
-                    self.language.text("Display"),
-                    true,
-                    self.display_menu,
-                )
-                .child(icon("down", 12., MUTED))
-                .on_click(cx.listener(|view, _, window, cx| {
-                    view.display_menu = !view.display_menu;
-                    view.menu = None;
-                    view.focus.focus(window);
-                    cx.notify();
-                })),
-            )
             .when(window.is_fullscreen(), |bar| {
                 bar.child(
                     toolbar_button(
@@ -142,63 +126,5 @@ impl FileManager {
                     }),
                 )
             })
-    }
-
-    pub(crate) fn display_overlay(&self, window: &Window, cx: &mut Context<Self>) -> Option<Div> {
-        if !self.display_menu {
-            return None;
-        }
-        let panel = div()
-            .id("display-options")
-            .occlude()
-            .absolute()
-            .right_3()
-            .top(px(if window.is_fullscreen() { 48. } else { 80. }))
-            .w(px(248.))
-            .max_w_full()
-            .p_2()
-            .rounded_md()
-            .bg(color(SURFACE))
-            .border_1()
-            .border_color(color(BORDER))
-            .shadow_md()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                toolbar_button(
-                    "display-folder-details",
-                    "info",
-                    self.language.text("Folder information"),
-                    self.location.directory().is_some(),
-                    self.folder_details,
-                )
-                .on_click(cx.listener(|view, _, _, cx| {
-                    if view.location.directory().is_some() {
-                        view.folder_details = !view.folder_details;
-                        cx.notify();
-                    }
-                })),
-            );
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .child(
-                    div()
-                        .id("display-dismiss")
-                        .occlude()
-                        .absolute()
-                        .inset_0()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|view, _, _, cx| {
-                                view.display_menu = false;
-                                cx.notify();
-                            }),
-                        ),
-                )
-                .child(reveal(panel, "display-reveal")),
-        )
     }
 }

@@ -33,7 +33,6 @@ impl FileManager {
             location: path.clone().into(),
             language: Language::system(),
             data_home: crate::infrastructure::recent::data_home(&home),
-            runtime_home: crate::platform::linux::network::runtime_home(),
             places: crate::platform::linux::places::discover(&home),
             home,
             entries: Vec::new(),
@@ -68,8 +67,6 @@ impl FileManager {
             preview_path: None,
             preview: crate::state::preview::Preview::Unavailable,
             preview_task: None,
-            display_menu: false,
-            folder_details: false,
             name_descending: false,
             titlebar_drag: None,
         };
@@ -90,7 +87,6 @@ impl FileManager {
     }
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
-        self.display_menu = false;
         self.preview_expanded = false;
         self.directory_sizes = None;
         self.menu = None;
@@ -101,12 +97,10 @@ impl FileManager {
         let hidden = true;
         let requested = location.clone();
         let data = self.data_home.clone();
-        let runtime = self.runtime_home.clone();
         let read = cx.background_executor().spawn(async move {
             match requested {
                 Location::Directory(path) => read_directory(&path, hidden),
                 Location::Recent => crate::infrastructure::recent::read(&data, hidden),
-                Location::Network => crate::platform::linux::network::read(&runtime),
                 Location::Workspaces => {
                     return crate::infrastructure::workspaces::summaries(&data, hidden)
                         .map(|summaries| (Vec::new(), summaries));
@@ -351,12 +345,6 @@ impl FileManager {
             cx.notify();
             return;
         }
-        if event.keystroke.key == "escape" && self.display_menu {
-            self.display_menu = false;
-            cx.stop_propagation();
-            cx.notify();
-            return;
-        }
         if self.global_search_key(event, window, cx) {
             return;
         }
@@ -435,7 +423,7 @@ impl FileManager {
                     && !self.entries.is_empty() =>
             {
                 let height = f32::from(self.scroll.0.borrow().base_handle.bounds().size.height);
-                let page = (height / crate::ui::theme::ROW_HEIGHT).floor() as usize;
+                let page = (height / self.row_height()).floor() as usize;
                 let Some(index) = self
                     .selection
                     .keyboard_target(key, self.entries.len(), page)

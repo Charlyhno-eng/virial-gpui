@@ -14,6 +14,7 @@ pub const SELECTED: u32 = 0x302b43;
 pub const ERROR: u32 = 0xf2a6ad;
 pub const ERROR_BG: u32 = 0x392832;
 pub const ROW_HEIGHT: f32 = 34. * 0.78;
+pub const RECENT_ROW_HEIGHT: f32 = 46.;
 pub const SIDEBAR_WIDTH: f32 = 176.;
 
 pub fn color(value: u32) -> Hsla {

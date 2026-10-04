@@ -3,16 +3,25 @@ use super::*;
 #[test]
 fn rectangle_selects_intersecting_rows_and_clips_to_listing() {
     assert_eq!(
-        rectangle_rows(ROW_HEIGHT * 2. + 1., ROW_HEIGHT * 4., 20),
+        rectangle_rows(ROW_HEIGHT * 2. + 1., ROW_HEIGHT * 4., 20, ROW_HEIGHT),
         2..4
     );
-    assert_eq!(rectangle_rows(-20., ROW_HEIGHT + 1., 20), 0..2);
-    assert_eq!(rectangle_rows(0., ROW_HEIGHT * 100., 10), 0..10);
+    assert_eq!(rectangle_rows(-20., ROW_HEIGHT + 1., 20, ROW_HEIGHT), 0..2);
+    assert_eq!(rectangle_rows(0., ROW_HEIGHT * 100., 10, ROW_HEIGHT), 0..10);
     assert_eq!(
-        rectangle_rows(ROW_HEIGHT * 20., ROW_HEIGHT * 21., 10),
+        rectangle_rows(ROW_HEIGHT * 20., ROW_HEIGHT * 21., 10, ROW_HEIGHT),
         10..10
     );
-    assert_eq!(rectangle_rows(10., 10., 10), 0..0);
+    assert_eq!(rectangle_rows(10., 10., 10, ROW_HEIGHT), 0..0);
+    assert_eq!(
+        rectangle_rows(
+            crate::ui::theme::RECENT_ROW_HEIGHT * 2.,
+            crate::ui::theme::RECENT_ROW_HEIGHT * 4.,
+            20,
+            crate::ui::theme::RECENT_ROW_HEIGHT,
+        ),
+        2..4
+    );
 }
 
 #[test]

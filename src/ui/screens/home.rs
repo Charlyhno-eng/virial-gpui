@@ -234,11 +234,6 @@ impl FileManager {
                         "No recent files",
                         "Files opened with Virial and desktop applications appear here",
                     )
-                } else if self.location == crate::domain::location::Location::Network {
-                    (
-                        "No mounted network locations",
-                        "Mount a network share using your desktop, then refresh",
-                    )
                 } else {
                     (
                         "This folder is empty",
@@ -274,14 +269,53 @@ impl FileManager {
                         range
                             .map(|index| {
                                 let entry = view.entries[index].clone();
+                                let recent = view.location
+                                    == crate::domain::location::Location::Recent;
+                                let row_height = if recent {
+                                    crate::ui::theme::RECENT_ROW_HEIGHT
+                                } else {
+                                    ROW_HEIGHT
+                                };
                                 let selected = view.selection.indices.contains(&index);
                                 let payload = view.drag_payload(index, &paths);
                                 let directory = entry.directory.then(|| entry.path.clone());
+                                let name = if recent {
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .flex()
+                                        .flex_col()
+                                        .justify_center()
+                                        .gap_1()
+                                        .child(
+                                            div()
+                                                .min_w_0()
+                                                .text_ellipsis()
+                                                .text_size(px(12.))
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .child(entry.name.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .min_w_0()
+                                                .text_size(px(10.))
+                                                .text_color(color(MUTED))
+                                                .text_ellipsis()
+                                                .child(entry.path.display().to_string()),
+                                        )
+                                } else {
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .text_ellipsis()
+                                        .text_size(px(11.))
+                                        .child(entry.name.clone())
+                                };
                                 let row = div()
                                     .id(std::sync::Arc::<std::path::Path>::from(entry.path.clone()))
                                     .flex_1()
                                     .min_w_0()
-                                    .h(px(ROW_HEIGHT))
+                                    .h(px(row_height))
                                     .px_4()
                                     .flex()
                                     .items_center()
@@ -305,23 +339,7 @@ impl FileManager {
                                         19.,
                                         if entry.directory { ACCENT_BLUE } else { MUTED },
                                     ))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .text_ellipsis()
-                                            .text_size(px(11.))
-                                            .child(entry.name.clone())
-                                            .when(view.location.directory().is_none(), |name| {
-                                                name.child(
-                                                    div()
-                                                        .text_size(px(10.))
-                                                        .text_color(color(MUTED))
-                                                        .text_ellipsis()
-                                                        .child(entry.path.display().to_string()),
-                                                )
-                                            }),
-                                    )
+                                    .child(name)
                                     .child(
                                         div()
                                             .w(px(104.))
@@ -393,7 +411,7 @@ impl FileManager {
                                 let row = if let Some(directory) = directory {
                                     view.drop_target(row, directory, cx)
                                 } else { row };
-                                div().w_full().h(px(ROW_HEIGHT)).flex()
+                                div().w_full().h(px(row_height)).flex()
                                     .child(div().w(px(14.)).h_full().flex_shrink_0())
                                     .child(row.with_animation(
                                         ("selection-light", selected as usize),

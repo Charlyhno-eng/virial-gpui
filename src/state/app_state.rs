@@ -27,7 +27,6 @@ pub struct FileManager {
     pub(crate) location: Location,
     pub(crate) language: Language,
     pub(crate) data_home: PathBuf,
-    pub(crate) runtime_home: PathBuf,
     pub(crate) home: PathBuf,
     pub(crate) places: Vec<crate::platform::linux::places::Place>,
     pub(crate) entries: Vec<Entry>,
@@ -57,10 +56,18 @@ pub struct FileManager {
     pub(crate) preview_path: Option<PathBuf>,
     pub(crate) preview: super::preview::Preview,
     pub(crate) preview_task: Option<Task<()>>,
-    pub(crate) display_menu: bool,
-    pub(crate) folder_details: bool,
     pub(crate) name_descending: bool,
     pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
+}
+
+impl FileManager {
+    pub(crate) fn row_height(&self) -> f32 {
+        if self.location == Location::Recent {
+            crate::ui::theme::RECENT_ROW_HEIGHT
+        } else {
+            crate::ui::theme::ROW_HEIGHT
+        }
+    }
 }
 
 #[cfg(test)]

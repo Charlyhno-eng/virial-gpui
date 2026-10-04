@@ -20,11 +20,11 @@ fn history_supports_back_forward_and_branching_without_duplicate_refreshes() {
 fn history_includes_virtual_locations() {
     let mut history = History::new("/home".into());
     history.visit(Location::Recent);
-    history.visit(Location::Network);
+    history.visit(Location::Workspaces);
     let (index, location) = history.back().unwrap();
     assert_eq!(location, Location::Recent);
     history.restore(index);
-    assert_eq!(history.forward().unwrap().1, Location::Network);
+    assert_eq!(history.forward().unwrap().1, Location::Workspaces);
 }
 
 #[test]

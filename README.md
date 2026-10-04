@@ -4,7 +4,7 @@
 ---
 
 Virial is a Linux file manager for browsing and organizing files.<br>
-Browse local folders, mounted drives, recent files, and network shares.<br>
+Browse local folders, mounted drives, and recent files.<br>
 Move between locations using the sidebar and breadcrumbs.<br>
 Search accessible folders by file name or path.<br>
 Group folders into workspaces for quick access.<br>

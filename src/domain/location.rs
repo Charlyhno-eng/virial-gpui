@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 pub enum Location {
     Directory(PathBuf),
     Recent,
-    Network,
     Workspaces,
 }
 
@@ -30,7 +29,6 @@ impl Location {
         match self {
             Self::Workspaces => language.text("Workspaces").into(),
             Self::Recent => language.text("Recent").into(),
-            Self::Network => language.text("Network").into(),
             Self::Directory(path) if path == home => language.text("Home").into(),
             Self::Directory(path) => path
                 .file_name()
@@ -43,7 +41,6 @@ impl Location {
             Self::Workspaces => language.text("Workspaces").into(),
             Self::Directory(path) => path.display().to_string(),
             Self::Recent => language.text("Recently opened files").into(),
-            Self::Network => language.text("Mounted network shares").into(),
         }
     }
     pub fn icon(&self) -> &'static str {
@@ -51,7 +48,6 @@ impl Location {
             Self::Directory(_) => "folder",
             Self::Workspaces => "view",
             Self::Recent => "recent",
-            Self::Network => "network",
         }
     }
     pub fn id(&self) -> gpui::ElementId {
@@ -59,7 +55,6 @@ impl Location {
             Self::Directory(path) => std::sync::Arc::<Path>::from(path.clone()).into(),
             Self::Workspaces => "workspaces".into(),
             Self::Recent => "recent-files".into(),
-            Self::Network => "network-shares".into(),
         }
     }
     pub fn breadcrumbs(&self, home: &Path, language: Language) -> Vec<(String, Self)> {
