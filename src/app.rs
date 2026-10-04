@@ -1,11 +1,23 @@
 //! Application orchestration and asynchronous filesystem work.
 use crate::domain::models::Entry;
 use crate::{
-    domain::location::Location, domain::services::History, infrastructure::storage::read_directory,
+    domain::location::Location,
+    domain::services::History,
+    infrastructure::storage::{directory_size, read_directory},
+    state::app_state::DirectorySizeTask,
     ui::i18n::Language,
 };
 use gpui::{Context, KeyDownEvent, ScrollStrategy, UniformListScrollHandle, Window};
-use std::{path::PathBuf, process::Command};
+use std::{
+    path::PathBuf,
+    process::Command,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, TryRecvError},
+    },
+    time::Duration,
+};
 
 pub(crate) use crate::state::app_state::FileManager;
 
@@ -25,6 +37,7 @@ impl FileManager {
             places: crate::platform::linux::places::discover(&home),
             home,
             entries: Vec::new(),
+            folder_count: 0,
             hidden: false,
             loading: false,
             error: None,
@@ -32,6 +45,7 @@ impl FileManager {
             scroll: UniformListScrollHandle::new(),
             focus,
             listing: None,
+            directory_sizes: None,
             menu: None,
             dialog: None,
             clipboard: None,
@@ -51,6 +65,7 @@ impl FileManager {
     }
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
+        self.directory_sizes = None;
         self.menu = None;
         self.loading = true;
         self.error = None;
@@ -93,7 +108,9 @@ impl FileManager {
                             view.history.visit(location.clone());
                         }
                         view.location = location;
+                        view.folder_count = entries.iter().filter(|entry| entry.directory).count();
                         view.entries = entries;
+                        view.load_directory_sizes(cx);
                     }
                     Err(error) => {
                         view.error = Some(format!(
@@ -107,6 +124,75 @@ impl FileManager {
             });
         }));
         cx.notify();
+    }
+
+    fn load_directory_sizes(&mut self, cx: &mut Context<Self>) {
+        let folders = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.directory)
+            .map(|(index, entry)| (index, entry.path.clone()))
+            .collect::<Vec<_>>();
+        if folders.is_empty() {
+            return;
+        }
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = cancelled.clone();
+        let executor = cx.background_executor().clone();
+        let (sender, receiver) = mpsc::channel();
+        // One worker limits I/O contention. Deliver each result separately so a
+        // large folder cannot hold up sizes that have already been calculated.
+        let read = executor.spawn(async move {
+            for (index, path) in folders {
+                if worker_cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                if let Ok(bytes) = directory_size(&path, &worker_cancelled)
+                    && sender.send((index, bytes)).is_err()
+                {
+                    break;
+                }
+            }
+        });
+        let task = cx.spawn(async move |view, cx| {
+            loop {
+                // Redraw at most ten times a second, independently of scan speed.
+                executor.timer(Duration::from_millis(100)).await;
+                let mut sizes = Vec::new();
+                let mut finished = false;
+                loop {
+                    match receiver.try_recv() {
+                        Ok(size) => sizes.push(size),
+                        Err(TryRecvError::Empty) => break,
+                        Err(TryRecvError::Disconnected) => {
+                            finished = true;
+                            break;
+                        }
+                    }
+                }
+                if !sizes.is_empty()
+                    && view
+                        .update(cx, |view, cx| {
+                            for (index, bytes) in sizes {
+                                view.entries[index].bytes = Some(bytes);
+                            }
+                            cx.notify();
+                        })
+                        .is_err()
+                {
+                    return;
+                }
+                if finished {
+                    break;
+                }
+            }
+            read.await;
+        });
+        self.directory_sizes = Some(DirectorySizeTask {
+            _task: task,
+            cancelled,
+        });
     }
 
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {

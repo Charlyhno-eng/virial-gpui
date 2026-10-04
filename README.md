@@ -10,8 +10,12 @@ supported by the desktop compositor; text, menus, and dialogs remain readable.
 Short fades accompany folder navigation and opening menus or dialogs, with a
 subtle activity indicator while work is in progress.
 
-The file list's size column shows file sizes and the recursive total size of
-folders.
+The file list appears without waiting for recursive folder sizes. Its size column
+shows file sizes immediately and fills in folder totals in background batches;
+folders show `—` until their size is available. Leaving or refreshing a location
+cancels its pending size calculations. Refresh with **F5** to recalculate sizes
+after external changes. Folder totals include hidden files and skip nested
+symbolic links to avoid cycles and duplicate counts.
 
 Use the title bar's full-screen control or **F11** to fill the entire display,
 including the space normally reserved for desktop panels. **F11**, **Escape**, or

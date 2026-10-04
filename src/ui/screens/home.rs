@@ -5,7 +5,6 @@ use std::time::Duration;
 impl FileManager {
     pub(crate) fn file_list(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let title = self.location.title(&self.home, self.language);
-        let folders = self.entries.iter().filter(|entry| entry.directory).count();
         div()
             .flex()
             .flex_col()
@@ -258,7 +257,8 @@ impl FileManager {
                     } else if self.loading {
                         self.language.text("Loading…").into()
                     } else {
-                        self.language.counts(folders, self.entries.len() - folders)
+                        self.language
+                            .counts(self.folder_count, self.entries.len() - self.folder_count)
                     })
                     .children(self.selected.and_then(|index| self.entries.get(index)).map(
                         |entry| {

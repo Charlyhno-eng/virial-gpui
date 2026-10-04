@@ -1,6 +1,11 @@
 use crate::domain::models::Entry;
-use std::os::unix::ffi::OsStrExt;
-use std::{collections::HashSet, fs, io, path::Path};
+use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
+use std::{
+    collections::HashSet,
+    fs, io,
+    path::Path,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
     let mut entries = Vec::new();
@@ -15,8 +20,6 @@ pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
         let bytes = metadata.and_then(|metadata| {
             if metadata.is_file() {
                 Some(metadata.len())
-            } else if directory {
-                directory_size(&item.path()).ok()
             } else {
                 None
             }
@@ -28,43 +31,57 @@ pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
             bytes,
         });
     }
-    entries.sort_by(|a, b| {
-        b.directory
-            .cmp(&a.directory)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-            .then_with(|| a.path.cmp(&b.path))
+    // Compute case-insensitive keys once instead of allocating on every comparison.
+    entries.sort_by_cached_key(|entry| {
+        (
+            !entry.directory,
+            entry.name.to_lowercase(),
+            entry.path.clone(),
+        )
     });
     Ok(entries)
 }
 
-fn directory_size(path: &Path) -> io::Result<u64> {
-    fn visit(path: &Path, visited: &mut HashSet<std::path::PathBuf>) -> io::Result<u64> {
-        let metadata = fs::symlink_metadata(path)?;
-        if metadata.file_type().is_symlink() {
-            return Ok(0);
+pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
+    fn check_cancelled(cancelled: &AtomicBool) -> io::Result<()> {
+        if cancelled.load(Ordering::Relaxed) {
+            Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Size scan cancelled",
+            ))
+        } else {
+            Ok(())
         }
-        if metadata.is_file() {
-            return Ok(metadata.len());
-        }
-        if !metadata.is_dir() {
-            return Ok(0);
-        }
-
-        let canonical = fs::canonicalize(path)?;
-        if !visited.insert(canonical) {
-            return Ok(0);
-        }
-
-        let mut total = 0u64;
-        for item in fs::read_dir(path)? {
-            total = total.saturating_add(visit(&item?.path(), visited)?);
-        }
-        Ok(total)
     }
 
     // Resolve a listed directory symlink once, then ignore symlinks encountered
     // below it so they cannot create cycles or count the same tree repeatedly.
-    visit(&fs::canonicalize(path)?, &mut HashSet::new())
+    check_cancelled(cancelled)?;
+    let mut pending = vec![fs::canonicalize(path)?];
+    let mut visited = HashSet::new();
+    let mut total = 0u64;
+    while let Some(path) = pending.pop() {
+        check_cancelled(cancelled)?;
+        let metadata = fs::symlink_metadata(&path)?;
+        if !metadata.is_dir() || !visited.insert((metadata.dev(), metadata.ino())) {
+            continue;
+        }
+        for item in fs::read_dir(path)? {
+            check_cancelled(cancelled)?;
+            let item = item?;
+            let kind = item.file_type()?;
+            if kind.is_dir() {
+                pending.push(item.path());
+            } else if kind.is_file() {
+                let metadata = item.metadata()?;
+                if metadata.is_file() {
+                    total = total.saturating_add(metadata.len());
+                }
+            }
+        }
+    }
+    check_cancelled(cancelled)?;
+    Ok(total)
 }
 
 #[cfg(test)]
