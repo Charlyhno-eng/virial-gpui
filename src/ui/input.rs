@@ -353,7 +353,7 @@ impl Render for NameInput {
             .rounded_md()
             .cursor(CursorStyle::IBeam)
             .overflow_hidden()
-            .text_size(px(15.))
+            .text_size(px(13.))
             .line_height(px(28.))
             .on_key_down(cx.listener(Self::key))
             .on_mouse_down(

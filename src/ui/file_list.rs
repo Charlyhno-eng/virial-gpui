@@ -25,7 +25,7 @@ impl FileManager {
                     .pb_4()
                     .child(
                         div()
-                            .text_size(px(23.))
+                            .text_size(px(20.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(title),
                     )
@@ -44,7 +44,7 @@ impl FileManager {
                     .p_3()
                     .rounded_md()
                     .bg(color(ERROR_BG))
-                    .text_size(px(13.))
+                    .text_size(px(12.))
                     .text_color(color(ERROR))
                     .child(error.clone())
             }))
@@ -100,10 +100,10 @@ impl FileManager {
                     .justify_center()
                     .gap_3()
                     .child(icon(self.location.icon(), 52., MUTED))
-                    .child(div().text_size(px(17.)).child(self.language.text(heading)))
+                    .child(div().text_size(px(15.)).child(self.language.text(heading)))
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_size(px(12.))
                             .text_color(color(MUTED))
                             .child(self.language.text(description)),
                     )
@@ -148,7 +148,7 @@ impl FileManager {
                                             .flex_1()
                                             .min_w_0()
                                             .text_ellipsis()
-                                            .text_size(px(14.))
+                                            .text_size(px(12.))
                                             .child(entry.name.clone())
                                             .when(view.location.directory().is_none(), |name| {
                                                 name.child(

@@ -30,6 +30,7 @@ pub struct FileManager {
     pub(crate) dialog: Option<crate::actions::Dialog>,
     pub(crate) clipboard: Option<(PathBuf, bool)>,
     pub(crate) busy: bool,
+    pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
 }
 
 impl FileManager {
@@ -59,6 +60,7 @@ impl FileManager {
             dialog: None,
             clipboard: None,
             busy: false,
+            titlebar_drag: None,
         };
         view.navigate(path, cx);
         view

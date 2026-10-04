@@ -51,7 +51,7 @@ impl FileManager {
                 .bg(color(SURFACE))
                 .border_1()
                 .border_color(color(BORDER))
-                .child(div().text_size(px(20.)).child(self.language.text(heading)));
+                .child(div().text_size(px(18.)).child(self.language.text(heading)));
             if let Some(error) = &self.error {
                 content = content.child(div().text_color(color(ERROR)).child(error.clone()));
             }

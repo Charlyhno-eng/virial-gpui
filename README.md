@@ -14,6 +14,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 . "$HOME/.cargo/env"
 # Launch the dark file manager (double-click an item or press Enter to open):
 cargo run --release
+# The integrated title bar supports dragging, double-click maximize/restore and window controls.
+# Resize the window using its edges or corners; the interface uses smaller text.
 # Right-click files/folders or empty space for context actions.
 # Copy/cut/paste within Virial: Ctrl+C / Ctrl+X / Ctrl+V; rename: F2; Trash: Delete.
 # Create a folder: Ctrl+Shift+N. Escape closes menus and dialogs.

@@ -17,7 +17,7 @@ pub fn toolbar_button(
         .px_3()
         .h(px(34.))
         .rounded_md()
-        .text_size(px(13.))
+        .text_size(px(12.))
         .text_color(color(if active { ACCENT } else { TEXT }))
         .bg(color(if active { SELECTED } else { SURFACE }))
         .when(enabled, |button| {

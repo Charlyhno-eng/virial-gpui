@@ -15,7 +15,7 @@ mod ui;
 
 use app::FileManager;
 use gpui::{
-    App, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, prelude::*, px, size,
+    App, Application, Bounds, WindowBounds, WindowDecorations, WindowOptions, prelude::*, px, size,
 };
 use std::path::PathBuf;
 
@@ -48,13 +48,8 @@ fn main() {
                     size(px(1120.), px(760.)),
                     cx,
                 ))),
-                titlebar: Some(TitlebarOptions {
-                    title: Some(
-                        format!("Virial — {}", i18n::Language::system().text("File Manager"))
-                            .into(),
-                    ),
-                    ..Default::default()
-                }),
+                titlebar: None,
+                window_decorations: Some(WindowDecorations::Client),
                 app_id: Some("virial-gpui".into()),
                 window_min_size: Some(size(px(800.), px(480.))),
                 ..Default::default()

@@ -121,7 +121,7 @@ impl FileManager {
                                                     .py_1()
                                                     .rounded_sm()
                                                     .cursor_pointer()
-                                                    .text_size(px(13.))
+                                                    .text_size(px(12.))
                                                     .text_color(color(if current {
                                                         TEXT
                                                     } else {

@@ -16,30 +16,6 @@ impl FileManager {
             .border_color(color(BORDER))
             .child(
                 div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .px_5()
-                    .h(px(72.))
-                    .child(
-                        div()
-                            .size(px(32.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_lg()
-                            .bg(color(SELECTED))
-                            .child(icon("folder", 21., ACCENT)),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(20.))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("Virial"),
-                    ),
-            )
-            .child(
-                div()
                     .id("places")
                     .flex_1()
                     .min_h_0()
@@ -107,7 +83,7 @@ impl FileManager {
             .mb_1()
             .rounded_md()
             .cursor_pointer()
-            .text_size(px(13.))
+            .text_size(px(12.))
             .text_color(color(if active { ACCENT } else { TEXT }))
             .when(active, |row| row.bg(color(SELECTED)))
             .hover(|style| style.bg(color(if active { SELECTED } else { HOVER })))
