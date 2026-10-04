@@ -110,56 +110,6 @@ fn refresh_desktop_cache(data: &Path) {
     }
 }
 
-/// X11 task switchers can use this even when desktop registration fails.
-/// Wayland uses the app_id and the registered desktop entry instead.
-pub(crate) fn set_window_icon(window: &gpui::Window) -> Result<(), Box<dyn std::error::Error>> {
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    let handle = HasWindowHandle::window_handle(window)?.as_raw();
-    let id = match handle {
-        RawWindowHandle::Xcb(handle) => handle.window.get(),
-        RawWindowHandle::Xlib(handle) => u32::try_from(handle.window)?,
-        _ => return Ok(()),
-    };
-    let (connection, _) = x11rb::connect(None)?;
-    publish_window_icon(&connection, id)
-}
-
-fn window_icon() -> Result<Vec<u32>, image::ImageError> {
-    let image = image::load_from_memory_with_format(LOGO, image::ImageFormat::Png)?.to_rgba8();
-    let mut values = vec![image.width(), image.height()];
-    // EWMH specifies unpremultiplied ARGB cardinals, not RGBA bytes.
-    values.extend(image.pixels().map(|pixel| {
-        let [r, g, b, a] = pixel.0;
-        u32::from_be_bytes([a, r, g, b])
-    }));
-    Ok(values)
-}
-
-fn publish_window_icon(
-    connection: &impl x11rb::connection::Connection,
-    window: u32,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use x11rb::{
-        protocol::xproto::{AtomEnum, ConnectionExt, PropMode},
-        wrapper::ConnectionExt as _,
-    };
-    let atom = connection
-        .intern_atom(false, b"_NET_WM_ICON")?
-        .reply()?
-        .atom;
-    connection
-        .change_property32(
-            PropMode::REPLACE,
-            window,
-            atom,
-            AtomEnum::CARDINAL,
-            &window_icon()?,
-        )?
-        .check()?;
-    connection.flush()?;
-    Ok(())
-}
-
 #[cfg(test)]
 #[path = "../../../tests/platform/linux/desktop.rs"]
 mod tests;

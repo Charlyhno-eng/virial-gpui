@@ -88,66 +88,6 @@ fn invalidates_theme_cache_when_repairing_an_icon() {
 }
 
 #[test]
-fn embeds_a_complete_argb_window_icon() {
-    let values = window_icon().unwrap();
-    assert_eq!(values.len(), 2 + (values[0] * values[1]) as usize);
-    assert!(values[0] > 0 && values[1] > 0);
-    assert!(values[2..].iter().any(|pixel| pixel >> 24 == 0));
-    assert!(values[2..].iter().any(|pixel| pixel >> 24 == 255));
-    let rgba = image::load_from_memory(LOGO).unwrap().to_rgba8();
-    for (pixel, value) in rgba.pixels().zip(&values[2..]) {
-        let [r, g, b, a] = pixel.0;
-        assert_eq!(value.to_be_bytes(), [a, r, g, b]);
-    }
-}
-
-#[test]
-#[ignore = "requires an X11 display; run explicitly for desktop integration"]
-fn publishes_logo_to_an_x11_window() {
-    use x11rb::{
-        connection::Connection,
-        protocol::xproto::{AtomEnum, ConnectionExt, CreateWindowAux, WindowClass},
-    };
-    let (connection, screen) = x11rb::connect(None).unwrap();
-    let window = connection.generate_id().unwrap();
-    connection
-        .create_window(
-            x11rb::COPY_DEPTH_FROM_PARENT,
-            window,
-            connection.setup().roots[screen].root,
-            0,
-            0,
-            32,
-            32,
-            0,
-            WindowClass::INPUT_OUTPUT,
-            0,
-            &CreateWindowAux::new(),
-        )
-        .unwrap()
-        .check()
-        .unwrap();
-    publish_window_icon(&connection, window).unwrap();
-    let atom = connection
-        .intern_atom(false, b"_NET_WM_ICON")
-        .unwrap()
-        .reply()
-        .unwrap()
-        .atom;
-    let reply = connection
-        .get_property(false, window, atom, AtomEnum::CARDINAL, 0, u32::MAX)
-        .unwrap()
-        .reply()
-        .unwrap();
-    assert_eq!(reply.format, 32);
-    assert_eq!(
-        reply.value32().unwrap().collect::<Vec<_>>(),
-        window_icon().unwrap()
-    );
-    connection.destroy_window(window).unwrap().check().unwrap();
-}
-
-#[test]
 fn respects_absolute_xdg_paths_and_falls_back_for_empty_or_relative_values() {
     let home = PathBuf::from("/home/user");
     assert_eq!(

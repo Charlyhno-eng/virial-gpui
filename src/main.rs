@@ -53,14 +53,13 @@ fn main() {
                 titlebar: None,
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Transparent,
+                // Match the desktop launcher for window icons. GPUI 0.2.2
+                // panics when requesting a raw X11 window handle.
                 app_id: Some(platform::linux::desktop::APP_ID.into()),
                 window_min_size: Some(minimum_size),
                 ..Default::default()
             };
             if let Err(error) = cx.open_window(options, |window, cx| {
-                if let Err(error) = platform::linux::desktop::set_window_icon(window) {
-                    eprintln!("Cannot set Virial's window icon: {error}");
-                }
                 window.set_rem_size(px(14.));
                 cx.new(|cx| FileManager::new(path, window, cx))
             }) {
