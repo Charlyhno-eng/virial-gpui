@@ -1,7 +1,7 @@
 //! Compact, subdued dark theme inspired by the Virial logo.
 use gpui::{Hsla, rgb};
 
-pub const BACKGROUND: u32 = 0x0d1014;
+pub const BACKGROUND: u32 = 0x0e0f16;
 pub const SIDEBAR: u32 = 0x14181e;
 pub const SURFACE: u32 = 0x1a1f26;
 pub const HOVER: u32 = 0x292f38;

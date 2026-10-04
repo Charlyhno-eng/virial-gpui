@@ -27,7 +27,7 @@ impl Render for FileManager {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .bg(translucent(BACKGROUND, 0.94))
+            .bg(translucent(BACKGROUND, 0.97))
             .when(!fullscreen && !window.is_maximized() && !tiled, |root| {
                 root.rounded_lg().border_1().border_color(color(BORDER))
             })
