@@ -1,4 +1,4 @@
-![Virial logo](assets/images/virial-banner.png)
+![Virial logo](assets/images/virial-gpui-banner.png)
 
 # Virial
 ---
@@ -10,6 +10,14 @@ Virial adapts its interface language to the system language. English is used whe
 Single-click a file or folder to show its details. Double-click to open it and hide the details. Navigating to another folder or clicking empty space hides the details; single-click an item to show them again.
 
 Press `Ctrl+P` to open the global path picker. It searches accessible locations as you type and ranks fuzzy matches in file names and paths, making it a zoxide-like way to jump quickly to a folder or file. Virial performs this search itself, so it does not require zoxide or a prebuilt search index; arrow keys move through results and Enter opens the selection.
+
+---
+
+## See Virial in action
+
+![Virial logo](assets/images/virial-gpui-interface.png)
+
+---
 
 ## Quickstart
 
