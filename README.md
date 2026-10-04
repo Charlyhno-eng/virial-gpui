@@ -33,7 +33,9 @@ From the project directory, build and launch Virial directly:
 cargo run --release
 ```
 
-This runs the app from the current checkout without installing a permanent copy.
+This runs the app from the current checkout without installing a permanent copy of the executable.
+
+On launch, Virial registers its embedded logo and desktop launcher in `$XDG_DATA_HOME` (default: `~/.local/share`) so the application menu and dock can display its icon, including when running a downloaded executable directly. The launcher follows the executable's location the next time you run it.
 
 ### Install on this machine
 

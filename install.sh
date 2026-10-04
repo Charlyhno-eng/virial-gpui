@@ -21,6 +21,7 @@ Name=Virial
 Comment=Linux file manager
 Exec="$desktop_exec"
 Icon=virial-gpui
+StartupWMClass=virial-gpui
 Terminal=false
 Categories=System;FileTools;FileManager;
 EOF

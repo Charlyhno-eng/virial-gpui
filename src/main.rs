@@ -13,6 +13,9 @@ use gpui::{
 };
 
 fn main() {
+    if let Err(error) = platform::linux::desktop::register() {
+        eprintln!("Cannot register Virial's desktop icon: {error}");
+    }
     let path = config::initial_path();
     Application::new()
         .with_assets(ui::icons::IconAssets)
@@ -42,7 +45,7 @@ fn main() {
                 titlebar: None,
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Transparent,
-                app_id: Some("virial-gpui".into()),
+                app_id: Some(platform::linux::desktop::APP_ID.into()),
                 window_min_size: Some(minimum_size),
                 ..Default::default()
             };
