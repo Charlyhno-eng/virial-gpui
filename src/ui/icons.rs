@@ -1,4 +1,4 @@
-//! Original SVG icons embedded in the binary; no runtime asset directory is needed.
+//! SVG interface icons and upstream language logos embedded in the binary.
 use crate::ui::theme;
 use gpui::{AnyElement, AssetSource, Result, SharedString, Svg, img, prelude::*, px, svg};
 use std::borrow::Cow;
@@ -134,6 +134,10 @@ const ASSETS: &[(&str, &[u8])] = &[
     (
         "icons/css.svg",
         include_bytes!("../../assets/icons/css.svg"),
+    ),
+    (
+        "icons/sass.svg",
+        include_bytes!("../../assets/icons/sass.svg"),
     ),
     (
         "icons/json.svg",

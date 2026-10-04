@@ -20,7 +20,9 @@ fn extension_icons_are_case_insensitive_and_keep_fallbacks() {
         ("index.mjs", "javascript"),
         ("main.rs", "rust"),
         ("index.html", "html"),
-        ("style.scss", "css"),
+        ("style.CSS", "css"),
+        ("style.scss", "sass"),
+        ("style.SASS", "sass"),
         ("data.json", "json"),
         ("settings.toml", "config"),
         ("settings.yml", "config"),
@@ -48,8 +50,8 @@ fn specialized_icons_are_embedded_valid_svg_assets() {
     use gpui::AssetSource;
     let assets = crate::ui::icons::IconAssets;
     for extension in [
-        "py", "js", "ts", "tsx", "rs", "html", "css", "json", "toml", "sh", "c", "cpp", "pdf",
-        "md", "txt", "png", "mp3", "zip",
+        "py", "js", "ts", "tsx", "rs", "html", "css", "scss", "json", "toml", "sh", "c", "cpp",
+        "pdf", "md", "txt", "png", "mp3", "zip",
     ] {
         let name = entry(&format!("file.{extension}"), false).icon();
         let bytes = assets.load(&format!("icons/{name}.svg")).unwrap().unwrap();
