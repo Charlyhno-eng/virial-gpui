@@ -263,6 +263,8 @@ impl FileManager {
             return;
         }
         self.focus.focus(window);
+        self.details_open = false;
+        self.preview_expanded = false;
         self.menu = None;
         let baseline = if event.modifiers.control || event.modifiers.shift {
             self.selection.clone()

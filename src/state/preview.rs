@@ -66,7 +66,9 @@ impl FileManager {
         self.preview_path = path;
         self.preview_task = None;
         self.preview_expanded = false;
-        self.details_open = entry.is_some();
+        if entry.is_none() {
+            self.details_open = false;
+        }
         self.preview = Preview::Loading;
         let Some(entry) = entry else {
             return;

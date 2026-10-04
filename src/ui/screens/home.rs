@@ -395,6 +395,8 @@ impl FileManager {
                                         .on_click(cx.listener(
                                             move |view, event: &gpui::ClickEvent, _, cx| {
                                                 if !event.standard_click() { return; }
+                                                view.details_open = event.click_count() == 1;
+                                                view.preview_expanded = false;
                                                 let modifiers = event.modifiers();
                                                 if modifiers.control && !modifiers.shift {
                                                     view.selection.click(index, true, false);

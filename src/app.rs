@@ -88,6 +88,7 @@ impl FileManager {
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
         self.preview_expanded = false;
+        self.details_open = false;
         self.directory_sizes = None;
         self.menu = None;
         self.marquee = None;
