@@ -18,7 +18,7 @@ impl FileManager {
             .when(expanded, |panel| panel.flex_1())
             .when(!expanded, |panel| {
                 panel
-                    .w(px(280.))
+                    .w(px(400.))
                     .flex_shrink_0()
                     .border_l_1()
                     .border_color(color(BORDER))
@@ -86,7 +86,7 @@ impl FileManager {
                                         }
                                     })
                                     .w_full()
-                                    .h(px(if expanded { 520. } else { 220. })),
+                                    .h(px(if expanded { 640. } else { 360. })),
                             )
                             .into_any_element(),
                         Preview::Text(text) => div()
