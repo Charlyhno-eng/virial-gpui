@@ -16,8 +16,12 @@ pub struct NameInput {
 }
 impl NameInput {
     pub fn new(text: String, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let input = Self::new_unfocused(text, cx);
+        input.focus.focus(window);
+        input
+    }
+    pub fn new_unfocused(text: String, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
-        focus.focus(window);
         let end = text.len();
         Self {
             text,

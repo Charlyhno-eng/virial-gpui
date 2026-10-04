@@ -65,7 +65,10 @@ impl Render for FileManager {
                                     .flex_col()
                                     .flex_1()
                                     .min_h_0()
-                                    .child(self.file_list(cx)),
+                                    .child(self.file_list(cx))
+                                    .when(self.details_open, |layout| {
+                                        layout.child(self.details_panel(cx))
+                                    }),
                                 self.location.id(),
                             )),
                     ),

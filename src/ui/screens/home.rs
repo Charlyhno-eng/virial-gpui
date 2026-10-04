@@ -3,8 +3,122 @@ use gpui::{Animation, AnimationExt, Context, Div, FontWeight, div, prelude::*, p
 use std::time::Duration;
 
 impl FileManager {
+    pub(crate) fn details_panel(&self, _: &mut Context<Self>) -> Div {
+        let selected = self
+            .selection
+            .primary()
+            .and_then(|index| self.entries.get(index))
+            .cloned();
+        let has_selection = selected.is_some();
+        let modified = selected
+            .as_ref()
+            .map(|entry| entry.path.as_path())
+            .or_else(|| self.location.directory())
+            .and_then(|path| std::fs::metadata(path).ok())
+            .and_then(|metadata| metadata.modified().ok())
+            .map(|modified| {
+                chrono::DateTime::<chrono::Utc>::from(modified)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
+            .unwrap_or_else(|| "—".to_string());
+        let (name, path, kind, size, symbol) = if let Some(entry) = selected {
+            let kind = entry.kind().to_string();
+            let symbol = entry.icon();
+            (
+                entry.name,
+                entry.path.display().to_string(),
+                kind,
+                crate::domain::models::format_size(entry.bytes),
+                symbol,
+            )
+        } else {
+            let name = self.location.title(&self.home, self.language);
+            let path = self.location.description(self.language);
+            let kind = if self.location.directory().is_some() {
+                "Folder"
+            } else {
+                "Location"
+            }
+            .to_string();
+            let size = "—".to_string();
+            (name, path, kind, size, self.location.icon())
+        };
+        div()
+            .w(px(248.))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .px_4()
+            .pt_5()
+            .border_l_1()
+            .border_color(color(BORDER))
+            .bg(translucent(SURFACE, 0.16))
+            .child(icon(symbol, 34., ACCENT_BLUE))
+            .child(div().text_size(px(14.)).text_ellipsis().child(name))
+            .child(
+                div()
+                    .text_size(px(10.))
+                    .text_color(color(MUTED))
+                    .text_ellipsis()
+                    .child(path),
+            )
+            .child(div().h(px(1.)).my_1().bg(color(BORDER)))
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .text_size(px(11.))
+                    .child("Type")
+                    .child(div().text_color(color(MUTED)).child(kind)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .text_size(px(11.))
+                    .child("Size")
+                    .child(div().text_color(color(MUTED)).child(size)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .text_size(px(11.))
+                    .child("Modified")
+                    .child(div().text_color(color(MUTED)).child(modified)),
+            )
+            .child(div().h(px(1.)).my_1().bg(color(BORDER)))
+            .child(
+                div()
+                    .text_size(px(10.))
+                    .text_color(color(MUTED))
+                    .child("DETAILS"),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(color(MUTED))
+                    .child(if has_selection {
+                        "Selected item"
+                    } else {
+                        "Current location"
+                    }),
+            )
+    }
+
     pub(crate) fn file_list(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let title = self.location.title(&self.home, self.language);
+        let query = self.search_input.read(cx).text.trim().to_lowercase();
+        let visible_entries: Vec<usize> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| query.is_empty() || entry.name.to_lowercase().contains(&query))
+            .map(|(index, _)| index)
+            .collect();
+        let visible_count = visible_entries.len();
         let scroll = self.scroll.0.borrow().base_handle.clone();
         let rectangle = self
             .marquee
@@ -80,7 +194,7 @@ impl FileManager {
                             .child(self.language.text("SIZE")),
                     ),
             )
-            .child(if self.entries.is_empty() {
+            .child(if visible_entries.is_empty() {
                 let (heading, description) = if self.loading {
                     ("Loading folder…", "Reading directory contents")
                 } else if self.error.is_some() {
@@ -88,6 +202,8 @@ impl FileManager {
                         "Folder unavailable",
                         "Choose another location or try refreshing",
                     )
+                } else if !query.is_empty() {
+                    ("No matching items", "Try a different name")
                 } else if self.location == crate::domain::location::Location::Recent {
                     (
                         "No recent files",
@@ -127,11 +243,16 @@ impl FileManager {
                 div().relative().flex().flex_col().flex_1().min_h_0().overflow_hidden()
                 .child(uniform_list(
                     self.location.id(),
-                    self.entries.len(),
+                    visible_count,
                     cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
+                        let query = view.search_input.read(cx).text.trim().to_lowercase();
+                        let visible: Vec<usize> = view.entries.iter().enumerate()
+                            .filter(|(_, entry)| query.is_empty() || entry.name.to_lowercase().contains(&query))
+                            .map(|(index, _)| index).collect();
                         let paths = view.selected_paths().into();
                         range
-                            .map(|index| {
+                            .map(|visible_index| {
+                                let index = visible[visible_index];
                                 let entry = view.entries[index].clone();
                                 let selected = view.selection.indices.contains(&index);
                                 let payload = view.drag_payload(index, &paths);
@@ -140,7 +261,7 @@ impl FileManager {
                                     .id(std::sync::Arc::<std::path::Path>::from(entry.path.clone()))
                                     .flex_1()
                                     .min_w_0()
-                                    .h(px(ROW_HEIGHT))
+                                    .h(px(if view.compact_view { ROW_HEIGHT * 0.78 } else { ROW_HEIGHT }))
                                     .px_4()
                                     .flex()
                                     .items_center()
@@ -252,7 +373,7 @@ impl FileManager {
                                 let row = if let Some(directory) = directory {
                                     view.drop_target(row, directory, cx)
                                 } else { row };
-                                div().w_full().h(px(ROW_HEIGHT)).flex()
+                                div().w_full().h(px(if view.compact_view { ROW_HEIGHT * 0.78 } else { ROW_HEIGHT })).flex()
                                     .child(div().w(px(14.)).h_full().flex_shrink_0())
                                     .child(row)
                             })

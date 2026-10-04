@@ -65,6 +65,22 @@ impl FileManager {
                     )
                     .child(div().flex_1())
                     .child(
+                        div()
+                            .id("search-field")
+                            .w(px(220.))
+                            .px_2()
+                            .bg(color(SURFACE))
+                            .border_1()
+                            .border_color(color(BORDER))
+                            .rounded_md()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(icon("search", 14., MUTED))
+                            .child(div().text_color(color(MUTED)).child("Search"))
+                            .child(self.search_input.clone()),
+                    )
+                    .child(
                         toolbar_button(
                             "refresh",
                             "refresh",
@@ -73,6 +89,26 @@ impl FileManager {
                             false,
                         )
                         .on_click(cx.listener(|view, _, _, cx| view.refresh(cx))),
+                    )
+                    .child(
+                        toolbar_button("details", "info", "Details", true, self.details_open)
+                            .on_click(cx.listener(|view, _, _, cx| {
+                                view.details_open = !view.details_open;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        toolbar_button(
+                            "view-density",
+                            "view",
+                            "Toggle compact view",
+                            true,
+                            self.compact_view,
+                        )
+                        .on_click(cx.listener(|view, _, _, cx| {
+                            view.compact_view = !view.compact_view;
+                            cx.notify();
+                        })),
                     )
                     .child(
                         toolbar_button(

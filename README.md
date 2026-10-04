@@ -10,6 +10,11 @@ supported by the desktop compositor; text, menus, and dialogs remain readable.
 Short fades accompany folder navigation and opening menus or dialogs, with a
 subtle activity indicator while work is in progress.
 
+Search the current folder by typing in the toolbar search field. Use the details
+control to show or hide the information panel for the current location or
+selected item, and the view control to switch to a denser file list. The sidebar,
+breadcrumbs, and navigation buttons remain available as you browse.
+
 The file list appears without waiting for recursive folder sizes. Its size column
 shows file sizes immediately and fills in folder totals in background batches;
 folders show `—` until their size is available. Leaving or refreshing a location

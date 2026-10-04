@@ -47,6 +47,9 @@ pub struct FileManager {
     pub(crate) dialog: Option<crate::state::actions::Dialog>,
     pub(crate) clipboard: Option<(Vec<PathBuf>, bool)>,
     pub(crate) busy: bool,
+    pub(crate) search_input: gpui::Entity<crate::ui::components::input::NameInput>,
+    pub(crate) details_open: bool,
+    pub(crate) compact_view: bool,
     pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
 }
 

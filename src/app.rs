@@ -7,7 +7,7 @@ use crate::{
     state::app_state::DirectorySizeTask,
     ui::i18n::Language,
 };
-use gpui::{Context, KeyDownEvent, ScrollStrategy, UniformListScrollHandle, Window};
+use gpui::{AppContext, Context, KeyDownEvent, ScrollStrategy, UniformListScrollHandle, Window};
 use std::{
     path::PathBuf,
     process::Command,
@@ -52,6 +52,11 @@ impl FileManager {
             dialog: None,
             clipboard: None,
             busy: false,
+            search_input: cx.new(|cx| {
+                crate::ui::components::input::NameInput::new_unfocused(String::new(), cx)
+            }),
+            details_open: true,
+            compact_view: false,
             titlebar_drag: None,
         };
         view.navigate(path, cx);
