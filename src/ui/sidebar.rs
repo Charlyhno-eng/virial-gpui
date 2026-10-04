@@ -11,7 +11,7 @@ impl FileManager {
             .flex_shrink_0()
             .flex()
             .flex_col()
-            .bg(color(SIDEBAR))
+            .bg(translucent(SIDEBAR, 0.45))
             .border_r_1()
             .border_color(color(BORDER))
             .child(
@@ -44,11 +44,14 @@ impl FileManager {
             )
             .child(
                 div()
-                    .px_5()
-                    .py_4()
+                    .px_4()
+                    .h(px(30.))
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
                     .border_t_1()
                     .border_color(color(BORDER))
-                    .text_size(px(11.))
+                    .text_size(px(10.))
                     .text_color(color(MUTED))
                     .child(self.language.text("LOCAL FILES")),
             )
@@ -77,17 +80,18 @@ impl FileManager {
             .id(("place", index))
             .flex()
             .items_center()
-            .gap_3()
+            .gap_2()
             .px_3()
-            .h(px(38.))
+            .h(px(30.))
             .mb_1()
             .rounded_md()
             .cursor_pointer()
-            .text_size(px(12.))
+            .text_size(px(11.))
             .text_color(color(if active { ACCENT } else { TEXT }))
             .when(active, |row| row.bg(color(SELECTED)))
             .hover(|style| style.bg(color(if active { SELECTED } else { HOVER })))
-            .child(icon(symbol, 18., if active { ACCENT } else { MUTED }))
+            .active(|style| style.bg(color(SELECTED)))
+            .child(icon(symbol, 16., if active { ACCENT } else { MUTED }))
             .child(
                 div()
                     .flex_1()
@@ -95,6 +99,9 @@ impl FileManager {
                     .text_ellipsis()
                     .child(self.language.text(label)),
             )
+            .when(active, |row| {
+                row.child(div().w(px(3.)).h(px(12.)).rounded_full().bg(color(ACCENT)))
+            })
             .on_click(cx.listener(move |view, _, window, cx| {
                 view.focus.focus(window);
                 view.navigate_location(location.clone(), cx);

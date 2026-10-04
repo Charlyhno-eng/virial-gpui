@@ -2,6 +2,19 @@
 
 Virial is a Linux file manager built with Rust and GPUI.
 
+The interface uses compact spacing and typography, with an indigo theme and blue
+and lavender accents inspired by the application logo. The initial window size
+adapts to smaller displays. The background is slightly
+transparent when supported by the desktop compositor; text, menus, and dialogs
+remain readable. Short fades accompany folder navigation and opening menus or
+dialogs, with a subtle activity indicator while work is in progress.
+
+Use the title bar's full-screen control or **F11** to fill the entire display,
+including the space normally reserved for desktop panels. **F11**, **Escape**, or
+the toolbar's exit control returns to the previous window state. Escape closes an
+open menu or dialog first. The maximize control and a double-click on the title
+bar expand the window within the desktop's work area.
+
 ## Prerequisites
 
 - Linux with a graphical desktop session

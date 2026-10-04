@@ -7,6 +7,10 @@ pub struct IconAssets;
 
 const ASSETS: &[(&str, &[u8])] = &[
     (
+        "icons/fullscreen.svg",
+        include_bytes!("../assets/icons/fullscreen.svg"),
+    ),
+    (
         "virial-gpui-logo.png",
         include_bytes!("../assets/virial-gpui-logo.png"),
     ),

@@ -59,6 +59,8 @@ impl Language {
             "Minimize" => "Réduire",
             "Maximize" => "Agrandir",
             "Restore" => "Restaurer",
+            "Full screen · F11" => "Plein écran · F11",
+            "Exit full screen · F11" => "Quitter le plein écran · F11",
             "Close" => "Fermer",
             "Confirm" => "Confirmer",
             "Operation failed" => "Échec de l’opération",

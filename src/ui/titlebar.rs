@@ -1,8 +1,8 @@
 //! Application-owned Linux title bar and resize handles.
 use crate::{app::FileManager, icons::icon, theme::*};
 use gpui::{
-    App, Context, CursorStyle, Div, MouseButton, Render, ResizeEdge, Stateful, Window, div,
-    img, prelude::*, px,
+    App, Context, CursorStyle, Div, ImageSource, MouseButton, Render, ResizeEdge, Resource,
+    Stateful, Window, div, img, linear_color_stop, linear_gradient, prelude::*, px,
 };
 
 struct ControlHint(&'static str);
@@ -28,14 +28,15 @@ fn control(
 ) -> Stateful<Div> {
     div()
         .id(id)
-        .w(px(36.))
-        .h(px(28.))
+        .w(px(30.))
+        .h(px(24.))
         .flex()
         .items_center()
         .justify_center()
         .rounded_sm()
         .cursor_pointer()
         .hover(move |style| style.bg(color(if close { ERROR_BG } else { HOVER })))
+        .active(move |style| style.bg(color(if close { ERROR_BG } else { SELECTED })))
         .tooltip(move |_, cx: &mut App| cx.new(|_| ControlHint(label)).into())
         .child(icon(symbol, 14., if close { ERROR } else { MUTED }))
 }
@@ -60,11 +61,15 @@ impl FileManager {
     pub(super) fn titlebar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         let maximized = window.is_maximized();
         div()
-            .h(px(38.))
+            .h(px(32.))
             .flex_shrink_0()
             .flex()
             .items_center()
-            .bg(color(SIDEBAR))
+            .bg(linear_gradient(
+                90.,
+                linear_color_stop(translucent(SURFACE, 0.65), 0.),
+                linear_color_stop(translucent(SIDEBAR, 0.45), 1.),
+            ))
             .border_b_1()
             .border_color(color(BORDER))
             .child(
@@ -77,16 +82,21 @@ impl FileManager {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(img("virial-gpui-logo.png").size(px(22.)))
+                    .child(
+                        img(ImageSource::Resource(Resource::Embedded(
+                            "virial-gpui-logo.png".into(),
+                        )))
+                        .size(px(20.)),
+                    )
                     .child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(px(11.))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("Virial"),
                     )
                     .child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(px(11.))
                             .text_color(color(MUTED))
                             .text_ellipsis()
                             .min_w_0()
@@ -116,6 +126,19 @@ impl FileManager {
                     .items_center()
                     .gap_1()
                     .px_2()
+                    .child(
+                        control(
+                            "window-fullscreen",
+                            "fullscreen",
+                            self.language.text("Full screen · F11"),
+                            false,
+                        )
+                        .on_click(cx.listener(|view, _, window, cx| {
+                            view.titlebar_drag = None;
+                            window.toggle_fullscreen();
+                            cx.notify();
+                        })),
+                    )
                     .child(
                         control(
                             "window-minimize",

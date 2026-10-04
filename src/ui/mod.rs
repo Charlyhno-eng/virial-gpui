@@ -7,7 +7,7 @@ mod titlebar;
 mod toolbar;
 
 use crate::{app::FileManager, theme::*};
-use gpui::{Context, Render, Window, div, prelude::*, px};
+use gpui::{Context, Decorations, Render, Window, div, prelude::*, px};
 
 impl Render for FileManager {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -15,6 +15,15 @@ impl Render for FileManager {
             "{} — Virial",
             self.location.description(self.language)
         ));
+        let fullscreen = window.is_fullscreen();
+        let tiled = match window.window_decorations() {
+            Decorations::Client { tiling } => {
+                tiling.top || tiling.bottom || tiling.left || tiling.right
+            }
+            Decorations::Server => false,
+        };
+        // The UI draws no invisible shadow margins, including in full screen.
+        window.set_client_inset(px(0.));
         div()
             .id("file-manager")
             .track_focus(&self.focus)
@@ -24,11 +33,15 @@ impl Render for FileManager {
             .size_full()
             .flex()
             .flex_col()
-            .bg(color(BACKGROUND))
+            .overflow_hidden()
+            .bg(translucent(BACKGROUND, 0.94))
+            .when(!fullscreen && !window.is_maximized() && !tiled, |root| {
+                root.rounded_lg().border_1().border_color(color(BORDER))
+            })
             .text_color(color(TEXT))
-            .text_size(px(12.))
+            .text_size(px(11.))
             .font_family("sans-serif")
-            .child(self.titlebar(window, cx))
+            .when(!fullscreen, |root| root.child(self.titlebar(window, cx)))
             .child(
                 div()
                     .flex()
@@ -41,9 +54,17 @@ impl Render for FileManager {
                             .flex_col()
                             .flex_1()
                             .min_w_0()
-                            .h_full()
-                            .child(self.toolbar(cx))
-                            .child(self.file_list(cx)),
+                            .min_h_0()
+                            .child(self.toolbar(window, cx))
+                            .child(components::reveal(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .child(self.file_list(cx)),
+                                self.location.id(),
+                            )),
                     ),
             )
             .children(titlebar::resize_handles(window))

@@ -267,7 +267,7 @@ impl Element for InputElement {
     ) -> (LayoutId, ()) {
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.size.height = px(28.).into();
+        style.size.height = px(24.).into();
         (window.request_layout(style, [], cx), ())
     }
     fn prepaint(
@@ -353,8 +353,8 @@ impl Render for NameInput {
             .rounded_md()
             .cursor(CursorStyle::IBeam)
             .overflow_hidden()
-            .text_size(px(13.))
-            .line_height(px(28.))
+            .text_size(px(11.))
+            .line_height(px(24.))
             .on_key_down(cx.listener(Self::key))
             .on_mouse_down(
                 MouseButton::Left,

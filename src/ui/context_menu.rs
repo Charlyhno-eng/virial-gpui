@@ -1,3 +1,4 @@
+use super::components::reveal;
 use crate::{
     actions::{Action, Dialog, NameAction},
     app::FileManager,
@@ -40,25 +41,26 @@ impl FileManager {
             let mut content = div()
                 .id("dialog-panel")
                 .occlude()
-                .w(px(540.))
+                .w(px(460.))
                 .max_w_full()
                 .max_h_full()
-                .p_5()
+                .p_4()
                 .flex()
                 .flex_col()
-                .gap_4()
+                .gap_3()
                 .rounded_lg()
                 .bg(color(SURFACE))
                 .border_1()
                 .border_color(color(BORDER))
-                .child(div().text_size(px(18.)).child(self.language.text(heading)));
+                .shadow_lg()
+                .child(div().text_size(px(16.)).child(self.language.text(heading)));
             if let Some(error) = &self.error {
                 content = content.child(div().text_color(color(ERROR)).child(error.clone()));
             }
             content = match dialog {
                 Dialog::Name { input, .. } => content
                     .child(
-                        div().text_size(px(12.)).text_color(color(MUTED)).child(
+                        div().text_size(px(11.)).text_color(color(MUTED)).child(
                             self.language
                                 .text("Edit the full name, including the extension"),
                         ),
@@ -151,7 +153,7 @@ impl FileManager {
                     .items_center()
                     .justify_center()
                     .bg(gpui::rgba(0x00000080))
-                    .child(content),
+                    .child(reveal(content, "dialog-reveal")),
             );
         }
         let menu = self.menu.as_ref()?;
@@ -182,8 +184,8 @@ impl FileManager {
         }
         actions.push(Action::Refresh);
         let bounds = window.viewport_size();
-        let height = actions.len() as f32 * 34. + 12.;
-        let x = menu.position.x.min(bounds.width - px(250.)).max(px(0.));
+        let height = actions.len() as f32 * 28. + 9.;
+        let x = menu.position.x.min(bounds.width - px(220.)).max(px(0.));
         let y = menu.position.y.min(bounds.height - px(height)).max(px(0.));
         let panel = div()
             .id("context-menu")
@@ -191,17 +193,18 @@ impl FileManager {
             .absolute()
             .left(x)
             .top(y)
-            .w(px(250.))
+            .w(px(220.))
             .p_1()
             .rounded_md()
             .bg(color(SURFACE))
             .border_1()
             .border_color(color(BORDER))
+            .shadow_md()
             .children(actions.into_iter().enumerate().map(|(index, action)| {
                 let entry = entry.clone();
                 div()
                     .id(("context-action", index))
-                    .h(px(34.))
+                    .h(px(28.))
                     .px_3()
                     .flex()
                     .items_center()
@@ -238,7 +241,7 @@ impl FileManager {
                             }),
                         ),
                 )
-                .child(panel),
+                .child(reveal(panel, "menu-reveal")),
         )
     }
 }

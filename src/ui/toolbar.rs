@@ -1,15 +1,21 @@
 use super::components::toolbar_button;
 use crate::{app::FileManager, icons::icon, theme::*};
-use gpui::{Context, Div, div, prelude::*, px};
+use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient, prelude::*, px};
 
 impl FileManager {
-    pub(super) fn toolbar(&self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn toolbar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .flex_col()
-            .bg(color(SURFACE))
+            .flex_shrink_0()
+            .bg(translucent(SURFACE, 0.35))
             .border_b_1()
             .border_color(color(BORDER))
+            .child(div().h(px(1.)).w_full().bg(linear_gradient(
+                90.,
+                linear_color_stop(translucent(ACCENT_BLUE, 0.55), 0.),
+                linear_color_stop(translucent(ACCENT, 0.15), 1.),
+            )))
             .child(
                 div()
                     .flex()
@@ -17,7 +23,7 @@ impl FileManager {
                     .items_center()
                     .gap_1()
                     .px_4()
-                    .py_3()
+                    .py_2()
                     .child(
                         toolbar_button(
                             "back",
@@ -82,16 +88,32 @@ impl FileManager {
                             self.hidden,
                         )
                         .on_click(cx.listener(|view, _, _, cx| view.toggle_hidden(cx))),
-                    ),
+                    )
+                    .when(window.is_fullscreen(), |bar| {
+                        bar.child(
+                            toolbar_button(
+                                "exit-fullscreen",
+                                "fullscreen",
+                                self.language.text("Exit full screen · F11"),
+                                true,
+                                true,
+                            )
+                            .on_click(|_, window, cx| {
+                                window.toggle_fullscreen();
+                                window.refresh();
+                                cx.stop_propagation();
+                            }),
+                        )
+                    }),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
-                    .px_5()
-                    .pb_3()
-                    .child(icon(self.location.icon(), 18., ACCENT))
+                    .gap_2()
+                    .px_4()
+                    .pb_2()
+                    .child(icon(self.location.icon(), 16., ACCENT_BLUE))
                     .child(
                         div()
                             .id("breadcrumbs")
@@ -121,7 +143,7 @@ impl FileManager {
                                                     .py_1()
                                                     .rounded_sm()
                                                     .cursor_pointer()
-                                                    .text_size(px(12.))
+                                                    .text_size(px(11.))
                                                     .text_color(color(if current {
                                                         TEXT
                                                     } else {

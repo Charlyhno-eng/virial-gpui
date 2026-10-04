@@ -223,6 +223,13 @@ impl FileManager {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if event.keystroke.key == "f11" && !event.keystroke.modifiers.modified() {
+            self.titlebar_drag = None;
+            window.toggle_fullscreen();
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
         if self.action_key(event, window, cx) {
             return;
         }
@@ -236,6 +243,9 @@ impl FileManager {
             "f5" => self.refresh(cx),
             "enter" if !modifiers.modified() => self.open_selected(cx),
             "escape" => {
+                if window.is_fullscreen() {
+                    window.toggle_fullscreen();
+                }
                 self.selected = None;
                 cx.notify();
             }
