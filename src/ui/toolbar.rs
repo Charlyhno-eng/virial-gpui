@@ -1,5 +1,5 @@
 use super::components::toolbar_button;
-use crate::{app::FileManager, icons::icon, navigation::breadcrumbs, theme::*};
+use crate::{app::FileManager, icons::icon, theme::*};
 use gpui::{Context, Div, div, prelude::*, px};
 
 impl FileManager {
@@ -13,6 +13,7 @@ impl FileManager {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .items_center()
                     .gap_1()
                     .px_4()
@@ -21,7 +22,7 @@ impl FileManager {
                         toolbar_button(
                             "back",
                             "back",
-                            "Back",
+                            self.language.text("Back"),
                             self.history.back().is_some(),
                             false,
                         )
@@ -31,29 +32,56 @@ impl FileManager {
                         toolbar_button(
                             "forward",
                             "forward",
-                            "Forward",
+                            self.language.text("Forward"),
                             self.history.forward().is_some(),
                             false,
                         )
                         .on_click(cx.listener(|view, _, _, cx| view.forward(cx))),
                     )
                     .child(
-                        toolbar_button("up", "up", "Up", self.path.parent().is_some(), false)
-                            .on_click(cx.listener(|view, _, _, cx| view.up(cx))),
+                        toolbar_button(
+                            "up",
+                            "up",
+                            self.language.text("Up"),
+                            self.location
+                                .directory()
+                                .and_then(|path| path.parent())
+                                .is_some(),
+                            false,
+                        )
+                        .on_click(cx.listener(|view, _, _, cx| view.up(cx))),
                     )
                     .child(div().w(px(1.)).h(px(20.)).mx_2().bg(color(BORDER)))
                     .child(
-                        toolbar_button("open", "open", "Open", self.selected.is_some(), false)
-                            .on_click(cx.listener(|view, _, _, cx| view.open_selected(cx))),
+                        toolbar_button(
+                            "open",
+                            "open",
+                            self.language.text("Open"),
+                            self.selected.is_some(),
+                            false,
+                        )
+                        .on_click(cx.listener(|view, _, _, cx| view.open_selected(cx))),
                     )
                     .child(div().flex_1())
                     .child(
-                        toolbar_button("refresh", "refresh", "Refresh", true, false)
-                            .on_click(cx.listener(|view, _, _, cx| view.refresh(cx))),
+                        toolbar_button(
+                            "refresh",
+                            "refresh",
+                            self.language.text("Refresh"),
+                            true,
+                            false,
+                        )
+                        .on_click(cx.listener(|view, _, _, cx| view.refresh(cx))),
                     )
                     .child(
-                        toolbar_button("hidden", "eye", "Hidden files", true, self.hidden)
-                            .on_click(cx.listener(|view, _, _, cx| view.toggle_hidden(cx))),
+                        toolbar_button(
+                            "hidden",
+                            "eye",
+                            self.language.text("Hidden files"),
+                            true,
+                            self.hidden,
+                        )
+                        .on_click(cx.listener(|view, _, _, cx| view.toggle_hidden(cx))),
                     ),
             )
             .child(
@@ -63,7 +91,7 @@ impl FileManager {
                     .gap_3()
                     .px_5()
                     .pb_3()
-                    .child(icon("folder", 18., ACCENT))
+                    .child(icon(self.location.icon(), 18., ACCENT))
                     .child(
                         div()
                             .id("breadcrumbs")
@@ -73,11 +101,12 @@ impl FileManager {
                             .min_w_0()
                             .overflow_x_scroll()
                             .children(
-                                breadcrumbs(&self.path, &self.home)
+                                self.location
+                                    .breadcrumbs(&self.home, self.language)
                                     .into_iter()
                                     .enumerate()
                                     .map(|(index, (label, path))| {
-                                        let current = path == self.path;
+                                        let current = path == self.location;
                                         div()
                                             .flex()
                                             .items_center()
@@ -106,7 +135,7 @@ impl FileManager {
                                                     .child(label)
                                                     .on_click(cx.listener(
                                                         move |view, _, _, cx| {
-                                                            view.navigate(path.clone(), cx)
+                                                            view.navigate_location(path.clone(), cx)
                                                         },
                                                     )),
                                             )

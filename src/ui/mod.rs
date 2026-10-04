@@ -8,7 +8,10 @@ use gpui::{Context, Render, Window, div, prelude::*, px};
 
 impl Render for FileManager {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        window.set_window_title(&format!("{} — Virial", self.path.display()));
+        window.set_window_title(&format!(
+            "{} — Virial",
+            self.location.description(self.language)
+        ));
         div()
             .id("file-manager")
             .track_focus(&self.focus)

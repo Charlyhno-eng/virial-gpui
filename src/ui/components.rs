@@ -11,6 +11,7 @@ pub fn toolbar_button(
     div()
         .id(id)
         .flex()
+        .flex_shrink_0()
         .items_center()
         .gap_2()
         .px_3()

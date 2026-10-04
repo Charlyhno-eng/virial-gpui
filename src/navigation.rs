@@ -1,31 +1,32 @@
+use crate::location::Location;
 use std::path::{Path, PathBuf};
 
 /// History changes are committed only after a directory has been read successfully.
 pub struct History {
-    paths: Vec<PathBuf>,
+    paths: Vec<Location>,
     cursor: usize,
 }
 
 impl History {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: Location) -> Self {
         Self {
             paths: vec![path],
             cursor: 0,
         }
     }
 
-    pub fn back(&self) -> Option<(usize, PathBuf)> {
+    pub fn back(&self) -> Option<(usize, Location)> {
         self.cursor
             .checked_sub(1)
             .map(|index| (index, self.paths[index].clone()))
     }
 
-    pub fn forward(&self) -> Option<(usize, PathBuf)> {
+    pub fn forward(&self) -> Option<(usize, Location)> {
         let index = self.cursor + 1;
         self.paths.get(index).cloned().map(|path| (index, path))
     }
 
-    pub fn visit(&mut self, path: PathBuf) {
+    pub fn visit(&mut self, path: Location) {
         if self.paths[self.cursor] == path {
             return;
         }
@@ -76,12 +77,23 @@ mod tests {
         history.visit("/home/docs".into());
         history.visit("/tmp".into());
         let (index, path) = history.back().unwrap();
-        assert_eq!(path, PathBuf::from("/home/docs"));
+        assert_eq!(path, Location::from("/home/docs"));
         history.restore(index);
-        assert_eq!(history.forward().unwrap().1, PathBuf::from("/tmp"));
+        assert_eq!(history.forward().unwrap().1, Location::from("/tmp"));
         history.visit("/etc".into());
         assert!(history.forward().is_none());
-        assert_eq!(history.back().unwrap().1, PathBuf::from("/home/docs"));
+        assert_eq!(history.back().unwrap().1, Location::from("/home/docs"));
+    }
+
+    #[test]
+    fn history_includes_virtual_locations() {
+        let mut history = History::new("/home".into());
+        history.visit(Location::Recent);
+        history.visit(Location::Network);
+        let (index, location) = history.back().unwrap();
+        assert_eq!(location, Location::Recent);
+        history.restore(index);
+        assert_eq!(history.forward().unwrap().1, Location::Network);
     }
 
     #[test]

@@ -1,6 +1,8 @@
 //! Application state and asynchronous filesystem operations, independent of layout.
 use crate::{
     files::{Entry, read_directory},
+    i18n::Language,
+    location::Location,
     navigation::History,
 };
 use gpui::{
@@ -9,7 +11,10 @@ use gpui::{
 use std::{path::PathBuf, process::Command};
 
 pub struct FileManager {
-    pub(crate) path: PathBuf,
+    pub(crate) location: Location,
+    pub(crate) language: Language,
+    data_home: PathBuf,
+    runtime_home: PathBuf,
     pub(crate) home: PathBuf,
     pub(crate) places: Vec<crate::places::Place>,
     pub(crate) entries: Vec<Entry>,
@@ -31,8 +36,11 @@ impl FileManager {
         let focus = cx.focus_handle();
         focus.focus(window);
         let mut view = Self {
-            history: History::new(path.clone()),
-            path: path.clone(),
+            history: History::new(path.clone().into()),
+            location: path.clone().into(),
+            language: Language::system(),
+            data_home: crate::recent::data_home(&home),
+            runtime_home: crate::network::runtime_home(),
             places: crate::places::discover(&home),
             home,
             entries: Vec::new(),
@@ -49,17 +57,27 @@ impl FileManager {
     }
 
     pub(crate) fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.load(path, None, cx);
+        self.navigate_location(path.into(), cx);
     }
 
-    fn load(&mut self, path: PathBuf, history_index: Option<usize>, cx: &mut Context<Self>) {
+    pub(crate) fn navigate_location(&mut self, location: Location, cx: &mut Context<Self>) {
+        self.load(location, None, cx);
+    }
+
+    fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
         self.loading = true;
         self.error = None;
         let hidden = self.hidden;
-        let requested = path.clone();
-        let read = cx
-            .background_executor()
-            .spawn(async move { read_directory(&requested, hidden) });
+        let requested = location.clone();
+        let data = self.data_home.clone();
+        let runtime = self.runtime_home.clone();
+        let read = cx.background_executor().spawn(async move {
+            match requested {
+                Location::Directory(path) => read_directory(&path, hidden),
+                Location::Recent => crate::recent::read(&data, hidden),
+                Location::Network => crate::network::read(&runtime),
+            }
+        });
         // Replacing this task cancels the UI update from an outdated request.
         self.listing = Some(cx.spawn(async move |view, cx| {
             let result = read.await;
@@ -71,7 +89,7 @@ impl FileManager {
                             .selected
                             .and_then(|index| view.entries.get(index))
                             .map(|entry| entry.path.clone());
-                        let changed = view.path != path;
+                        let changed = view.location != location;
                         if changed {
                             view.scroll = UniformListScrollHandle::new();
                         }
@@ -85,13 +103,17 @@ impl FileManager {
                         if let Some(index) = history_index {
                             view.history.restore(index);
                         } else {
-                            view.history.visit(path.clone());
+                            view.history.visit(location.clone());
                         }
-                        view.path = path;
+                        view.location = location;
                         view.entries = entries;
                     }
                     Err(error) => {
-                        view.error = Some(format!("Cannot read {}: {error}", path.display()))
+                        view.error = Some(format!(
+                            "{} {}: {error}",
+                            view.language.text("Cannot read"),
+                            location.description(view.language)
+                        ))
                     }
                 }
                 cx.notify();
@@ -113,13 +135,13 @@ impl FileManager {
     }
 
     pub(crate) fn up(&mut self, cx: &mut Context<Self>) {
-        if let Some(parent) = self.path.parent() {
+        if let Some(parent) = self.location.directory().and_then(|path| path.parent()) {
             self.navigate(parent.to_path_buf(), cx);
         }
     }
 
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
-        self.navigate(self.path.clone(), cx);
+        self.navigate_location(self.location.clone(), cx);
     }
 
     pub(crate) fn toggle_hidden(&mut self, cx: &mut Context<Self>) {
@@ -144,17 +166,29 @@ impl FileManager {
         }
         self.error = None;
         cx.notify();
+        let data = self.data_home.clone();
+        let language = self.language;
+        let opened_path = entry.path.clone();
         let open = cx.background_executor().spawn(async move {
             Command::new("xdg-open")
                 .arg(&entry.path)
                 .output()
-                .map_err(|error| format!("Cannot open {}: {error}", entry.path.display()))
+                .map_err(|error| {
+                    format!(
+                        "{} {}: {error}",
+                        language.text("Cannot open"),
+                        entry.path.display()
+                    )
+                })
                 .and_then(|output| {
                     if output.status.success() {
-                        Ok(())
+                        crate::recent::record(&data, &opened_path).map_err(|error| {
+                            format!("{}: {error}", language.text("Cannot save recent history"))
+                        })
                     } else {
                         Err(format!(
-                            "Cannot open {}: {}",
+                            "{} {}: {}",
+                            language.text("Cannot open"),
                             entry.path.display(),
                             String::from_utf8_lossy(&output.stderr).trim()
                         ))

@@ -1,8 +1,12 @@
 mod app;
 mod files;
+mod i18n;
 mod icons;
+mod location;
 mod navigation;
+mod network;
 mod places;
+mod recent;
 mod theme;
 mod ui;
 
@@ -42,7 +46,10 @@ fn main() {
                     cx,
                 ))),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Virial — File Manager".into()),
+                    title: Some(
+                        format!("Virial — {}", i18n::Language::system().text("File Manager"))
+                            .into(),
+                    ),
                     ..Default::default()
                 }),
                 app_id: Some("virial-gpui".into()),
@@ -52,7 +59,10 @@ fn main() {
             if let Err(error) = cx.open_window(options, |window, cx| {
                 cx.new(|cx| FileManager::new(path, window, cx))
             }) {
-                eprintln!("Cannot open Virial: {error}");
+                eprintln!(
+                    "{}: {error}",
+                    i18n::Language::system().text("Cannot open Virial")
+                );
                 cx.quit();
             }
             cx.activate(true);

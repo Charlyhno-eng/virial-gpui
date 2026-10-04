@@ -1,16 +1,9 @@
-use crate::{app::FileManager, files::format_size, icons::icon, theme::*};
+use crate::{app::FileManager, icons::icon, theme::*};
 use gpui::{Context, Div, FontWeight, div, prelude::*, px, uniform_list};
 
 impl FileManager {
     pub(super) fn file_list(&self, cx: &mut Context<Self>) -> Div {
-        let title = if self.path == self.home {
-            "Home".to_string()
-        } else {
-            self.path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "File System".into())
-        };
+        let title = self.location.title(&self.home, self.language);
         let folders = self.entries.iter().filter(|entry| entry.directory).count();
         div()
             .flex()
@@ -34,7 +27,7 @@ impl FileManager {
                             .mt_1()
                             .text_size(px(12.))
                             .text_color(color(MUTED))
-                            .child(self.path.display().to_string()),
+                            .child(self.location.description(self.language)),
                     ),
             )
             .children(self.error.as_ref().map(|error| {
@@ -59,9 +52,14 @@ impl FileManager {
                     .border_color(color(BORDER))
                     .text_size(px(11.))
                     .text_color(color(MUTED))
-                    .child(div().flex_1().min_w_0().child("NAME"))
-                    .child(div().w(px(130.)).child("KIND"))
-                    .child(div().w(px(100.)).text_right().child("SIZE")),
+                    .child(div().flex_1().min_w_0().child(self.language.text("NAME")))
+                    .child(div().w(px(130.)).child(self.language.text("KIND")))
+                    .child(
+                        div()
+                            .w(px(100.))
+                            .text_right()
+                            .child(self.language.text("SIZE")),
+                    ),
             )
             .child(if self.entries.is_empty() {
                 let (heading, description) = if self.loading {
@@ -70,6 +68,16 @@ impl FileManager {
                     (
                         "Folder unavailable",
                         "Choose another location or try refreshing",
+                    )
+                } else if self.location == crate::location::Location::Recent {
+                    (
+                        "No recent files",
+                        "Files opened with Virial and desktop applications appear here",
+                    )
+                } else if self.location == crate::location::Location::Network {
+                    (
+                        "No mounted network locations",
+                        "Mount a network share using your desktop, then refresh",
                     )
                 } else {
                     (
@@ -84,18 +92,18 @@ impl FileManager {
                     .items_center()
                     .justify_center()
                     .gap_3()
-                    .child(icon("folder", 52., MUTED))
-                    .child(div().text_size(px(17.)).child(heading))
+                    .child(icon(self.location.icon(), 52., MUTED))
+                    .child(div().text_size(px(17.)).child(self.language.text(heading)))
                     .child(
                         div()
                             .text_size(px(13.))
                             .text_color(color(MUTED))
-                            .child(description),
+                            .child(self.language.text(description)),
                     )
                     .into_any_element()
             } else {
                 uniform_list(
-                    std::sync::Arc::<std::path::Path>::from(self.path.clone()),
+                    self.location.id(),
                     self.entries.len(),
                     cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
                         range
@@ -134,7 +142,16 @@ impl FileManager {
                                             .min_w_0()
                                             .text_ellipsis()
                                             .text_size(px(14.))
-                                            .child(entry.name.clone()),
+                                            .child(entry.name.clone())
+                                            .when(view.location.directory().is_none(), |name| {
+                                                name.child(
+                                                    div()
+                                                        .text_size(px(10.))
+                                                        .text_color(color(MUTED))
+                                                        .text_ellipsis()
+                                                        .child(entry.path.display().to_string()),
+                                                )
+                                            }),
                                     )
                                     .child(
                                         div()
@@ -142,7 +159,7 @@ impl FileManager {
                                             .flex_shrink_0()
                                             .text_size(px(12.))
                                             .text_color(color(MUTED))
-                                            .child(entry.kind()),
+                                            .child(view.language.text(entry.kind())),
                                     )
                                     .child(
                                         div()
@@ -151,7 +168,7 @@ impl FileManager {
                                             .text_right()
                                             .text_size(px(12.))
                                             .text_color(color(MUTED))
-                                            .child(format_size(entry.bytes)),
+                                            .child(view.language.size(entry.bytes)),
                                     )
                                     .on_click(cx.listener(
                                         move |view, event: &gpui::ClickEvent, window, cx| {
@@ -188,9 +205,9 @@ impl FileManager {
                     .text_size(px(12.))
                     .text_color(color(MUTED))
                     .child(if self.loading {
-                        "Loading…".into()
+                        self.language.text("Loading…").into()
                     } else {
-                        format!("{folders} folders · {} files", self.entries.len() - folders)
+                        self.language.counts(folders, self.entries.len() - folders)
                     })
                     .children(self.selected.and_then(|index| self.entries.get(index)).map(
                         |entry| {
@@ -203,7 +220,7 @@ impl FileManager {
                         },
                     ))
                     .when(self.selected.is_none(), |bar| bar.child(div().flex_1()))
-                    .child("Double-click to open · Enter"),
+                    .child(self.language.text("Double-click to open · Enter")),
             )
     }
 }

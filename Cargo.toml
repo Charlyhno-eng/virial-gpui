@@ -9,3 +9,6 @@ description = "A simple Linux file manager built with GPUI"
 gpui = "=0.2.2"
 # GPUI's xattr 0.2 dependency uses ENOATTR, removed by newer libc releases.
 libc = "=0.2.186"
+roxmltree = "0.20"
+url = "2.5"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
