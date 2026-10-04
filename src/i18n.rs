@@ -37,6 +37,38 @@ impl Language {
             return english;
         }
         match english {
+            "Open with…" => "Ouvrir avec…",
+            "Copy" => "Copier",
+            "Cut" => "Couper",
+            "Paste" => "Coller",
+            "Rename…" => "Renommer…",
+            "Move to Trash…" => "Déplacer à la corbeille…",
+            "Compress (.tar.gz)" => "Compresser (.tar.gz)",
+            "New folder…" => "Nouveau dossier…",
+            "New file…" => "Nouveau fichier…",
+            "New folder" => "Nouveau dossier",
+            "New file" => "Nouveau fichier",
+            "Copy path" => "Copier le chemin",
+            "Properties" => "Propriétés",
+            "Path" => "Chemin",
+            "Size (bytes)" => "Taille (octets)",
+            "Permissions" => "Permissions",
+            "Modified" => "Modifié le",
+            "Link target" => "Cible du lien",
+            "Cancel" => "Annuler",
+            "Close" => "Fermer",
+            "Confirm" => "Confirmer",
+            "Operation failed" => "Échec de l’opération",
+            "Invalid file name" => "Nom de fichier invalide",
+            "This name is not valid UTF-8" => "Ce nom n’est pas valide en UTF-8",
+            "Working…" => "Opération en cours…",
+            "No applications found" => "Aucune application trouvée",
+            "Edit the full name, including the extension" => {
+                "Modifiez le nom complet, extension comprise"
+            }
+            "This item will be moved to the desktop Trash" => {
+                "Cet élément sera déplacé dans la corbeille du bureau"
+            }
             "Home" => "Dossier personnel",
             "Desktop" => "Bureau",
             "Documents" => "Documents",

@@ -13,7 +13,7 @@ use std::{path::PathBuf, process::Command};
 pub struct FileManager {
     pub(crate) location: Location,
     pub(crate) language: Language,
-    data_home: PathBuf,
+    pub(crate) data_home: PathBuf,
     runtime_home: PathBuf,
     pub(crate) home: PathBuf,
     pub(crate) places: Vec<crate::places::Place>,
@@ -26,6 +26,10 @@ pub struct FileManager {
     pub(crate) scroll: UniformListScrollHandle,
     pub(crate) focus: FocusHandle,
     listing: Option<Task<()>>,
+    pub(crate) menu: Option<crate::actions::Menu>,
+    pub(crate) dialog: Option<crate::actions::Dialog>,
+    pub(crate) clipboard: Option<(PathBuf, bool)>,
+    pub(crate) busy: bool,
 }
 
 impl FileManager {
@@ -51,6 +55,10 @@ impl FileManager {
             scroll: UniformListScrollHandle::new(),
             focus,
             listing: None,
+            menu: None,
+            dialog: None,
+            clipboard: None,
+            busy: false,
         };
         view.navigate(path, cx);
         view
@@ -65,6 +73,7 @@ impl FileManager {
     }
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
+        self.menu = None;
         self.loading = true;
         self.error = None;
         let hidden = self.hidden;
@@ -209,9 +218,12 @@ impl FileManager {
     pub(crate) fn key_down(
         &mut self,
         event: &KeyDownEvent,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.action_key(event, window, cx) {
+            return;
+        }
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
         match key {

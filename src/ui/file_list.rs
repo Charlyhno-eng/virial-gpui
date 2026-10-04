@@ -2,13 +2,20 @@ use crate::{app::FileManager, icons::icon, theme::*};
 use gpui::{Context, Div, FontWeight, div, prelude::*, px, uniform_list};
 
 impl FileManager {
-    pub(super) fn file_list(&self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn file_list(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let title = self.location.title(&self.home, self.language);
         let folders = self.entries.iter().filter(|entry| entry.directory).count();
         div()
             .flex()
             .flex_col()
             .flex_1()
+            .id("file-list-area")
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
+                    view.show_menu(None, event.position, window, cx);
+                }),
+            )
             .min_w_0()
             .h_full()
             .child(
@@ -170,6 +177,23 @@ impl FileManager {
                                             .text_color(color(MUTED))
                                             .child(view.language.size(entry.bytes)),
                                     )
+                                    .on_mouse_down(gpui::MouseButton::Right, {
+                                        let entry = entry.clone();
+                                        cx.listener(
+                                            move |view,
+                                                  event: &gpui::MouseDownEvent,
+                                                  window,
+                                                  cx| {
+                                                cx.stop_propagation();
+                                                view.show_menu(
+                                                    Some(entry.clone()),
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        )
+                                    })
                                     .on_click(cx.listener(
                                         move |view, event: &gpui::ClickEvent, window, cx| {
                                             if !event.standard_click() {
@@ -204,7 +228,9 @@ impl FileManager {
                     .border_color(color(BORDER))
                     .text_size(px(12.))
                     .text_color(color(MUTED))
-                    .child(if self.loading {
+                    .child(if self.busy {
+                        self.language.text("Working…").into()
+                    } else if self.loading {
                         self.language.text("Loading…").into()
                     } else {
                         self.language.counts(folders, self.entries.len() - folders)

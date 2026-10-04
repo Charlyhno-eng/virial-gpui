@@ -9,11 +9,16 @@ cd virial-gpui
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y build-essential pkg-config cmake clang libclang-dev libfontconfig1-dev libfreetype6-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libssl-dev libzstd-dev libvulkan1 mesa-vulkan-drivers xdg-utils curl
+sudo apt-get install -y build-essential pkg-config cmake clang libclang-dev libfontconfig1-dev libfreetype6-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libssl-dev libzstd-dev libvulkan1 mesa-vulkan-drivers xdg-utils libglib2.0-bin tar gzip curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 . "$HOME/.cargo/env"
 # Launch the dark file manager (double-click an item or press Enter to open):
 cargo run --release
+# Right-click files/folders or empty space for context actions.
+# Copy/cut/paste within Virial: Ctrl+C / Ctrl+X / Ctrl+V; rename: F2; Trash: Delete.
+# Create a folder: Ctrl+Shift+N. Escape closes menus and dialogs.
+# Rename edits the full name, including its extension; existing targets are never overwritten.
+# Open with lists installed desktop applications; compression creates a sibling .tar.gz archive.
 # Optional starting directory:
 cargo run --release -- /path/to/directory
 # The interface follows LC_ALL / LC_MESSAGES / LANG and LANGUAGE preferences.

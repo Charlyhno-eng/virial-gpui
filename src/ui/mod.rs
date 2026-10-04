@@ -1,5 +1,7 @@
 mod components;
+mod context_menu;
 mod file_list;
+pub(crate) mod input;
 mod sidebar;
 mod toolbar;
 
@@ -16,6 +18,7 @@ impl Render for FileManager {
             .id("file-manager")
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
+            .relative()
             .size_full()
             .flex()
             .bg(color(BACKGROUND))
@@ -33,5 +36,6 @@ impl Render for FileManager {
                     .child(self.toolbar(cx))
                     .child(self.file_list(cx)),
             )
+            .children(self.context_overlay(window, cx))
     }
 }

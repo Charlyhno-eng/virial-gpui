@@ -1,10 +1,13 @@
+mod actions;
 mod app;
+mod applications;
 mod files;
 mod i18n;
 mod icons;
 mod location;
 mod navigation;
 mod network;
+mod operations;
 mod places;
 mod recent;
 mod theme;
