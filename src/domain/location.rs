@@ -6,6 +6,7 @@ pub enum Location {
     Directory(PathBuf),
     Recent,
     Network,
+    Workspaces,
 }
 
 impl From<PathBuf> for Location {
@@ -27,6 +28,7 @@ impl Location {
     }
     pub fn title(&self, home: &Path, language: Language) -> String {
         match self {
+            Self::Workspaces => language.text("Workspaces").into(),
             Self::Recent => language.text("Recent").into(),
             Self::Network => language.text("Network").into(),
             Self::Directory(path) if path == home => language.text("Home").into(),
@@ -38,6 +40,7 @@ impl Location {
     }
     pub fn description(&self, language: Language) -> String {
         match self {
+            Self::Workspaces => language.text("Workspaces").into(),
             Self::Directory(path) => path.display().to_string(),
             Self::Recent => language.text("Recently opened files").into(),
             Self::Network => language.text("Mounted network shares").into(),
@@ -46,6 +49,7 @@ impl Location {
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Directory(_) => "folder",
+            Self::Workspaces => "view",
             Self::Recent => "recent",
             Self::Network => "network",
         }
@@ -53,6 +57,7 @@ impl Location {
     pub fn id(&self) -> gpui::ElementId {
         match self {
             Self::Directory(path) => std::sync::Arc::<Path>::from(path.clone()).into(),
+            Self::Workspaces => "workspaces".into(),
             Self::Recent => "recent-files".into(),
             Self::Network => "network-shares".into(),
         }

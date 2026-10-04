@@ -28,6 +28,22 @@ Directory symlinks appear as results but are not traversed, preventing cycles.
 Changing the query or closing the picker cancels the pending search. Large disks
 or slow mounts can take time to search; results remain usable during the scan.
 
+Press **Ctrl+W** or select **Workspaces** in the sidebar to open logical groups
+of folders. While browsing a folder, click **Add folder to workspace** (the folder
+button in the toolbar), then select an existing workspace or enter a new name.
+Repeat from other folders to group them together. **New workspace…** creates an
+empty group. Workspace cards open their associated folders and show file/folder
+counts plus the five most recently modified files, which you can click to open.
+Counts and activity cover the immediate contents of associated folders, respect
+**Ctrl+H**, and refresh with **F5**; they do not scan subfolders or record change
+events. Unavailable folders are flagged while the other folders remain usable.
+**Ctrl+W** or **Escape** returns through navigation history.
+
+Workspace associations persist in `$XDG_DATA_HOME/virial/workspaces` (by default
+`~/.local/share/virial/workspaces`). Adding the same folder again does not duplicate
+it. **Remove association** and **Remove workspace** only remove the logical group
+configuration; your files and folders stay in place.
+
 Use the details
 control to show or hide the information panel for the current location or
 selected item, and the view control to switch to a denser file list. The sidebar,
@@ -113,9 +129,9 @@ src/
     theme.rs              Colors and spacing
     icons.rs, i18n.rs      Embedded assets and translations
     components/           Buttons, input, sidebar, modals, title bar, toolbar
-    screens/home.rs       File browser screen
+    screens/              File browser and workspace screens
   domain/                 File models, locations, navigation services
-  infrastructure/         Directory storage, recent history, file operations
+  infrastructure/         Directory storage, workspaces, recent history, file operations
   state/                  Application state and user actions
   platform/linux/         Desktop applications, places, network mounts
 tests/                    Unit test sources grouped by layer

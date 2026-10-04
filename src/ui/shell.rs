@@ -65,10 +65,22 @@ impl Render for FileManager {
                                     .flex_col()
                                     .flex_1()
                                     .min_h_0()
-                                    .child(self.file_list(cx))
-                                    .when(self.details_open, |layout| {
-                                        layout.child(self.details_panel(cx))
-                                    }),
+                                    .when(
+                                        self.location
+                                            == crate::domain::location::Location::Workspaces,
+                                        |layout| layout.child(self.workspace_view(cx)),
+                                    )
+                                    .when(
+                                        self.location
+                                            != crate::domain::location::Location::Workspaces,
+                                        |layout| layout.child(self.file_list(cx)),
+                                    )
+                                    .when(
+                                        self.details_open
+                                            && self.location
+                                                != crate::domain::location::Location::Workspaces,
+                                        |layout| layout.child(self.details_panel(cx)),
+                                    ),
                                 self.location.id(),
                             )),
                     ),

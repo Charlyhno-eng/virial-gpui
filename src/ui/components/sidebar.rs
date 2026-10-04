@@ -37,6 +37,7 @@ impl FileManager {
                                 )
                             }),
                     )
+                    .child(self.place(103, "Workspaces", "view", Location::Workspaces, cx))
                     .child(self.place(101, "Recent", "recent", Location::Recent, cx))
                     .child(self.place(102, "Network", "network", Location::Network, cx))
                     .child(section_label(self.language.text("DEVICES")))

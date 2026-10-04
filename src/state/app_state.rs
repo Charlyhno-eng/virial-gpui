@@ -31,6 +31,7 @@ pub struct FileManager {
     pub(crate) home: PathBuf,
     pub(crate) places: Vec<crate::platform::linux::places::Place>,
     pub(crate) entries: Vec<Entry>,
+    pub(crate) workspaces: Vec<crate::infrastructure::workspaces::Summary>,
     pub(crate) folder_count: usize,
     pub(crate) history: History,
     pub(crate) hidden: bool,

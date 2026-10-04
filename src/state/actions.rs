@@ -18,7 +18,14 @@ pub struct Menu {
 #[derive(Clone)]
 pub enum NameAction {
     Rename(PathBuf),
-    New { directory: PathBuf, folder: bool },
+    Workspace {
+        folder: Option<PathBuf>,
+        names: Vec<String>,
+    },
+    New {
+        directory: PathBuf,
+        folder: bool,
+    },
 }
 pub enum Dialog {
     Name {
@@ -295,10 +302,30 @@ impl FileManager {
         cx.notify();
     }
     pub(crate) fn confirm_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(Dialog::Name {
+            action: NameAction::Workspace { folder, .. },
+            input,
+        }) = &self.dialog
+        {
+            let name = input.read(cx).text.trim().to_string();
+            if name.is_empty() {
+                self.error = Some(self.language.text("Enter a workspace name").into());
+                cx.notify();
+                return;
+            }
+            let edit = crate::infrastructure::workspaces::Edit::Add {
+                name,
+                folder: folder.clone(),
+            };
+            self.close_dialog(window, cx);
+            self.edit_workspace(edit, cx);
+            return;
+        }
         let operation = match &self.dialog {
             Some(Dialog::Name { action, input }) => {
                 let name = input.read(cx).text.clone();
                 let directory = match action {
+                    NameAction::Workspace { .. } => unreachable!(),
                     NameAction::Rename(path) => path.parent(),
                     NameAction::New { directory, .. } => Some(directory.as_path()),
                 };
@@ -310,6 +337,7 @@ impl FileManager {
                     return;
                 }
                 match action.clone() {
+                    NameAction::Workspace { .. } => unreachable!(),
                     NameAction::Rename(source) => Some(Operation::Rename { source, name }),
                     NameAction::New { directory, folder } => Some(Operation::New {
                         directory,

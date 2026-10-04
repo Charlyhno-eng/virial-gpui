@@ -37,6 +37,32 @@ impl Language {
             return english;
         }
         match english {
+            "Workspaces" => "Espaces de travail",
+            "New workspace…" => "Nouvel espace de travail…",
+            "Workspace name" => "Nom de l’espace de travail",
+            "Enter a workspace name" => "Saisissez un nom d’espace de travail",
+            "Add folder to workspace" => "Ajouter le dossier à un espace de travail",
+            "Use an existing name to add this folder, or a new name to create a workspace" => {
+                "Utilisez un nom existant pour ajouter ce dossier, ou un nouveau nom pour créer un espace de travail"
+            }
+            "Create an empty workspace, then add folders from the toolbar" => {
+                "Créez un espace de travail vide, puis ajoutez des dossiers depuis la barre d’outils"
+            }
+            "Logical groups of folders · Ctrl+W / Escape returns" => {
+                "Groupes logiques de dossiers · Ctrl+W / Échap pour revenir"
+            }
+            "No workspaces yet" => "Aucun espace de travail",
+            "Browse a folder and use Add folder to workspace in the toolbar" => {
+                "Ouvrez un dossier puis utilisez Ajouter le dossier à un espace de travail dans la barre d’outils"
+            }
+            "Remove workspace" => "Supprimer l’espace de travail",
+            "Remove association" => "Retirer l’association",
+            "Counts and activity cover immediate folder contents" => {
+                "Les compteurs et l’activité concernent le contenu direct des dossiers"
+            }
+            "Recently modified files" => "Fichiers récemment modifiés",
+            "Cannot read workspaces" => "Impossible de lire les espaces de travail",
+            "Cannot save workspace" => "Impossible d’enregistrer l’espace de travail",
             "Search everywhere" => "Rechercher partout",
             "Search everywhere · Ctrl+P" => "Rechercher partout · Ctrl+P",
             "Type a name or path; spaces separate search terms" => {

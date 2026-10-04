@@ -37,6 +37,7 @@ impl FileManager {
             places: crate::platform::linux::places::discover(&home),
             home,
             entries: Vec::new(),
+            workspaces: Vec::new(),
             folder_count: 0,
             hidden: false,
             loading: false,
@@ -87,7 +88,12 @@ impl FileManager {
                 Location::Directory(path) => read_directory(&path, hidden),
                 Location::Recent => crate::infrastructure::recent::read(&data, hidden),
                 Location::Network => crate::platform::linux::network::read(&runtime),
+                Location::Workspaces => {
+                    return crate::infrastructure::workspaces::summaries(&data, hidden)
+                        .map(|summaries| (Vec::new(), summaries));
+                }
             }
+            .map(|entries| (entries, Vec::new()))
         });
         // Replacing this task cancels the UI update from an outdated request.
         self.listing = Some(cx.spawn(async move |view, cx| {
@@ -95,7 +101,8 @@ impl FileManager {
             let _ = view.update(cx, |view, cx| {
                 view.loading = false;
                 match result {
-                    Ok(entries) => {
+                    Ok((entries, workspaces)) => {
+                        view.workspaces = workspaces;
                         let selected_paths: std::collections::HashSet<_> =
                             view.selected_paths().into_iter().collect();
                         let focus_path = view
@@ -323,6 +330,21 @@ impl FileManager {
         if self.global_search_key(event, window, cx) {
             return;
         }
+        if self.dialog.is_none()
+            && event.keystroke.key == "w"
+            && event.keystroke.modifiers.control
+            && !event.keystroke.modifiers.alt
+            && !event.keystroke.modifiers.shift
+        {
+            self.focus.focus(window);
+            if self.location == Location::Workspaces {
+                self.back(cx);
+            } else {
+                self.navigate_location(Location::Workspaces, cx);
+            }
+            cx.stop_propagation();
+            return;
+        }
         if self.action_key(event, window, cx) {
             return;
         }
@@ -352,6 +374,7 @@ impl FileManager {
                 }
             }
             "enter" if !modifiers.modified() => self.open_selected(cx),
+            "escape" if self.location == Location::Workspaces => self.back(cx),
             "escape" => {
                 if window.is_fullscreen() {
                     window.toggle_fullscreen();

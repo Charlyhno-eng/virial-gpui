@@ -92,6 +92,25 @@ impl FileManager {
                             cx.listener(|view, _, window, cx| view.show_global_search(window, cx)),
                         ),
                     )
+                    .when_some(
+                        self.location.directory().map(|path| path.to_path_buf()),
+                        |bar, folder| {
+                            bar.child(
+                                toolbar_button(
+                                    "add-workspace-folder",
+                                    "folder",
+                                    self.language.text("Add folder to workspace"),
+                                    !self.busy,
+                                    false,
+                                )
+                                .on_click(cx.listener(
+                                    move |view, _, window, cx| {
+                                        view.workspace_dialog(Some(folder.clone()), window, cx)
+                                    },
+                                )),
+                            )
+                        },
+                    )
                     .child(
                         toolbar_button(
                             "refresh",

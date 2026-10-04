@@ -26,6 +26,10 @@ impl FileManager {
         if let Some(dialog) = &self.dialog {
             let heading = match dialog {
                 Dialog::Name {
+                    action: NameAction::Workspace { .. },
+                    ..
+                } => "Workspace name",
+                Dialog::Name {
                     action: NameAction::Rename(_),
                     ..
                 } => "Rename…",
@@ -58,6 +62,21 @@ impl FileManager {
                 content = content.child(div().text_color(color(ERROR)).child(error.clone()));
             }
             content = match dialog {
+                Dialog::Name { action: NameAction::Workspace { folder, names }, input } => content
+                    .child(self.language.text(if folder.is_some() { "Use an existing name to add this folder, or a new name to create a workspace" } else { "Create an empty workspace, then add folders from the toolbar" }))
+                    .children(folder.as_ref().map(|path| div().text_color(color(MUTED)).child(path.display().to_string())))
+                    .child(input.clone())
+                    .child(div().id("existing-workspaces").max_h(px(180.)).overflow_y_scroll()
+                        .children(names.iter().enumerate().map(|(index, name)| {
+                            let name = name.clone();
+                            let folder = folder.clone();
+                            div().id(("existing-workspace", index)).px_3().py_2().rounded_md()
+                                .cursor_pointer().hover(|style| style.bg(color(HOVER)))
+                                .child(name.clone()).on_click(cx.listener(move |view, _, window, cx| {
+                                    view.close_dialog(window, cx);
+                                    view.edit_workspace(crate::infrastructure::workspaces::Edit::Add { name: name.clone(), folder: folder.clone() }, cx);
+                                }))
+                        }))),
                 Dialog::Name { input, .. } => content
                     .child(
                         div().text_size(px(11.)).text_color(color(MUTED)).child(
