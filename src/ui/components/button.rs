@@ -30,3 +30,30 @@ pub fn toolbar_button(
         .child(icon(symbol, 14., if active { ACCENT } else { MUTED }))
         .child(label)
 }
+
+struct ButtonTooltip(&'static str);
+
+impl gpui::Render for ButtonTooltip {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_sm()
+            .bg(color(SURFACE))
+            .border_1()
+            .border_color(color(BORDER))
+            .text_color(color(TEXT))
+            .text_size(px(11.))
+            .child(self.0)
+    }
+}
+
+pub fn navigation_button(
+    id: &'static str,
+    symbol: &'static str,
+    label: &'static str,
+    enabled: bool,
+) -> Stateful<Div> {
+    toolbar_button(id, symbol, "", enabled, false)
+        .tooltip(move |_, cx| cx.new(|_| ButtonTooltip(label)).into())
+}

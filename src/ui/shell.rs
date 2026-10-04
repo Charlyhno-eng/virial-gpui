@@ -82,7 +82,27 @@ impl Render for FileManager {
                                         |layout| layout.child(self.file_list(cx)),
                                     )
                                     .when(
+                                        self.folder_details && self.location.directory().is_some(),
+                                        |layout| {
+                                            layout.child(
+                                                div()
+                                                    .w(px(280.))
+                                                    .flex_shrink_0()
+                                                    .border_l_1()
+                                                    .border_color(color(BORDER))
+                                                    .child(
+                                                        div()
+                                                            .id("folder-information")
+                                                            .size_full()
+                                                            .overflow_y_scroll()
+                                                            .child(self.details_panel(true, cx)),
+                                                    ),
+                                            )
+                                        },
+                                    )
+                                    .when(
                                         self.details_open
+                                            && !self.folder_details
                                             && !self.preview_expanded
                                             && self.location
                                                 != crate::domain::location::Location::Workspaces,
@@ -110,6 +130,7 @@ impl Render for FileManager {
                 ))
             })
             .children(titlebar::resize_handles(window))
+            .children(self.display_overlay(window, cx))
             .children(self.context_overlay(window, cx))
             .children(self.global_search_overlay(cx))
     }

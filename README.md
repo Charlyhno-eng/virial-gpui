@@ -14,7 +14,7 @@ destination. Short fades accompany opening menus or dialogs, with a
 subtle activity indicator while work is in progress.
 
 Search the current folder by typing in the toolbar search field. Click the
-**Search everywhere** button beside it or press **Ctrl+P** for a global file and
+**Display → Search everywhere** command or press **Ctrl+P** for a global file and
 folder picker, independently of the folder you are browsing. Type a name or path;
 space-separated terms match case-insensitively, with exact names ranked before
 partial and fuzzy (letters in order) path matches. The picker shows the best 100
@@ -32,8 +32,7 @@ Changing the query or closing the picker cancels the pending search. Large disks
 or slow mounts can take time to search; results remain usable during the scan.
 
 Press **Ctrl+W** or select **Workspaces** in the sidebar to open logical groups
-of folders. While browsing a folder, click **Add folder to workspace** (the folder
-button in the toolbar), then select an existing workspace or enter a new name.
+of folders. While browsing a folder, choose **Display → Add folder to workspace**, then select an existing workspace or enter a new name.
 Repeat from other folders to group them together. **New workspace…** creates an
 empty group. Workspace cards open their associated folders and show file/folder
 counts plus the five most recently modified files, which you can click to open.
@@ -52,12 +51,21 @@ opens a temporary preview beside the files. Press **Space** to expand it across
 the application window (press Space again to return to the side panel). **Escape**
 or **Close** dismisses the preview and clears the selection, restoring the two-panel
 layout. Selecting another item opens its preview automatically. The **Preview**
-control can hide or reopen the panel for the current selection.
+option in **Display** can hide or reopen the panel for the current selection.
+Enable **Display → Folder information** to keep a right-hand information panel
+for the current folder, including while selecting items. This mode replaces the
+temporary side preview; **Space** still opens the selected item’s expanded preview.
+It shows the folder path, type, item count, and modification time (UTC). Selected folders also show their immediate
+item count; counts respect the hidden-file setting.
 
 Previews show images up to 20 MiB or the first 64 KiB of UTF-8 text, loaded in the
 background. Folders, binary files, and unsupported formats show item information
-instead. Use the view control to switch to a denser file list. The sidebar,
-breadcrumbs, and navigation buttons remain available while browsing.
+instead. **Display** groups compact-list and hidden-file settings with global
+search and adding the current folder to a workspace. Click the **Name** column
+heading to switch between ascending and descending alphabetical order; folders
+stay first and selections remain attached to their files. Navigation buttons,
+interactive breadcrumbs, folder search, refresh, and Display share the toolbar.
+The sidebar, breadcrumbs, and navigation buttons remain available while browsing.
 
 The file list appears without waiting for recursive folder sizes. Its size column
 shows file sizes immediately and fills in folder totals in background batches;

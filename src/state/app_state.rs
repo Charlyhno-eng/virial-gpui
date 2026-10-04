@@ -58,6 +58,9 @@ pub struct FileManager {
     pub(crate) preview: super::preview::Preview,
     pub(crate) preview_task: Option<Task<()>>,
     pub(crate) compact_view: bool,
+    pub(crate) display_menu: bool,
+    pub(crate) folder_details: bool,
+    pub(crate) name_descending: bool,
     pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
 }
 

@@ -5,7 +5,7 @@ mod sidebar;
 pub(super) mod titlebar;
 mod toolbar;
 
-pub(super) use button::toolbar_button;
+pub(super) use button::{navigation_button, toolbar_button};
 
 use crate::ui::theme::*;
 use gpui::{Animation, AnimationElement, AnimationExt, Div, ElementId, div, prelude::*, px};

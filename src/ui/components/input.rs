@@ -6,6 +6,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 pub struct NameInput {
     pub text: String,
+    pub(crate) placeholder: String,
     focus: FocusHandle,
     selection: Range<usize>,
     anchor: usize,
@@ -25,6 +26,7 @@ impl NameInput {
         let end = text.len();
         Self {
             text,
+            placeholder: String::new(),
             focus,
             selection: 0..end,
             anchor: 0,
@@ -285,13 +287,23 @@ impl Element for InputElement {
     ) -> ShapedLine {
         let input = self.0.read(cx);
         let style = window.text_style();
+        let placeholder = input.text.is_empty();
+        let text = if placeholder {
+            &input.placeholder
+        } else {
+            &input.text
+        };
         window.text_system().shape_line(
-            input.text.clone().into(),
+            text.clone().into(),
             style.font_size.to_pixels(window.rem_size()),
             &[TextRun {
-                len: input.text.len(),
+                len: text.len(),
                 font: style.font(),
-                color: style.color,
+                color: if placeholder {
+                    color(MUTED)
+                } else {
+                    style.color
+                },
                 background_color: None,
                 underline: None,
                 strikethrough: None,

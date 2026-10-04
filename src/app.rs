@@ -65,6 +65,9 @@ impl FileManager {
             preview: crate::state::preview::Preview::Unavailable,
             preview_task: None,
             compact_view: false,
+            display_menu: false,
+            folder_details: false,
+            name_descending: false,
             titlebar_drag: None,
         };
         view.navigate(path, cx);
@@ -80,6 +83,7 @@ impl FileManager {
     }
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
+        self.display_menu = false;
         self.preview_expanded = false;
         self.directory_sizes = None;
         self.menu = None;
@@ -153,6 +157,19 @@ impl FileManager {
                         view.location = location;
                         view.folder_count = entries.iter().filter(|entry| entry.directory).count();
                         view.entries = entries;
+                        view.preview_path = None;
+                        view.preview_task = None;
+                        crate::state::browser::sort_entries(
+                            &mut view.entries,
+                            &mut view.selection,
+                            view.name_descending,
+                        );
+                        let title = view.location.title(&view.home, view.language);
+                        let placeholder = format!("{} {title}…", view.language.text("Search in"));
+                        view.search_input.update(cx, |input, cx| {
+                            input.placeholder = placeholder;
+                            cx.notify();
+                        });
                         view.load_directory_sizes(cx);
                     }
                     Err(error) => {
@@ -169,7 +186,7 @@ impl FileManager {
         cx.notify();
     }
 
-    fn load_directory_sizes(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load_directory_sizes(&mut self, cx: &mut Context<Self>) {
         let folders = self
             .entries
             .iter()
@@ -334,6 +351,12 @@ impl FileManager {
         if event.keystroke.key == "f11" && !event.keystroke.modifiers.modified() {
             self.titlebar_drag = None;
             window.toggle_fullscreen();
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+        if event.keystroke.key == "escape" && self.display_menu {
+            self.display_menu = false;
             cx.stop_propagation();
             cx.notify();
             return;

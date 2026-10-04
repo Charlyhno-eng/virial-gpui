@@ -3,12 +3,15 @@ use gpui::{Animation, AnimationExt, Context, Div, FontWeight, div, prelude::*, p
 use std::time::Duration;
 
 impl FileManager {
-    pub(crate) fn details_panel(&self, _: &mut Context<Self>) -> Div {
-        let selected = self
-            .selection
-            .primary()
-            .and_then(|index| self.entries.get(index))
-            .cloned();
+    pub(crate) fn details_panel(&self, current_folder: bool, _: &mut Context<Self>) -> Div {
+        let selected = (!current_folder)
+            .then(|| {
+                self.selection
+                    .primary()
+                    .and_then(|index| self.entries.get(index))
+                    .cloned()
+            })
+            .flatten();
         let has_selection = selected.is_some();
         let modified = selected
             .as_ref()
@@ -18,18 +21,18 @@ impl FileManager {
             .and_then(|metadata| metadata.modified().ok())
             .map(|modified| {
                 chrono::DateTime::<chrono::Utc>::from(modified)
-                    .format("%Y-%m-%d %H:%M")
+                    .format("%Y-%m-%d %H:%M UTC")
                     .to_string()
             })
             .unwrap_or_else(|| "—".to_string());
         let (name, path, kind, size, symbol) = if let Some(entry) = selected {
-            let kind = entry.kind().to_string();
+            let kind = entry.kind();
             let symbol = entry.icon();
             (
                 entry.name,
                 entry.path.display().to_string(),
                 kind,
-                crate::domain::models::format_size(entry.bytes),
+                self.language.size(entry.bytes),
                 symbol,
             )
         } else {
@@ -39,8 +42,7 @@ impl FileManager {
                 "Folder"
             } else {
                 "Location"
-            }
-            .to_string();
+            };
             let size = "—".to_string();
             (name, path, kind, size, self.location.icon())
         };
@@ -69,23 +71,51 @@ impl FileManager {
                     .flex()
                     .justify_between()
                     .text_size(px(11.))
-                    .child("Type")
-                    .child(div().text_color(color(MUTED)).child(kind)),
+                    .child(self.language.text("Type"))
+                    .child(
+                        div()
+                            .text_color(color(MUTED))
+                            .child(self.language.text(kind)),
+                    ),
             )
             .child(
                 div()
                     .flex()
                     .justify_between()
                     .text_size(px(11.))
-                    .child("Size")
+                    .child(self.language.text("Size"))
                     .child(div().text_color(color(MUTED)).child(size)),
             )
+            .when(
+                current_folder || matches!(self.preview, crate::state::preview::Preview::Folder(_)),
+                |panel| {
+                    let count = if current_folder {
+                        self.entries.len()
+                    } else if let crate::state::preview::Preview::Folder(count) = self.preview {
+                        count
+                    } else {
+                        0
+                    };
+                    panel.child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Contents"))
+                            .child(
+                                div()
+                                    .text_color(color(MUTED))
+                                    .child(self.language.item_count(count)),
+                            ),
+                    )
+                },
+            )
             .child(
                 div()
                     .flex()
                     .justify_between()
                     .text_size(px(11.))
-                    .child("Modified")
+                    .child(self.language.text("Modified"))
                     .child(div().text_color(color(MUTED)).child(modified)),
             )
             .child(div().h(px(1.)).my_1().bg(color(BORDER)))
@@ -93,17 +123,17 @@ impl FileManager {
                 div()
                     .text_size(px(10.))
                     .text_color(color(MUTED))
-                    .child("DETAILS"),
+                    .child(self.language.text("DETAILS")),
             )
             .child(
                 div()
                     .text_size(px(11.))
                     .text_color(color(MUTED))
-                    .child(if has_selection {
+                    .child(self.language.text(if has_selection {
                         "Selected item"
                     } else {
                         "Current location"
-                    }),
+                    })),
             )
     }
 
@@ -150,6 +180,8 @@ impl FileManager {
                             .text_size(px(17.))
                             .text_ellipsis()
                             .font_weight(FontWeight::SEMIBOLD)
+                            .flex().items_center().gap_2()
+                            .child(icon(self.location.icon(), 26., ACCENT_BLUE))
                             .child(title),
                     )
                     .child(
@@ -184,7 +216,11 @@ impl FileManager {
                     .border_color(color(BORDER))
                     .text_size(px(10.))
                     .text_color(color(MUTED))
-                    .child(div().flex_1().min_w_0().child(self.language.text("NAME")))
+                    .child(div().id("sort-name").flex_1().min_w_0().flex().items_center().gap_2().cursor_pointer()
+                        .hover(|style| style.text_color(color(TEXT)))
+                        .child(self.language.text("NAME"))
+                        .child(icon(if self.name_descending { "down" } else { "up" }, 11., MUTED))
+                        .on_click(cx.listener(|view, _, _, cx| view.toggle_name_sort(cx))))
                     .child(div().w(px(104.)).child(self.language.text("KIND")))
                     .child(
                         div()

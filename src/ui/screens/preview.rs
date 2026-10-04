@@ -96,13 +96,14 @@ impl FileManager {
                             .text_color(color(MUTED))
                             .child(self.language.text("Loading preview…"))
                             .into_any_element(),
+                        Preview::Folder(_) => div().into_any_element(),
                         Preview::Unavailable => div()
                             .p_3()
                             .text_color(color(MUTED))
                             .child(self.language.text("No content preview available"))
                             .into_any_element(),
                     })
-                    .child(self.details_panel(cx)),
+                    .child(self.details_panel(false, cx)),
             )
     }
 }

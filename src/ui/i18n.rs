@@ -37,6 +37,17 @@ impl Language {
             return english;
         }
         match english {
+            "Display" => "Afficher",
+            "Compact list" => "Liste compacte",
+            "Folder information" => "Informations du dossier",
+            "Search in" => "Rechercher dans",
+            "Type" => "Type",
+            "Size" => "Taille",
+            "Contents" => "Contenu",
+            "Location" => "Emplacement",
+            "DETAILS" => "DÉTAILS",
+            "Selected item" => "Élément sélectionné",
+            "Current location" => "Emplacement actuel",
             "Preview" => "Aperçu",
             "Preview · Space" => "Aperçu · Espace",
             "Loading preview…" => "Chargement de l’aperçu…",
@@ -185,6 +196,13 @@ impl Language {
             size.replace('.', ",").replace('B', "o")
         } else {
             size
+        }
+    }
+
+    pub fn item_count(self, count: usize) -> String {
+        match self {
+            Self::French => format!("{count} élément{}", if count > 1 { "s" } else { "" }),
+            Self::English => format!("{count} item{}", if count == 1 { "" } else { "s" }),
         }
     }
 

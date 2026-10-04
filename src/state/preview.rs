@@ -5,14 +5,17 @@ use std::{fs::File, io::Read, path::PathBuf};
 
 pub(crate) enum Preview {
     Loading,
+    Folder(usize),
     Image(PathBuf),
     Text(String),
     Unavailable,
 }
 
-fn read_preview(entry: &Entry) -> Preview {
+fn read_preview(entry: &Entry, hidden: bool) -> Preview {
     if entry.directory {
-        return Preview::Unavailable;
+        return crate::infrastructure::storage::read_directory(&entry.path, hidden)
+            .map(|entries| Preview::Folder(entries.len()))
+            .unwrap_or(Preview::Unavailable);
     }
     if !std::fs::metadata(&entry.path).is_ok_and(|metadata| metadata.is_file()) {
         return Preview::Unavailable;
@@ -68,9 +71,10 @@ impl FileManager {
         let Some(entry) = entry else {
             return;
         };
+        let hidden = self.hidden;
         let read = cx
             .background_executor()
-            .spawn(async move { read_preview(&entry) });
+            .spawn(async move { read_preview(&entry, hidden) });
         self.preview_task = Some(cx.spawn(async move |view, cx| {
             let preview = read.await;
             let _ = view.update(cx, |view, cx| {
