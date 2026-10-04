@@ -13,6 +13,14 @@ use gpui::{
 };
 
 fn main() {
+    // Register downloaded binaries without requiring a graphical session.
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--install-desktop")) {
+        if let Err(error) = platform::linux::desktop::register() {
+            eprintln!("Cannot register Virial's desktop icon: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Err(error) = platform::linux::desktop::register() {
         eprintln!("Cannot register Virial's desktop icon: {error}");
     }
@@ -50,6 +58,9 @@ fn main() {
                 ..Default::default()
             };
             if let Err(error) = cx.open_window(options, |window, cx| {
+                if let Err(error) = platform::linux::desktop::set_window_icon(window) {
+                    eprintln!("Cannot set Virial's window icon: {error}");
+                }
                 window.set_rem_size(px(14.));
                 cx.new(|cx| FileManager::new(path, window, cx))
             }) {

@@ -5899,10 +5899,13 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "gpui",
+ "image",
  "libc",
+ "raw-window-handle",
  "roxmltree",
  "unicode-segmentation",
  "url",
+ "x11rb",
 ]
 
 [[package]]

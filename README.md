@@ -45,7 +45,9 @@ cargo run --release
 
 This runs the app from the current checkout without installing a permanent copy of the executable.
 
-On launch, Virial registers its embedded logo and desktop launcher in `$XDG_DATA_HOME` (default: `~/.local/share`) so the application menu and dock can display its icon, including when running a downloaded executable directly. The launcher follows the executable's location the next time you run it.
+On first launch, Virial registers its embedded logo and desktop launcher in `$XDG_DATA_HOME` (default: `~/.local/share`), refreshes KDE's application cache when available, and supplies the logo directly to X11 windows. This also works when running a downloaded executable directly. The launcher follows the executable's location the next time you run it.
+
+To register a downloaded executable before opening the app, run `./virial-gpui --install-desktop`. This needs no graphical session. A raw Linux executable may still have a generic file icon in Downloads; open Virial from the application menu to use its branded launcher.
 
 ### Install on this machine
 

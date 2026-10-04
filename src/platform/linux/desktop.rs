@@ -2,6 +2,7 @@
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
 };
 
 pub(crate) const APP_ID: &str = "virial-gpui";
@@ -12,7 +13,10 @@ pub(crate) fn register() -> io::Result<()> {
         env::var_os("XDG_DATA_HOME").map(PathBuf::from),
         env::var_os("HOME").map(PathBuf::from),
     )?;
-    install(&data, &env::current_exe()?)
+    if install(&data, &env::current_exe()?)? {
+        refresh_desktop_cache(&data);
+    }
+    Ok(())
 }
 
 fn data_home(xdg: Option<PathBuf>, home: Option<PathBuf>) -> io::Result<PathBuf> {
@@ -50,9 +54,9 @@ fn executable(path: &Path) -> io::Result<String> {
     Ok(format!("\"{}\"", value(Path::new(&quoted))?))
 }
 
-fn write_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
+fn write_changed(path: &Path, bytes: &[u8]) -> io::Result<bool> {
     match fs::read(path) {
-        Ok(existing) if existing == bytes => return Ok(()),
+        Ok(existing) if existing == bytes => return Ok(false),
         Ok(_) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
@@ -60,10 +64,11 @@ fn write_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, bytes)
+    fs::write(path, bytes)?;
+    Ok(true)
 }
 
-fn install(data: &Path, binary: &Path) -> io::Result<()> {
+fn install(data: &Path, binary: &Path) -> io::Result<bool> {
     let icon = data.join(format!("icons/hicolor/512x512/apps/{APP_ID}.png"));
     // An absolute icon path also works before the icon theme cache refreshes.
     let desktop = format!(
@@ -73,11 +78,86 @@ fn install(data: &Path, binary: &Path) -> io::Result<()> {
         executable(binary)?,
         value(&icon)?,
     );
-    write_changed(&icon, LOGO)?;
-    write_changed(
+    let icon_changed = write_changed(&icon, LOGO)?;
+    let launcher_changed = write_changed(
         &data.join(format!("applications/{APP_ID}.desktop")),
         desktop.as_bytes(),
-    )
+    )?;
+    if icon_changed || launcher_changed {
+        // Theme lookups cache misses too. Updating only a nested PNG does not
+        // invalidate those caches; the theme directory itself must change.
+        fs::File::open(data.join("icons/hicolor"))?
+            .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::now()))?;
+    }
+    Ok(icon_changed || launcher_changed)
+}
+
+fn refresh_desktop_cache(data: &Path) {
+    // KDE's application menu caches desktop entries separately from icons.
+    // These helpers are optional, and registration must work without them.
+    for helper in ["kbuildsycoca6", "kbuildsycoca5"] {
+        if let Ok(status) = Command::new(helper)
+            .arg("--noincremental")
+            .env("XDG_DATA_HOME", data)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            if status.success() {
+                break;
+            }
+        }
+    }
+}
+
+/// X11 task switchers can use this even when desktop registration fails.
+/// Wayland uses the app_id and the registered desktop entry instead.
+pub(crate) fn set_window_icon(window: &gpui::Window) -> Result<(), Box<dyn std::error::Error>> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let handle = HasWindowHandle::window_handle(window)?.as_raw();
+    let id = match handle {
+        RawWindowHandle::Xcb(handle) => handle.window.get(),
+        RawWindowHandle::Xlib(handle) => u32::try_from(handle.window)?,
+        _ => return Ok(()),
+    };
+    let (connection, _) = x11rb::connect(None)?;
+    publish_window_icon(&connection, id)
+}
+
+fn window_icon() -> Result<Vec<u32>, image::ImageError> {
+    let image = image::load_from_memory_with_format(LOGO, image::ImageFormat::Png)?.to_rgba8();
+    let mut values = vec![image.width(), image.height()];
+    // EWMH specifies unpremultiplied ARGB cardinals, not RGBA bytes.
+    values.extend(image.pixels().map(|pixel| {
+        let [r, g, b, a] = pixel.0;
+        u32::from_be_bytes([a, r, g, b])
+    }));
+    Ok(values)
+}
+
+fn publish_window_icon(
+    connection: &impl x11rb::connection::Connection,
+    window: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use x11rb::{
+        protocol::xproto::{AtomEnum, ConnectionExt, PropMode},
+        wrapper::ConnectionExt as _,
+    };
+    let atom = connection
+        .intern_atom(false, b"_NET_WM_ICON")?
+        .reply()?
+        .atom;
+    connection
+        .change_property32(
+            PropMode::REPLACE,
+            window,
+            atom,
+            AtomEnum::CARDINAL,
+            &window_icon()?,
+        )?
+        .check()?;
+    connection.flush()?;
+    Ok(())
 }
 
 #[cfg(test)]
