@@ -103,6 +103,7 @@ impl Language {
             "Operation failed" => "Échec de l’opération",
             "Invalid file name" => "Nom de fichier invalide",
             "This name is not valid UTF-8" => "Ce nom n’est pas valide en UTF-8",
+            "Drop here" => "Déposer ici",
             "Working…" => "Opération en cours…",
             "No applications found" => "Aucune application trouvée",
             "Edit the full name, including the extension" => {

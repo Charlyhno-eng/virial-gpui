@@ -4,8 +4,9 @@ use crate::{
     state::selection::Selection, ui::theme::*,
 };
 use gpui::{
-    Context, Div, DragMoveEvent, ExternalPaths, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, Render, Stateful, Window, div, point, prelude::*, px,
+    Animation, AnimationExt, Context, Div, DragMoveEvent, ExternalPaths, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Render, Stateful, Window, div,
+    point, prelude::*, px,
 };
 use std::{path::PathBuf, sync::Arc};
 
@@ -13,19 +14,29 @@ use std::{path::PathBuf, sync::Arc};
 pub(crate) struct FileDrag {
     pub(crate) paths: Arc<[PathBuf]>,
     pub(crate) label: String,
+    pub(crate) count_label: String,
 }
 impl Render for FileDrag {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
+            .flex()
+            .flex_col()
+            .gap_1()
             .px_3()
             .py_2()
             .rounded_md()
             .bg(color(SURFACE))
             .border_1()
-            .border_color(color(ACCENT))
+            .border_color(translucent(ACCENT_BLUE, 0.3))
             .text_size(px(11.))
             .text_color(color(TEXT))
             .child(self.label.clone())
+            .child(
+                div()
+                    .text_size(px(10.))
+                    .text_color(color(MUTED))
+                    .child(self.count_label.clone()),
+            )
     }
 }
 
@@ -64,12 +75,13 @@ impl FileManager {
         } else {
             vec![self.entries[index].path.clone()].into()
         };
-        let label = if paths.len() == 1 {
-            self.entries[index].name.clone()
-        } else {
-            self.language.selected_count(paths.len())
-        };
-        FileDrag { paths, label }
+        let label = self.entries[index].name.clone();
+        let count_label = self.language.selected_count(paths.len());
+        FileDrag {
+            paths,
+            label,
+            count_label,
+        }
     }
 
     pub(crate) fn drop_target(
@@ -85,6 +97,8 @@ impl FileManager {
             .external_drop
             .as_ref()
             .is_some_and(|drop| drop.destination.as_ref() == Some(&directory));
+        let hovered = external_hovered || self.drop_hover.as_ref() == Some(&directory);
+        let internal_destination = directory.clone();
         let view = cx.entity().downgrade();
         row.can_drop(move |value, _, cx| {
             view.upgrade().is_some_and(|view| {
@@ -103,11 +117,45 @@ impl FileManager {
             })
         })
         .drag_over::<FileDrag>(|style, _, _, _| {
-            style.bg(color(SELECTED)).border_color(color(ACCENT))
+            style
+                .bg(translucent(ACCENT_BLUE, 0.10))
+                .border_color(translucent(ACCENT_BLUE, 0.35))
         })
-        .when(external_hovered, |row| {
-            row.bg(color(SELECTED)).border_color(color(ACCENT))
+        .when(hovered, |row| {
+            row.relative()
+                .child(
+                    div()
+                        .absolute()
+                        .right_2()
+                        .bottom_0()
+                        .text_size(px(9.))
+                        .text_color(color(ACCENT_BLUE))
+                        .child(self.language.text("Drop here"))
+                        .with_animation(
+                            "drop-hint",
+                            Animation::new(std::time::Duration::from_millis(150))
+                                .with_easing(gpui::ease_out_quint()),
+                            |hint, delta| hint.opacity(0.4 + 0.4 * delta).bottom(px(2. * delta)),
+                        ),
+                )
+                .bg(translucent(ACCENT_BLUE, 0.10))
+                .border_color(translucent(ACCENT_BLUE, 0.35))
         })
+        .on_drag_move(
+            cx.listener(move |view, event: &DragMoveEvent<FileDrag>, _, cx| {
+                if event.bounds.contains(&event.event.position)
+                    && !view.busy
+                    && !view.loading
+                    && view.dialog.is_none()
+                    && !event.drag(cx).paths.iter().any(|path| {
+                        internal_destination == *path || internal_destination.starts_with(path)
+                    })
+                {
+                    view.drop_hover = Some(internal_destination.clone());
+                    cx.notify();
+                }
+            }),
+        )
         .on_drag_move(cx.listener(
             move |view, event: &DragMoveEvent<ExternalPaths>, window, cx| {
                 let position = external_position(

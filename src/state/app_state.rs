@@ -36,6 +36,8 @@ pub struct FileManager {
     pub(crate) history: History,
     pub(crate) hidden: bool,
     pub(crate) loading: bool,
+    pub(crate) navigation_generation: usize,
+    pub(crate) drop_hover: Option<PathBuf>,
     pub(crate) error: Option<String>,
     pub(crate) selection: super::selection::Selection,
     pub(crate) marquee: Option<super::mouse::Marquee>,

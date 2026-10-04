@@ -6,6 +6,7 @@ impl Render for FileManager {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !cx.has_active_drag() {
             self.external_drop = None;
+            self.drop_hover = None;
         }
         window.set_window_title(&format!(
             "{} — Virial",
@@ -27,6 +28,11 @@ impl Render for FileManager {
             .on_mouse_move(cx.listener(Self::move_window))
             .on_mouse_move(cx.listener(Self::update_marquee))
             .on_drag_move(cx.listener(Self::track_external_drag))
+            .on_drag_move(cx.listener(
+                |view, _: &gpui::DragMoveEvent<crate::state::mouse::FileDrag>, _, _| {
+                    view.drop_hover = None;
+                },
+            ))
             .capture_any_mouse_up(cx.listener(Self::finish_mouse_selection))
             .on_mouse_up_out(
                 gpui::MouseButton::Left,
@@ -59,7 +65,7 @@ impl Render for FileManager {
                             .min_w_0()
                             .min_h_0()
                             .child(self.toolbar(window, cx))
-                            .child(components::reveal(
+                            .child(components::folder_transition(
                                 div()
                                     .flex()
                                     .flex_col()
@@ -81,7 +87,8 @@ impl Render for FileManager {
                                                 != crate::domain::location::Location::Workspaces,
                                         |layout| layout.child(self.details_panel(cx)),
                                     ),
-                                self.location.id(),
+                                self.navigation_generation,
+                                self.loading,
                             )),
                     ),
             )

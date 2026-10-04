@@ -204,6 +204,8 @@ impl FileManager {
                                                     .px_2()
                                                     .py_1()
                                                     .rounded_sm()
+                                                    .border_b_1()
+                                                    .border_color(gpui::transparent_black())
                                                     .cursor_pointer()
                                                     .text_size(px(11.))
                                                     .text_color(color(if current {
@@ -213,7 +215,11 @@ impl FileManager {
                                                     }))
                                                     .hover(|style| {
                                                         style
-                                                            .bg(color(HOVER))
+                                                            .bg(translucent(ACCENT_BLUE, 0.06))
+                                                            .border_color(translucent(
+                                                                ACCENT_BLUE,
+                                                                0.24,
+                                                            ))
                                                             .text_color(color(TEXT))
                                                     })
                                                     .child(label)

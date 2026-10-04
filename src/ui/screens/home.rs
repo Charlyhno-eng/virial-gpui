@@ -269,16 +269,16 @@ impl FileManager {
                                     .cursor_pointer()
                                     .border_l_2()
                                     .border_color(if selected {
-                                        color(ACCENT)
+                                        translucent(ACCENT_BLUE, 0.28)
                                     } else {
                                         gpui::transparent_black()
                                     })
-                                    .when(selected, |row| row.bg(color(SELECTED)))
+                                    .when(selected, |row| row.bg(translucent(ACCENT_BLUE, 0.08)))
                                     .when(!selected && index % 2 != 0, |row| {
                                         row.bg(translucent(SIDEBAR, 0.22))
                                     })
                                     .hover(|style| {
-                                        style.bg(color(if selected { SELECTED } else { HOVER }))
+                                        style.bg(if selected { translucent(ACCENT_BLUE, 0.11) } else { color(HOVER) })
                                     })
                                     .child(icon(
                                         entry.icon(),
@@ -375,7 +375,13 @@ impl FileManager {
                                 } else { row };
                                 div().w_full().h(px(if view.compact_view { ROW_HEIGHT * 0.78 } else { ROW_HEIGHT })).flex()
                                     .child(div().w(px(14.)).h_full().flex_shrink_0())
-                                    .child(row)
+                                    .child(row.with_animation(
+                                        ("selection-light", selected as usize),
+                                        Animation::new(Duration::from_millis(150)).with_easing(gpui::ease_out_quint()),
+                                        move |row, delta| {
+                                            if selected { row.bg(translucent(ACCENT_BLUE, 0.04 + 0.04 * delta)) } else { row }
+                                        },
+                                    ))
                             })
                             .collect()
                     }),

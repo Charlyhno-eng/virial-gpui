@@ -41,6 +41,8 @@ impl FileManager {
             folder_count: 0,
             hidden: false,
             loading: false,
+            navigation_generation: 0,
+            drop_hover: None,
             error: None,
             selection: Default::default(),
             marquee: None,
@@ -78,6 +80,7 @@ impl FileManager {
         self.menu = None;
         self.marquee = None;
         self.loading = true;
+        self.navigation_generation = self.navigation_generation.wrapping_add(1);
         self.error = None;
         let hidden = self.hidden;
         let requested = location.clone();
@@ -96,8 +99,11 @@ impl FileManager {
             .map(|entries| (entries, Vec::new()))
         });
         // Replacing this task cancels the UI update from an outdated request.
+        let executor = cx.background_executor().clone();
+        let transition = executor.timer(Duration::from_millis(65));
         self.listing = Some(cx.spawn(async move |view, cx| {
             let result = read.await;
+            transition.await;
             let _ = view.update(cx, |view, cx| {
                 view.loading = false;
                 match result {

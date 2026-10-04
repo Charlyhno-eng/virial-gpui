@@ -7,7 +7,10 @@ muted blue-gray accents, and a subtle violet tint in the background, inspired by
 the application logo. The initial window size adapts to smaller displays. The
 dark background is slightly more opaque while remaining transparent when
 supported by the desktop compositor; text, menus, and dialogs remain readable.
-Short fades accompany folder navigation and opening menus or dialogs, with a
+Folder navigation gently recedes and settles over approximately 150 ms. Selection
+uses a faint blue-gray light, each breadcrumb responds to hover, and drag previews
+show the file name and item count with a softly appearing “Drop here” hint on the
+destination. Short fades accompany opening menus or dialogs, with a
 subtle activity indicator while work is in progress.
 
 Search the current folder by typing in the toolbar search field. Click the
