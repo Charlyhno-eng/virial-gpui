@@ -11,6 +11,7 @@ gpui = "=0.2.2"
 libc = "=0.2.186"
 roxmltree = "0.20"
 url = "2.5"
+zbus = "5.19"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 unicode-segmentation = "1.13"
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }

@@ -7,6 +7,8 @@ Virial is a Linux file manager for browsing local folders, mounted drives, and r
 
 Virial adapts its interface language to the system language. English is used when the system language is not supported.
 
+USB drives and other removable storage appear automatically under **Devices**, including their filesystem labels, sizes, and mount status. Click a volume to browse it; unmounted volumes are mounted first. The × button unmounts one volume, and the eject button safely removes the entire drive after unmounting all its volumes. Operations fail if a volume is in use. If the current device is disconnected or unmounted, Virial returns to Home. Device management requires the UDisks2 system service (`udisks2` on Debian/Ubuntu); desktop authorization dialogs may appear when needed. Encrypted volume unlocking is handled by your desktop.
+
 Single-click a file or folder to show its preview and details. The preview opens in a wide side panel, with an expand button for a larger view. Double-click to open the item and hide the details. Navigating to another folder or clicking empty space hides the details; single-click an item to show them again.
 
 Code previews use syntax highlighting with VS Code Dark+ colors, a monospace font, and line numbers. Source indentation and blank lines are preserved, with tabs displayed at four-column stops. Use horizontal scrolling or Shift + mouse wheel to read long lines. Supported languages include Rust, Python, JavaScript, TypeScript, C/C++, HTML, CSS, JSON, TOML, and shell scripts; unrecognized text files keep a plain text preview. Text and code previews show up to the first 64 KiB of the file.
@@ -32,7 +34,7 @@ Press `Ctrl+P` to open the global path picker. It searches accessible locations 
 On Debian or Ubuntu, install the native libraries and build tools used by GPUI:
 
 ```sh
-sudo apt update && sudo apt install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev
+sudo apt update && sudo apt install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev udisks2
 ```
 
 Rust stable (1.85 or newer) and Cargo are also required. If they are not installed, install the toolchain with:

@@ -34,6 +34,10 @@ impl FileManager {
             language: Language::system(),
             data_home: crate::infrastructure::recent::data_home(&home),
             places: crate::platform::linux::places::discover(&home),
+            devices: Vec::new(),
+            device_error: None,
+            device_monitor: None,
+            device_generation: 0,
             home,
             entries: Vec::new(),
             workspaces: Vec::new(),
@@ -97,6 +101,7 @@ impl FileManager {
         })
         .detach();
         view.navigate(path, cx);
+        view.monitor_devices(cx);
         view
     }
 

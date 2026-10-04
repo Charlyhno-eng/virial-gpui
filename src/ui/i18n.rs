@@ -37,6 +37,14 @@ impl Language {
             return english;
         }
         match english {
+            "Mounted" => "Monté",
+            "Click to mount" => "Cliquer pour monter",
+            "Unmount volume" => "Démonter le volume",
+            "Safely remove drive (all volumes)" => {
+                "Retirer le périphérique en toute sécurité (tous les volumes)"
+            }
+            "Cannot read devices" => "Impossible de lire les périphériques",
+            "Device operation failed" => "Échec de l’opération sur le périphérique",
             "Full screen · Space" => "Plein écran · Espace",
             "Compact list" => "Liste compacte",
             "Extension (e.g. pdf)…" => "Extension (ex. pdf)…",
