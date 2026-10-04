@@ -1,7 +1,10 @@
 use crate::{
     app::FileManager,
     state::preview::Preview,
-    ui::{components::toolbar_button, theme::*},
+    ui::{
+        components::{navigation_button, toolbar_button},
+        theme::*,
+    },
 };
 use gpui::{Context, Div, div, img, prelude::*, px};
 
@@ -25,16 +28,16 @@ impl FileManager {
                 div()
                     .flex()
                     .items_center()
-                    .justify_between()
+                    .justify_end()
                     .p_2()
+                    .gap_1()
                     .flex_shrink_0()
                     .child(
-                        toolbar_button(
+                        navigation_button(
                             "expand-preview",
-                            "view",
-                            self.language.text("Preview · Space"),
+                            "fullscreen",
+                            self.language.text("Full screen · Space"),
                             true,
-                            expanded,
                         )
                         .on_click(cx.listener(|view, _, window, cx| {
                             view.preview_expanded = !view.preview_expanded;

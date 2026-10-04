@@ -40,21 +40,6 @@ impl FileManager {
                 })),
             )
             .child(
-                navigation_button(
-                    "up",
-                    "up",
-                    self.language.text("Up"),
-                    self.location
-                        .directory()
-                        .and_then(|path| path.parent())
-                        .is_some(),
-                )
-                .on_click(cx.listener(|view, _, window, cx| {
-                    view.focus.focus(window);
-                    view.up(cx);
-                })),
-            )
-            .child(
                 div()
                     .id("breadcrumbs")
                     .flex()
@@ -127,16 +112,6 @@ impl FileManager {
             )
             .child(
                 toolbar_button(
-                    "refresh",
-                    "refresh",
-                    self.language.text("Refresh"),
-                    true,
-                    false,
-                )
-                .on_click(cx.listener(|view, _, _, cx| view.refresh(cx))),
-            )
-            .child(
-                toolbar_button(
                     "display",
                     "view",
                     self.language.text("Display"),
@@ -173,7 +148,7 @@ impl FileManager {
         if !self.display_menu {
             return None;
         }
-        let mut panel = div()
+        let panel = div()
             .id("display-options")
             .occlude()
             .absolute()
@@ -192,29 +167,6 @@ impl FileManager {
             .gap_1()
             .child(
                 toolbar_button(
-                    "display-compact",
-                    "view",
-                    self.language.text("Compact list"),
-                    true,
-                    self.compact_view,
-                )
-                .on_click(cx.listener(|view, _, _, cx| {
-                    view.compact_view = !view.compact_view;
-                    cx.notify();
-                })),
-            )
-            .child(
-                toolbar_button(
-                    "display-hidden",
-                    "eye",
-                    self.language.text("Hidden files"),
-                    true,
-                    self.hidden,
-                )
-                .on_click(cx.listener(|view, _, _, cx| view.toggle_hidden(cx))),
-            )
-            .child(
-                toolbar_button(
                     "display-folder-details",
                     "info",
                     self.language.text("Folder information"),
@@ -227,45 +179,7 @@ impl FileManager {
                         cx.notify();
                     }
                 })),
-            )
-            .child(
-                toolbar_button(
-                    "display-preview",
-                    "image",
-                    self.language.text("Preview"),
-                    self.selection.primary().is_some(),
-                    self.details_open && !self.folder_details,
-                )
-                .on_click(cx.listener(|view, _, _, cx| {
-                    if view.selection.primary().is_some() {
-                        view.sync_preview(cx);
-                        if view.folder_details {
-                            view.folder_details = false;
-                            view.details_open = true;
-                        } else {
-                            view.details_open = !view.details_open;
-                        }
-                        view.preview_expanded = false;
-                        cx.notify();
-                    }
-                })),
-            )
-            .child(div().h(px(1.)).my_1().bg(color(BORDER)));
-        if let Some(folder) = self.location.directory().map(|path| path.to_path_buf()) {
-            panel = panel.child(
-                toolbar_button(
-                    "add-workspace-folder",
-                    "folder",
-                    self.language.text("Add folder to workspace"),
-                    !self.busy,
-                    false,
-                )
-                .on_click(cx.listener(move |view, _, window, cx| {
-                    view.display_menu = false;
-                    view.workspace_dialog(Some(folder.clone()), window, cx);
-                })),
             );
-        }
         Some(
             div()
                 .absolute()

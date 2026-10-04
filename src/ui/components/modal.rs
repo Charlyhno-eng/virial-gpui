@@ -63,7 +63,7 @@ impl FileManager {
             }
             content = match dialog {
                 Dialog::Name { action: NameAction::Workspace { folder, names }, input } => content
-                    .child(self.language.text(if folder.is_some() { "Use an existing name to add this folder, or a new name to create a workspace" } else { "Create an empty workspace, then add folders from the toolbar" }))
+                    .child(self.language.text(if folder.is_some() { "Use an existing name to add this folder, or a new name to create a workspace" } else { "Create an empty workspace, then add folders from the context menu" }))
                     .children(folder.as_ref().map(|path| div().text_color(color(MUTED)).child(path.display().to_string())))
                     .child(input.clone())
                     .child(div().id("existing-workspaces").max_h(px(180.)).overflow_y_scroll()
@@ -208,6 +208,14 @@ impl FileManager {
                 || self.location.directory().is_some())
         {
             actions.push(Action::Paste);
+        }
+        if entry.as_ref().is_some_and(|entry| entry.directory)
+            || (entry.is_none() && self.location.directory().is_some())
+        {
+            actions.push(Action::AddWorkspace);
+        }
+        if self.location == crate::domain::location::Location::Workspaces {
+            actions.push(Action::NewWorkspace);
         }
         actions.push(Action::Refresh);
         let bounds = window.viewport_size();

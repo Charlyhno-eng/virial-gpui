@@ -38,6 +38,7 @@ impl Language {
         }
         match english {
             "Display" => "Afficher",
+            "Full screen · Space" => "Plein écran · Espace",
             "Compact list" => "Liste compacte",
             "Folder information" => "Informations du dossier",
             "Search everywhere…" => "Rechercher partout…",
@@ -61,15 +62,15 @@ impl Language {
             "Use an existing name to add this folder, or a new name to create a workspace" => {
                 "Utilisez un nom existant pour ajouter ce dossier, ou un nouveau nom pour créer un espace de travail"
             }
-            "Create an empty workspace, then add folders from the toolbar" => {
-                "Créez un espace de travail vide, puis ajoutez des dossiers depuis la barre d’outils"
+            "Create an empty workspace, then add folders from the context menu" => {
+                "Créez un espace de travail vide, puis ajoutez des dossiers depuis le menu contextuel"
             }
             "Logical groups of folders · Ctrl+W / Escape returns" => {
                 "Groupes logiques de dossiers · Ctrl+W / Échap pour revenir"
             }
             "No workspaces yet" => "Aucun espace de travail",
-            "Browse a folder and use Add folder to workspace in the toolbar" => {
-                "Ouvrez un dossier puis utilisez Ajouter le dossier à un espace de travail dans la barre d’outils"
+            "Right-click a folder to add it to a workspace" => {
+                "Faites un clic droit sur un dossier pour l’ajouter à un espace de travail"
             }
             "Remove workspace" => "Supprimer l’espace de travail",
             "Remove association" => "Retirer l’association",
@@ -165,8 +166,8 @@ impl Language {
                 "Choisissez un autre emplacement ou actualisez"
             }
             "This folder is empty" => "Ce dossier est vide",
-            "Hidden files can be shown from the toolbar" => {
-                "Affichez les fichiers cachés depuis la barre d’outils"
+            "Create a file or folder using the context menu" => {
+                "Créez un fichier ou un dossier depuis le menu contextuel"
             }
             "Selected items will be moved to the desktop Trash" => {
                 "Les éléments sélectionnés seront déplacés vers la corbeille du bureau"

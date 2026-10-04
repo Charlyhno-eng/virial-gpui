@@ -242,7 +242,7 @@ impl FileManager {
                 } else {
                     (
                         "This folder is empty",
-                        "Hidden files can be shown from the toolbar",
+                        "Create a file or folder using the context menu",
                     )
                 };
                 div()
@@ -281,7 +281,7 @@ impl FileManager {
                                     .id(std::sync::Arc::<std::path::Path>::from(entry.path.clone()))
                                     .flex_1()
                                     .min_w_0()
-                                    .h(px(if view.compact_view { ROW_HEIGHT * 0.78 } else { ROW_HEIGHT }))
+                                    .h(px(ROW_HEIGHT))
                                     .px_4()
                                     .flex()
                                     .items_center()
@@ -393,7 +393,7 @@ impl FileManager {
                                 let row = if let Some(directory) = directory {
                                     view.drop_target(row, directory, cx)
                                 } else { row };
-                                div().w_full().h(px(if view.compact_view { ROW_HEIGHT * 0.78 } else { ROW_HEIGHT })).flex()
+                                div().w_full().h(px(ROW_HEIGHT)).flex()
                                     .child(div().w(px(14.)).h_full().flex_shrink_0())
                                     .child(row.with_animation(
                                         ("selection-light", selected as usize),

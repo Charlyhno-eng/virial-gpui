@@ -3,7 +3,7 @@ use crate::{
     infrastructure::workspaces::Edit,
     ui::{icons::icon, theme::*},
 };
-use gpui::{Context, Div, div, prelude::*, px};
+use gpui::{Context, Div, MouseButton, div, prelude::*, px};
 
 fn button(id: impl Into<gpui::ElementId>, label: &'static str) -> gpui::Stateful<Div> {
     div()
@@ -21,6 +21,13 @@ impl FileManager {
     pub(crate) fn workspace_view(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let mut view = div()
             .id("workspace-view")
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
+                    view.show_menu(None, event.position, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
             .flex_1()
             .min_w_0()
             .min_h_0()
@@ -30,22 +37,11 @@ impl FileManager {
             .flex_col()
             .gap_3()
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_size(px(18.))
-                            .child(self.language.text("Workspaces")),
-                    )
-                    .child(
-                        button("new-workspace", self.language.text("New workspace…")).on_click(
-                            cx.listener(|view, _, window, cx| {
-                                view.workspace_dialog(None, window, cx)
-                            }),
-                        ),
-                    ),
+                div().flex().items_center().justify_between().child(
+                    div()
+                        .text_size(px(18.))
+                        .child(self.language.text("Workspaces")),
+                ),
             )
             .child(
                 div().text_color(color(MUTED)).child(
@@ -65,7 +61,7 @@ impl FileManager {
         if self.workspaces.is_empty() {
             return view.child(self.language.text("No workspaces yet")).child(
                 self.language
-                    .text("Browse a folder and use Add folder to workspace in the toolbar"),
+                    .text("Right-click a folder to add it to a workspace"),
             );
         }
         for (index, summary) in self.workspaces.iter().enumerate() {
@@ -182,7 +178,7 @@ impl FileManager {
             if summary.workspace.folders.is_empty() {
                 card = card.child(
                     self.language
-                        .text("Browse a folder and use Add folder to workspace in the toolbar"),
+                        .text("Right-click a folder to add it to a workspace"),
                 );
             }
             for folder in &summary.unavailable {

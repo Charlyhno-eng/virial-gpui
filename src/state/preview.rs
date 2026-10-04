@@ -71,7 +71,7 @@ impl FileManager {
         let Some(entry) = entry else {
             return;
         };
-        let hidden = self.hidden;
+        let hidden = true;
         let read = cx
             .background_executor()
             .spawn(async move { read_preview(&entry, hidden) });

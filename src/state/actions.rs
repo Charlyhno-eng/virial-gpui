@@ -58,6 +58,8 @@ pub enum Action {
     CopyPath,
     Properties,
     Refresh,
+    AddWorkspace,
+    NewWorkspace,
 }
 impl Action {
     pub fn label(self) -> &'static str {
@@ -75,6 +77,8 @@ impl Action {
             Self::CopyPath => "Copy path",
             Self::Properties => "Properties",
             Self::Refresh => "Refresh",
+            Self::AddWorkspace => "Add folder to workspace",
+            Self::NewWorkspace => "New workspace…",
         }
     }
 }
@@ -153,6 +157,12 @@ impl FileManager {
         }
         match action {
             Action::Refresh => self.refresh(cx),
+            Action::AddWorkspace => {
+                if let Some(directory) = directory {
+                    self.workspace_dialog(Some(directory), window, cx);
+                }
+            }
+            Action::NewWorkspace => self.workspace_dialog(None, window, cx),
             Action::Paste => {
                 if let (Some((sources, cut)), Some(directory)) = (self.clipboard.clone(), directory)
                 {

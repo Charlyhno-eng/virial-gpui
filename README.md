@@ -27,20 +27,21 @@ or clearing the field cancels the search. There is no separate search dialog or
 
 Global search scans the home folder first, then the rest of the accessible
 filesystem, including mounted disks. It requires no zoxide installation or
-external index and finds items you have never visited. The **Ctrl+H** hidden-file
-setting at the time the query starts also applies to global search. Unreadable
+external index and finds items you have never visited. Hidden files are always
+visible in the browser and included in global search. Unreadable
 locations are skipped and counted; `/proc`, `/sys`, and `/dev` are excluded.
 Directory symlinks appear as results but are not traversed, preventing cycles.
 Changing the query or closing the results cancels the pending search. Large disks
 or slow mounts can take time to search; results remain usable during the scan.
 
 Press **Ctrl+W** or select **Workspaces** in the sidebar to open logical groups
-of folders. While browsing a folder, choose **Display → Add folder to workspace**, then select an existing workspace or enter a new name.
-Repeat from other folders to group them together. **New workspace…** creates an
-empty group. Workspace cards open their associated folders and show file/folder
+of folders. Right-click a folder or the current folder’s empty area and choose
+**Add folder to workspace**, then select an existing workspace or enter a new name.
+Repeat from other folders to group them together. Right-click in the Workspaces
+screen and choose **New workspace…** to create an empty group. Workspace cards open their associated folders and show file/folder
 counts plus the five most recently modified files, which you can click to open.
-Counts and activity cover the immediate contents of associated folders, respect
-**Ctrl+H**, and refresh with **F5**; they do not scan subfolders or record change
+Counts and activity cover the immediate contents of associated folders, include
+hidden files, and refresh with **F5**; they do not scan subfolders or record change
 events. Unavailable folders are flagged while the other folders remain usable.
 **Ctrl+W** or **Escape** returns through navigation history.
 
@@ -53,20 +54,24 @@ By default, the browser shows only the sidebar and file list. Selecting an item
 opens a temporary preview beside the files. Press **Space** to expand it across
 the application window (press Space again to return to the side panel). **Escape**
 or **Close** dismisses the preview and clears the selection, restoring the two-panel
-layout. Selecting another item opens its preview automatically. The **Preview**
-option in **Display** can hide or reopen the panel for the current selection.
+layout. Selecting another item opens its preview automatically. The preview header
+has an icon to expand it and a Close control, without a preview status label.
 Enable **Display → Folder information** to keep a right-hand information panel
 for the current folder, including while selecting items. This mode replaces the
 temporary side preview; **Space** still opens the selected item’s expanded preview.
 It shows the folder path, type, item count, and modification time (UTC). Selected folders also show their immediate
-item count; counts respect the hidden-file setting.
+item count, including hidden items.
 
 Previews show images up to 20 MiB or the first 64 KiB of UTF-8 text, loaded in the
 background. Folders, binary files, and unsupported formats show item information
-instead. **Display** groups compact-list and hidden-file settings with adding the current folder to a workspace. Click the **Name** column
+instead. The file list always uses compact rows, and hidden files are always shown;
+there are no toggles for these settings. **Display** contains the folder information
+option. Click the **Name** column
 heading to switch between ascending and descending alphabetical order; folders
 stay first and selections remain attached to their files. Navigation buttons,
-interactive breadcrumbs, global search, refresh, and Display share the toolbar.
+interactive breadcrumbs, global search, and Display share the toolbar.
+The refresh and parent-folder toolbar buttons have been removed; **F5** and
+keyboard navigation remain available.
 The sidebar, breadcrumbs, and navigation buttons remain available while browsing.
 
 The file list appears without waiting for recursive folder sizes. Its size column
@@ -95,7 +100,7 @@ Navigate without the mouse while keeping the toolbar buttons available:
 to extend the selection. **Enter** opens the selected entry; **Right** opens a
 selected folder, and **Left** or **Backspace** goes to its parent.
 **Alt+Left/Alt+Right** navigate back/forward through history, **Alt+Up** goes
-to the parent folder, and **Ctrl+H** toggles hidden files.
+to the parent folder.
 
 Drag a selected file or folder to move the whole selection into a folder row,
 a directory in the sidebar, or a breadcrumb. Hold **Ctrl** while dropping to

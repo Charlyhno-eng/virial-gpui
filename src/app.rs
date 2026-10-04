@@ -39,7 +39,6 @@ impl FileManager {
             entries: Vec::new(),
             workspaces: Vec::new(),
             folder_count: 0,
-            hidden: false,
             loading: false,
             navigation_generation: 0,
             drop_hover: None,
@@ -69,7 +68,6 @@ impl FileManager {
             preview_path: None,
             preview: crate::state::preview::Preview::Unavailable,
             preview_task: None,
-            compact_view: false,
             display_menu: false,
             folder_details: false,
             name_descending: false,
@@ -100,7 +98,7 @@ impl FileManager {
         self.loading = true;
         self.navigation_generation = self.navigation_generation.wrapping_add(1);
         self.error = None;
-        let hidden = self.hidden;
+        let hidden = true;
         let requested = location.clone();
         let data = self.data_home.clone();
         let runtime = self.runtime_home.clone();
@@ -280,11 +278,6 @@ impl FileManager {
         self.navigate_location(self.location.clone(), cx);
     }
 
-    pub(crate) fn toggle_hidden(&mut self, cx: &mut Context<Self>) {
-        self.hidden = !self.hidden;
-        self.refresh(cx);
-    }
-
     pub(crate) fn open_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(entry) = self
             .selection
@@ -396,7 +389,6 @@ impl FileManager {
             "left" if modifiers.alt => self.back(cx),
             "right" if modifiers.alt => self.forward(cx),
             "up" if modifiers.alt => self.up(cx),
-            "h" if modifiers.control => self.toggle_hidden(cx),
             "f5" if !modifiers.modified() => self.refresh(cx),
             "left" | "backspace" if !modifiers.modified() => self.up(cx),
             "right" if !modifiers.modified() => {
