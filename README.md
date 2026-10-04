@@ -9,19 +9,33 @@ Press `Ctrl+P` to open the global path picker. It searches accessible locations 
 
 ## Quickstart
 
-### Install from Git
+### Prerequisites
+
+On Debian or Ubuntu, install the native libraries and build tools used by GPUI:
 
 ```sh
-cargo install --git https://github.com/Charlyhno-eng/virial-gpui.git --locked
+sudo apt update && sudo apt install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev
 ```
 
-This fetches and builds Virial without requiring a local checkout. Cargo installs the executable to `~/.cargo/bin`; run it with:
+Rust stable (1.85 or newer) and Cargo are also required. If they are not installed, install the toolchain with:
 
 ```sh
-virial-gpui
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-To add a desktop launcher and application icon, clone the repository and run its installer instead:
+### Run without installing
+
+From the project directory, build and launch Virial directly:
+
+```sh
+cargo run --release
+```
+
+This runs the app from the current checkout without installing a permanent copy.
+
+### Install on this machine
+
+From the project directory, build and install the executable, desktop launcher, and icon under your home directory:
 
 ```sh
 ./install.sh
