@@ -1,8 +1,8 @@
 //! Application-owned Linux title bar and resize handles.
 use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
 use gpui::{
-    App, Context, CursorStyle, Div, ImageSource, MouseButton, Render, ResizeEdge, Resource,
-    Stateful, Window, div, img, prelude::*, px,
+    App, Context, CursorStyle, Div, MouseButton, Render, ResizeEdge, Stateful, Window, div,
+    prelude::*, px,
 };
 
 struct ControlHint(&'static str);
@@ -79,12 +79,6 @@ impl FileManager {
                     .items_center()
                     .gap_2()
                     .child(
-                        img(ImageSource::Resource(Resource::Embedded(
-                            "virial-gpui-logo.png".into(),
-                        )))
-                        .size(px(20.)),
-                    )
-                    .child(
                         div()
                             .text_size(px(11.))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -97,7 +91,7 @@ impl FileManager {
                             .text_ellipsis()
                             .min_w_0()
                             .child(format!(
-                                "— {}",
+                                "- {}",
                                 self.location.title(&self.home, self.language)
                             )),
                     )

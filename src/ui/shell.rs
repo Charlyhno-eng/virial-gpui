@@ -14,7 +14,7 @@ impl Render for FileManager {
             self.drop_hover = None;
         }
         window.set_window_title(&format!(
-            "{} — Virial",
+            "{} - Virial",
             self.location.description(self.language)
         ));
         let fullscreen = window.is_fullscreen();

@@ -27,10 +27,6 @@ const ASSETS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/icons/fullscreen.svg"),
     ),
     (
-        "virial-gpui-logo.png",
-        include_bytes!("../../assets/images/virial-gpui-logo.png"),
-    ),
-    (
         "icons/minimize.svg",
         include_bytes!("../../assets/icons/minimize.svg"),
     ),
