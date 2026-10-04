@@ -4,7 +4,7 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 bin_dir="$HOME/.local/bin"
 data_dir=${XDG_DATA_HOME:-"$HOME/.local/share"}
-icon_dir="$data_dir/icons/hicolor/500x500/apps"
+icon_dir="$data_dir/icons/hicolor/512x512/apps"
 applications_dir="$data_dir/applications"
 
 cargo build --release --manifest-path "$project_dir/Cargo.toml"
