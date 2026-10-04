@@ -1,6 +1,6 @@
 use crate::ui::components::toolbar_button;
 use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
-use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient, prelude::*, px};
+use gpui::{Context, Div, Window, div, prelude::*, px};
 
 impl FileManager {
     pub(crate) fn toolbar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
@@ -11,11 +11,6 @@ impl FileManager {
             .bg(translucent(SURFACE, 0.35))
             .border_b_1()
             .border_color(color(BORDER))
-            .child(div().h(px(1.)).w_full().bg(linear_gradient(
-                90.,
-                linear_color_stop(translucent(ACCENT_BLUE, 0.55), 0.),
-                linear_color_stop(translucent(ACCENT, 0.15), 1.),
-            )))
             .child(
                 div()
                     .flex()

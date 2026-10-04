@@ -2,7 +2,7 @@
 use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
 use gpui::{
     App, Context, CursorStyle, Div, ImageSource, MouseButton, Render, ResizeEdge, Resource,
-    Stateful, Window, div, img, linear_color_stop, linear_gradient, prelude::*, px,
+    Stateful, Window, div, img, prelude::*, px,
 };
 
 struct ControlHint(&'static str);
@@ -65,11 +65,7 @@ impl FileManager {
             .flex_shrink_0()
             .flex()
             .items_center()
-            .bg(linear_gradient(
-                90.,
-                linear_color_stop(translucent(SURFACE, 0.65), 0.),
-                linear_color_stop(translucent(SIDEBAR, 0.45), 1.),
-            ))
+            .bg(translucent(SURFACE, 0.55))
             .border_b_1()
             .border_color(color(BORDER))
             .child(
