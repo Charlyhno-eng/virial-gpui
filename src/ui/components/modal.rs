@@ -1,8 +1,8 @@
-use super::components::reveal;
+use crate::ui::components::reveal;
 use crate::{
-    actions::{Action, Dialog, NameAction},
     app::FileManager,
-    theme::*,
+    state::actions::{Action, Dialog, NameAction},
+    ui::theme::*,
 };
 use gpui::{Context, Div, MouseButton, Window, div, prelude::*, px};
 
@@ -18,7 +18,7 @@ fn button(id: &'static str, label: &'static str) -> gpui::Stateful<Div> {
         .child(label)
 }
 impl FileManager {
-    pub(super) fn context_overlay(
+    pub(crate) fn context_overlay(
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -109,7 +109,7 @@ impl FileManager {
                                 .on_click(cx.listener(move |view, _, window, cx| {
                                     view.close_dialog(window, cx);
                                     view.run_operation(
-                                        crate::operations::Operation::Launch {
+                                        crate::infrastructure::operations::Operation::Launch {
                                             desktop: desktop.clone(),
                                             file: file.clone(),
                                         },

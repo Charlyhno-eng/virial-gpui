@@ -1,5 +1,5 @@
 //! Single-line filename editor with clipboard, Unicode selection and IME support.
-use crate::theme::*;
+use crate::ui::theme::*;
 use gpui::{prelude::*, *};
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;

@@ -1,9 +1,9 @@
-use crate::{app::FileManager, icons::icon, theme::*};
+use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
 use gpui::{Animation, AnimationExt, Context, Div, FontWeight, div, prelude::*, px, uniform_list};
 use std::time::Duration;
 
 impl FileManager {
-    pub(super) fn file_list(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
+    pub(crate) fn file_list(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let title = self.location.title(&self.home, self.language);
         let folders = self.entries.iter().filter(|entry| entry.directory).count();
         div()
@@ -81,12 +81,12 @@ impl FileManager {
                         "Folder unavailable",
                         "Choose another location or try refreshing",
                     )
-                } else if self.location == crate::location::Location::Recent {
+                } else if self.location == crate::domain::location::Location::Recent {
                     (
                         "No recent files",
                         "Files opened with Virial and desktop applications appear here",
                     )
-                } else if self.location == crate::location::Location::Network {
+                } else if self.location == crate::domain::location::Location::Network {
                     (
                         "No mounted network locations",
                         "Mount a network share using your desktop, then refresh",

@@ -1,5 +1,5 @@
 //! Original SVG icons embedded in the binary; no runtime asset directory is needed.
-use crate::theme;
+use crate::ui::theme;
 use gpui::{AssetSource, Result, SharedString, Svg, prelude::*, px, svg};
 use std::borrow::Cow;
 
@@ -8,74 +8,92 @@ pub struct IconAssets;
 const ASSETS: &[(&str, &[u8])] = &[
     (
         "icons/fullscreen.svg",
-        include_bytes!("../assets/icons/fullscreen.svg"),
+        include_bytes!("../../assets/icons/fullscreen.svg"),
     ),
     (
         "virial-gpui-logo.png",
-        include_bytes!("../assets/virial-gpui-logo.png"),
+        include_bytes!("../../assets/images/virial-gpui-logo.png"),
     ),
     (
         "icons/minimize.svg",
-        include_bytes!("../assets/icons/minimize.svg"),
+        include_bytes!("../../assets/icons/minimize.svg"),
     ),
     (
         "icons/maximize.svg",
-        include_bytes!("../assets/icons/maximize.svg"),
+        include_bytes!("../../assets/icons/maximize.svg"),
     ),
     (
         "icons/restore.svg",
-        include_bytes!("../assets/icons/restore.svg"),
+        include_bytes!("../../assets/icons/restore.svg"),
     ),
     (
         "icons/close.svg",
-        include_bytes!("../assets/icons/close.svg"),
+        include_bytes!("../../assets/icons/close.svg"),
     ),
     (
         "icons/network.svg",
-        include_bytes!("../assets/icons/network.svg"),
+        include_bytes!("../../assets/icons/network.svg"),
     ),
     (
         "icons/recent.svg",
-        include_bytes!("../assets/icons/recent.svg"),
+        include_bytes!("../../assets/icons/recent.svg"),
     ),
     (
         "icons/folder.svg",
-        include_bytes!("../assets/icons/folder.svg"),
+        include_bytes!("../../assets/icons/folder.svg"),
     ),
-    ("icons/file.svg", include_bytes!("../assets/icons/file.svg")),
-    ("icons/home.svg", include_bytes!("../assets/icons/home.svg")),
+    (
+        "icons/file.svg",
+        include_bytes!("../../assets/icons/file.svg"),
+    ),
+    (
+        "icons/home.svg",
+        include_bytes!("../../assets/icons/home.svg"),
+    ),
     (
         "icons/drive.svg",
-        include_bytes!("../assets/icons/drive.svg"),
+        include_bytes!("../../assets/icons/drive.svg"),
     ),
-    ("icons/back.svg", include_bytes!("../assets/icons/back.svg")),
+    (
+        "icons/back.svg",
+        include_bytes!("../../assets/icons/back.svg"),
+    ),
     (
         "icons/forward.svg",
-        include_bytes!("../assets/icons/forward.svg"),
+        include_bytes!("../../assets/icons/forward.svg"),
     ),
-    ("icons/up.svg", include_bytes!("../assets/icons/up.svg")),
+    ("icons/up.svg", include_bytes!("../../assets/icons/up.svg")),
     (
         "icons/refresh.svg",
-        include_bytes!("../assets/icons/refresh.svg"),
+        include_bytes!("../../assets/icons/refresh.svg"),
     ),
-    ("icons/eye.svg", include_bytes!("../assets/icons/eye.svg")),
-    ("icons/open.svg", include_bytes!("../assets/icons/open.svg")),
+    (
+        "icons/eye.svg",
+        include_bytes!("../../assets/icons/eye.svg"),
+    ),
+    (
+        "icons/open.svg",
+        include_bytes!("../../assets/icons/open.svg"),
+    ),
     (
         "icons/download.svg",
-        include_bytes!("../assets/icons/download.svg"),
+        include_bytes!("../../assets/icons/download.svg"),
     ),
     (
         "icons/image.svg",
-        include_bytes!("../assets/icons/image.svg"),
+        include_bytes!("../../assets/icons/image.svg"),
     ),
     (
         "icons/music.svg",
-        include_bytes!("../assets/icons/music.svg"),
+        include_bytes!("../../assets/icons/music.svg"),
     ),
-    ("icons/code.svg", include_bytes!("../assets/icons/code.svg")),
+    (
+        "icons/code.svg",
+        include_bytes!("../../assets/icons/code.svg"),
+    ),
     (
         "icons/archive.svg",
-        include_bytes!("../assets/icons/archive.svg"),
+        include_bytes!("../../assets/icons/archive.svg"),
     ),
 ];
 

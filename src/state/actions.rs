@@ -1,7 +1,7 @@
 //! Context actions and dialogs; filesystem work runs outside the UI thread.
 use crate::{
-    app::FileManager, applications::Application, files::Entry, operations::Operation,
-    ui::input::NameInput,
+    app::FileManager, domain::models::Entry, infrastructure::operations::Operation,
+    platform::linux::applications::Application, ui::components::input::NameInput,
 };
 use gpui::{AppContext, ClipboardItem, Context, Entity, KeyDownEvent, Pixels, Point, Window};
 use std::{
@@ -172,7 +172,7 @@ impl FileManager {
                             let home = self.home.clone();
                             let language = self.language;
                             let task = cx.background_executor().spawn(async move {
-                                crate::applications::installed(&home, language)
+                                crate::platform::linux::applications::installed(&home, language)
                             });
                             cx.spawn(async move |view, cx| {
                                 let applications = task.await;
@@ -272,7 +272,7 @@ impl FileManager {
                     NameAction::New { directory, .. } => Some(directory.as_path()),
                 };
                 if directory.is_none_or(|directory| {
-                    crate::operations::named_path(directory, &name).is_err()
+                    crate::infrastructure::operations::named_path(directory, &name).is_err()
                 }) {
                     self.error = Some(self.language.text("Invalid file name").into());
                     cx.notify();
@@ -314,9 +314,9 @@ impl FileManager {
         };
         let data = self.data_home.clone();
         let task = cx.background_executor().spawn(async move {
-            crate::operations::execute(operation)?;
+            crate::infrastructure::operations::execute(operation)?;
             if let Some(path) = recent_path {
-                crate::recent::record(&data, &path)?;
+                crate::infrastructure::recent::record(&data, &path)?;
             }
             Ok::<_, std::io::Error>(())
         });

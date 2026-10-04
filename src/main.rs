@@ -1,16 +1,9 @@
-mod actions;
 mod app;
-mod applications;
-mod files;
-mod i18n;
-mod icons;
-mod location;
-mod navigation;
-mod network;
-mod operations;
-mod places;
-mod recent;
-mod theme;
+mod config;
+mod domain;
+mod infrastructure;
+mod platform;
+mod state;
 mod ui;
 
 use app::FileManager;
@@ -18,24 +11,11 @@ use gpui::{
     App, Application, Bounds, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
     WindowOptions, prelude::*, px, size,
 };
-use std::path::PathBuf;
 
 fn main() {
-    let path = std::env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("/"));
-    let path = if path.is_absolute() {
-        path
-    } else {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("/"))
-            .join(path)
-    };
-    let path = path.canonicalize().unwrap_or(path);
+    let path = config::initial_path();
     Application::new()
-        .with_assets(icons::IconAssets)
+        .with_assets(ui::icons::IconAssets)
         .run(move |cx: &mut App| {
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {
@@ -72,7 +52,7 @@ fn main() {
             }) {
                 eprintln!(
                     "{}: {error}",
-                    i18n::Language::system().text("Cannot open Virial")
+                    ui::i18n::Language::system().text("Cannot open Virial")
                 );
                 cx.quit();
             }

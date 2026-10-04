@@ -1,4 +1,4 @@
-use crate::{i18n::Language, navigation::breadcrumbs};
+use crate::{domain::services::breadcrumbs, ui::i18n::Language};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

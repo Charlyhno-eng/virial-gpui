@@ -10,7 +10,7 @@ applications_dir="$data_dir/applications"
 cargo build --release --manifest-path "$project_dir/Cargo.toml"
 
 install -Dm755 "$project_dir/target/release/virial-gpui" "$bin_dir/virial-gpui"
-install -Dm644 "$project_dir/assets/virial-gpui-logo.png" "$icon_dir/virial-gpui.png"
+install -Dm644 "$project_dir/assets/images/virial-gpui-logo.png" "$icon_dir/virial-gpui.png"
 mkdir -p "$applications_dir"
 
 desktop_exec=$(printf '%s' "$bin_dir/virial-gpui" | sed 's/[\\"]/\\&/g')

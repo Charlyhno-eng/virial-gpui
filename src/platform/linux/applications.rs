@@ -1,5 +1,5 @@
 //! Installed desktop applications; GIO handles Exec expansion and launching.
-use crate::i18n::Language;
+use crate::ui::i18n::Language;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -58,7 +58,7 @@ fn parse(text: &str, language: Language) -> Option<String> {
 }
 
 pub fn installed(home: &Path, language: Language) -> Vec<Application> {
-    let data = crate::recent::data_home(home);
+    let data = crate::infrastructure::recent::data_home(home);
     let mut directories = vec![data];
     directories.extend(
         std::env::var_os("XDG_DATA_DIRS")
@@ -87,25 +87,5 @@ pub fn installed(home: &Path, language: Language) -> Vec<Application> {
     applications
 }
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn desktop_names_and_visibility() {
-        let text = "[Desktop Entry]\nType=Application\nName=Editor\nName[fr]=Éditeur\nExec=editor %f\n[Desktop Action New]\nName=Wrong\n";
-        assert_eq!(parse(text, Language::French).as_deref(), Some("Éditeur"));
-        assert!(
-            parse(
-                &text.replace("Type=Application", "Type=Application\nHidden=true"),
-                Language::English
-            )
-            .is_none()
-        );
-        assert!(
-            parse(
-                &text.replace("Type=Application", "Type=Application\nNoDisplay=true"),
-                Language::English
-            )
-            .is_none()
-        );
-    }
-}
+#[path = "../../../tests/platform/linux/applications.rs"]
+mod tests;

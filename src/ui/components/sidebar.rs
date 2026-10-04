@@ -1,10 +1,10 @@
-use super::components::section_label;
-use crate::{app::FileManager, icons::icon, location::Location, theme::*};
+use crate::ui::components::section_label;
+use crate::{app::FileManager, domain::location::Location, ui::icons::icon, ui::theme::*};
 use gpui::{Context, Div, div, prelude::*, px};
 use std::path::PathBuf;
 
 impl FileManager {
-    pub(super) fn sidebar(&self, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn sidebar(&self, cx: &mut Context<Self>) -> Div {
         div()
             .w(px(SIDEBAR_WIDTH))
             .h_full()

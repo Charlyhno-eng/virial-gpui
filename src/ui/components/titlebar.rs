@@ -1,5 +1,5 @@
 //! Application-owned Linux title bar and resize handles.
-use crate::{app::FileManager, icons::icon, theme::*};
+use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
 use gpui::{
     App, Context, CursorStyle, Div, ImageSource, MouseButton, Render, ResizeEdge, Resource,
     Stateful, Window, div, img, linear_color_stop, linear_gradient, prelude::*, px,
@@ -41,7 +41,7 @@ fn control(
         .child(icon(symbol, 14., if close { ERROR } else { MUTED }))
 }
 impl FileManager {
-    pub(super) fn move_window(
+    pub(crate) fn move_window(
         &mut self,
         event: &gpui::MouseMoveEvent,
         window: &mut Window,
@@ -58,7 +58,7 @@ impl FileManager {
             }
         }
     }
-    pub(super) fn titlebar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn titlebar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         let maximized = window.is_maximized();
         div()
             .h(px(32.))
@@ -166,7 +166,7 @@ impl FileManager {
     }
 }
 
-pub(super) fn resize_handles(window: &Window) -> Vec<Stateful<Div>> {
+pub(crate) fn resize_handles(window: &Window) -> Vec<Stateful<Div>> {
     if window.is_maximized() || window.is_fullscreen() {
         return Vec::new();
     }

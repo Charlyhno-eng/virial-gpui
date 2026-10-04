@@ -1,37 +1,13 @@
-//! Application state and asynchronous filesystem operations, independent of layout.
+//! Application orchestration and asynchronous filesystem work.
+use crate::domain::models::Entry;
 use crate::{
-    files::{Entry, read_directory},
-    i18n::Language,
-    location::Location,
-    navigation::History,
+    domain::location::Location, domain::services::History, infrastructure::storage::read_directory,
+    ui::i18n::Language,
 };
-use gpui::{
-    Context, FocusHandle, KeyDownEvent, ScrollStrategy, Task, UniformListScrollHandle, Window,
-};
+use gpui::{Context, KeyDownEvent, ScrollStrategy, UniformListScrollHandle, Window};
 use std::{path::PathBuf, process::Command};
 
-pub struct FileManager {
-    pub(crate) location: Location,
-    pub(crate) language: Language,
-    pub(crate) data_home: PathBuf,
-    runtime_home: PathBuf,
-    pub(crate) home: PathBuf,
-    pub(crate) places: Vec<crate::places::Place>,
-    pub(crate) entries: Vec<Entry>,
-    pub(crate) history: History,
-    pub(crate) hidden: bool,
-    pub(crate) loading: bool,
-    pub(crate) error: Option<String>,
-    pub(crate) selected: Option<usize>,
-    pub(crate) scroll: UniformListScrollHandle,
-    pub(crate) focus: FocusHandle,
-    listing: Option<Task<()>>,
-    pub(crate) menu: Option<crate::actions::Menu>,
-    pub(crate) dialog: Option<crate::actions::Dialog>,
-    pub(crate) clipboard: Option<(PathBuf, bool)>,
-    pub(crate) busy: bool,
-    pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
-}
+pub(crate) use crate::state::app_state::FileManager;
 
 impl FileManager {
     pub fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -44,9 +20,9 @@ impl FileManager {
             history: History::new(path.clone().into()),
             location: path.clone().into(),
             language: Language::system(),
-            data_home: crate::recent::data_home(&home),
-            runtime_home: crate::network::runtime_home(),
-            places: crate::places::discover(&home),
+            data_home: crate::infrastructure::recent::data_home(&home),
+            runtime_home: crate::platform::linux::network::runtime_home(),
+            places: crate::platform::linux::places::discover(&home),
             home,
             entries: Vec::new(),
             hidden: false,
@@ -85,8 +61,8 @@ impl FileManager {
         let read = cx.background_executor().spawn(async move {
             match requested {
                 Location::Directory(path) => read_directory(&path, hidden),
-                Location::Recent => crate::recent::read(&data, hidden),
-                Location::Network => crate::network::read(&runtime),
+                Location::Recent => crate::infrastructure::recent::read(&data, hidden),
+                Location::Network => crate::platform::linux::network::read(&runtime),
             }
         });
         // Replacing this task cancels the UI update from an outdated request.
@@ -193,9 +169,11 @@ impl FileManager {
                 })
                 .and_then(|output| {
                     if output.status.success() {
-                        crate::recent::record(&data, &opened_path).map_err(|error| {
-                            format!("{}: {error}", language.text("Cannot save recent history"))
-                        })
+                        crate::infrastructure::recent::record(&data, &opened_path).map_err(
+                            |error| {
+                                format!("{}: {error}", language.text("Cannot save recent history"))
+                            },
+                        )
                     } else {
                         Err(format!(
                             "{} {}: {}",

@@ -1,9 +1,9 @@
-use super::components::toolbar_button;
-use crate::{app::FileManager, icons::icon, theme::*};
+use crate::ui::components::toolbar_button;
+use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
 use gpui::{Context, Div, Window, div, linear_color_stop, linear_gradient, prelude::*, px};
 
 impl FileManager {
-    pub(super) fn toolbar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
+    pub(crate) fn toolbar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .flex_col()

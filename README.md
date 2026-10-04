@@ -38,3 +38,31 @@ From the project directory, build and install Virial with:
 ```
 
 The installer adds the application to `~/.local/bin`, creates a desktop menu entry, and installs the Virial logo as its application icon. You can then launch Virial from your desktop's application menu.
+
+## Project structure
+
+```text
+assets/
+  icons/                  SVG interface icons
+  images/                 Application logo
+src/
+  main.rs                 GPUI startup and window creation
+  app.rs                  Application orchestration
+  config.rs               Startup path configuration
+  ui/
+    shell.rs              Main layout and rendering
+    theme.rs              Colors and spacing
+    icons.rs, i18n.rs      Embedded assets and translations
+    components/           Buttons, input, sidebar, modals, title bar, toolbar
+    screens/home.rs       File browser screen
+  domain/                 File models, locations, navigation services
+  infrastructure/         Directory storage, recent history, file operations
+  state/                  Application state and user actions
+  platform/linux/         Desktop applications, places, network mounts
+tests/                    Unit test sources grouped by layer
+```
+
+The structure follows the application's current features. Additional screens,
+platforms, fonts, and persistence backends can be added when needed. Tests live
+in `tests/` and are included as unit test modules so they can verify internal
+helpers without exposing them as a public library. Run them with `cargo test`.
