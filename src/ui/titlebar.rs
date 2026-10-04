@@ -2,7 +2,7 @@
 use crate::{app::FileManager, icons::icon, theme::*};
 use gpui::{
     App, Context, CursorStyle, Div, MouseButton, Render, ResizeEdge, Stateful, Window, div,
-    prelude::*, px,
+    img, prelude::*, px,
 };
 
 struct ControlHint(&'static str);
@@ -77,7 +77,7 @@ impl FileManager {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(icon("folder", 15., ACCENT))
+                    .child(img("virial-gpui-logo.png").size(px(22.)))
                     .child(
                         div()
                             .text_size(px(12.))
