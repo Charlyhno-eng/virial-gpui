@@ -4,6 +4,7 @@ use gpui::{Context, Decorations, Render, Window, div, prelude::*, px};
 
 impl Render for FileManager {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_preview(cx);
         if !cx.has_active_drag() {
             self.external_drop = None;
             self.drop_hover = None;
@@ -68,7 +69,6 @@ impl Render for FileManager {
                             .child(components::folder_transition(
                                 div()
                                     .flex()
-                                    .flex_col()
                                     .flex_1()
                                     .min_h_0()
                                     .when(
@@ -83,15 +83,32 @@ impl Render for FileManager {
                                     )
                                     .when(
                                         self.details_open
+                                            && !self.preview_expanded
                                             && self.location
                                                 != crate::domain::location::Location::Workspaces,
-                                        |layout| layout.child(self.details_panel(cx)),
+                                        |layout| {
+                                            layout.child(components::reveal(
+                                                self.preview_panel(false, cx),
+                                                "preview-panel",
+                                            ))
+                                        },
                                     ),
                                 self.navigation_generation,
                                 self.loading,
                             )),
                     ),
             )
+            .when(self.preview_expanded && self.details_open, |root| {
+                root.child(components::reveal(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(color(BACKGROUND))
+                        .flex()
+                        .child(self.preview_panel(true, cx)),
+                    "expanded-preview",
+                ))
+            })
             .children(titlebar::resize_handles(window))
             .children(self.context_overlay(window, cx))
             .children(self.global_search_overlay(cx))

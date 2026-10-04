@@ -37,6 +37,10 @@ impl Language {
             return english;
         }
         match english {
+            "Preview" => "Aperçu",
+            "Preview · Space" => "Aperçu · Espace",
+            "Loading preview…" => "Chargement de l’aperçu…",
+            "No content preview available" => "Aucun aperçu du contenu disponible",
             "Workspaces" => "Espaces de travail",
             "New workspace…" => "Nouvel espace de travail…",
             "Workspace name" => "Nom de l’espace de travail",

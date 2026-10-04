@@ -122,11 +122,19 @@ impl FileManager {
                         .on_click(cx.listener(|view, _, _, cx| view.refresh(cx))),
                     )
                     .child(
-                        toolbar_button("details", "info", "Details", true, self.details_open)
-                            .on_click(cx.listener(|view, _, _, cx| {
-                                view.details_open = !view.details_open;
-                                cx.notify();
-                            })),
+                        toolbar_button(
+                            "details",
+                            "info",
+                            self.language.text("Preview"),
+                            self.selection.primary().is_some(),
+                            self.details_open,
+                        )
+                        .on_click(cx.listener(|view, _, _, cx| {
+                            view.sync_preview(cx);
+                            view.details_open = !view.details_open;
+                            view.preview_expanded = false;
+                            cx.notify();
+                        })),
                     )
                     .child(
                         toolbar_button(

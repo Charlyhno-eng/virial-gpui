@@ -47,10 +47,17 @@ Workspace associations persist in `$XDG_DATA_HOME/virial/workspaces` (by default
 it. **Remove association** and **Remove workspace** only remove the logical group
 configuration; your files and folders stay in place.
 
-Use the details
-control to show or hide the information panel for the current location or
-selected item, and the view control to switch to a denser file list. The sidebar,
-breadcrumbs, and navigation buttons remain available as you browse.
+By default, the browser shows only the sidebar and file list. Selecting an item
+opens a temporary preview beside the files. Press **Space** to expand it across
+the application window (press Space again to return to the side panel). **Escape**
+or **Close** dismisses the preview and clears the selection, restoring the two-panel
+layout. Selecting another item opens its preview automatically. The **Preview**
+control can hide or reopen the panel for the current selection.
+
+Previews show images up to 20 MiB or the first 64 KiB of UTF-8 text, loaded in the
+background. Folders, binary files, and unsupported formats show item information
+instead. Use the view control to switch to a denser file list. The sidebar,
+breadcrumbs, and navigation buttons remain available while browsing.
 
 The file list appears without waiting for recursive folder sizes. Its size column
 shows file sizes immediately and fills in folder totals in background batches;

@@ -59,7 +59,11 @@ impl FileManager {
                 crate::ui::components::input::NameInput::new_unfocused(String::new(), cx)
             }),
             global_search: None,
-            details_open: true,
+            details_open: false,
+            preview_expanded: false,
+            preview_path: None,
+            preview: crate::state::preview::Preview::Unavailable,
+            preview_task: None,
             compact_view: false,
             titlebar_drag: None,
         };
@@ -76,6 +80,7 @@ impl FileManager {
     }
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
+        self.preview_expanded = false;
         self.directory_sizes = None;
         self.menu = None;
         self.marquee = None;
@@ -379,9 +384,25 @@ impl FileManager {
                     self.open(entry, cx);
                 }
             }
+            "space"
+                if !modifiers.modified()
+                    && self.focus.is_focused(window)
+                    && self.selection.primary().is_some()
+                    && !self.loading =>
+            {
+                self.sync_preview(cx);
+                self.details_open = true;
+                self.preview_expanded = !self.preview_expanded;
+                cx.notify();
+            }
             "enter" if !modifiers.modified() => self.open_selected(cx),
             "escape" if self.location == Location::Workspaces => self.back(cx),
             "escape" => {
+                if self.details_open || self.preview_expanded {
+                    self.close_preview(cx);
+                    cx.stop_propagation();
+                    return;
+                }
                 if window.is_fullscreen() {
                     window.toggle_fullscreen();
                 }
