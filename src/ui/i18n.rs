@@ -37,6 +37,17 @@ impl Language {
             return english;
         }
         match english {
+            "Search everywhere" => "Rechercher partout",
+            "Search everywhere · Ctrl+P" => "Rechercher partout · Ctrl+P",
+            "Type a name or path; spaces separate search terms" => {
+                "Saisissez un nom ou un chemin ; séparez les termes par des espaces"
+            }
+            "Searching…" => "Recherche…",
+            "No matches found" => "Aucun résultat",
+            "Best 100 matches · ↑/↓ select · Enter opens · Escape closes" => {
+                "100 meilleurs résultats · ↑/↓ sélectionner · Entrée ouvrir · Échap fermer"
+            }
+            "Unreadable locations skipped" => "Emplacements illisibles ignorés",
             "Open with…" => "Ouvrir avec…",
             "Copy" => "Copier",
             "Cut" => "Couper",

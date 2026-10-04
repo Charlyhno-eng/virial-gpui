@@ -55,6 +55,7 @@ impl FileManager {
             search_input: cx.new(|cx| {
                 crate::ui::components::input::NameInput::new_unfocused(String::new(), cx)
             }),
+            global_search: None,
             details_open: true,
             compact_view: false,
             titlebar_drag: None,
@@ -317,6 +318,9 @@ impl FileManager {
             window.toggle_fullscreen();
             cx.stop_propagation();
             cx.notify();
+            return;
+        }
+        if self.global_search_key(event, window, cx) {
             return;
         }
         if self.action_key(event, window, cx) {

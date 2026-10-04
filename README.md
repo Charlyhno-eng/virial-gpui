@@ -10,7 +10,25 @@ supported by the desktop compositor; text, menus, and dialogs remain readable.
 Short fades accompany folder navigation and opening menus or dialogs, with a
 subtle activity indicator while work is in progress.
 
-Search the current folder by typing in the toolbar search field. Use the details
+Search the current folder by typing in the toolbar search field. Click the
+**Search everywhere** button beside it or press **Ctrl+P** for a global file and
+folder picker, independently of the folder you are browsing. Type a name or path;
+space-separated terms match case-insensitively, with exact names ranked before
+partial and fuzzy (letters in order) path matches. The picker shows the best 100
+results with their full paths as the background search progresses. Use
+**Up/Down** and **Enter**, or click a result, to open a folder in Virial or a file
+in its default application. **Escape** or **Close** dismisses the picker.
+
+Global search scans the home folder first, then the rest of the accessible
+filesystem, including mounted disks. It requires no zoxide installation or
+external index and finds items you have never visited. The **Ctrl+H** hidden-file
+setting at the time the picker opens also applies to global search. Unreadable
+locations are skipped and counted; `/proc`, `/sys`, and `/dev` are excluded.
+Directory symlinks appear as results but are not traversed, preventing cycles.
+Changing the query or closing the picker cancels the pending search. Large disks
+or slow mounts can take time to search; results remain usable during the scan.
+
+Use the details
 control to show or hide the information panel for the current location or
 selected item, and the view control to switch to a denser file list. The sidebar,
 breadcrumbs, and navigation buttons remain available as you browse.

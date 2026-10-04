@@ -32,3 +32,4 @@ pub fn section_label(label: &'static str) -> Div {
         .text_color(color(MUTED))
         .child(label)
 }
+mod global_search;

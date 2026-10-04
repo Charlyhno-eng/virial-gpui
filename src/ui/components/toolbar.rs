@@ -82,6 +82,18 @@ impl FileManager {
                     )
                     .child(
                         toolbar_button(
+                            "global-search",
+                            "search",
+                            self.language.text("Search everywhere · Ctrl+P"),
+                            true,
+                            self.global_search.is_some(),
+                        )
+                        .on_click(
+                            cx.listener(|view, _, window, cx| view.show_global_search(window, cx)),
+                        ),
+                    )
+                    .child(
+                        toolbar_button(
                             "refresh",
                             "refresh",
                             self.language.text("Refresh"),
