@@ -1,6 +1,6 @@
 //! Original SVG icons embedded in the binary; no runtime asset directory is needed.
 use crate::ui::theme;
-use gpui::{AssetSource, Result, SharedString, Svg, prelude::*, px, svg};
+use gpui::{AnyElement, AssetSource, Result, SharedString, Svg, img, prelude::*, px, svg};
 use std::borrow::Cow;
 
 pub struct IconAssets;
@@ -185,4 +185,15 @@ pub fn icon(name: &str, size: f32, color: u32) -> Svg {
         .size(px(size))
         .flex_shrink_0()
         .text_color(theme::color(color))
+}
+
+/// File artwork uses the image renderer to preserve SVG colors instead of a tinted mask.
+pub fn file_icon(name: &str, size: f32) -> AnyElement {
+    if name == "folder" {
+        return icon(name, size, theme::ACCENT_BLUE).into_any_element();
+    }
+    img(format!("icons/{name}.svg"))
+        .size(px(size))
+        .flex_shrink_0()
+        .into_any_element()
 }

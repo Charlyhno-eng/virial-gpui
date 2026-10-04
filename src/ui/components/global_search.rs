@@ -1,6 +1,6 @@
 use crate::{
     app::FileManager,
-    ui::{icons::icon, theme::*},
+    ui::{icons::file_icon, theme::*},
 };
 use gpui::{Context, Div, Window, div, prelude::*, px, uniform_list};
 
@@ -96,7 +96,7 @@ impl FileManager {
                                                 SURFACE
                                             }))
                                             .hover(|style| style.bg(color(HOVER)))
-                                            .child(icon(entry.icon(), 16., ACCENT_BLUE))
+                                            .child(file_icon(entry.icon(), 16.))
                                             .child(
                                                 div()
                                                     .flex_1()

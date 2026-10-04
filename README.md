@@ -15,7 +15,7 @@ Double-click a ZIP archive to browse it like a folder, using breadcrumbs and the
 
 Code previews use syntax highlighting with VS Code Dark+ colors, a monospace font, and line numbers. Source indentation and blank lines are preserved, with tabs displayed at four-column stops. Use horizontal scrolling or Shift + mouse wheel to read long lines. Supported languages include Rust, Python, JavaScript, TypeScript, C/C++, HTML, CSS, JSON, TOML, and shell scripts; unrecognized text files keep a plain text preview. Text and code previews show up to the first 64 KiB of the file.
 
-File icons reflect their extensions, including Python, JavaScript, TypeScript, React (`.jsx` and `.tsx`), Rust, C/C++, web styles, configuration files, shell scripts, PDF, and Markdown. Extension matching is case-insensitive; other files keep their category or generic icon.
+File icons use crisp, colored symbols for Python, JavaScript, TypeScript, React (`.jsx` and `.tsx`), Rust, C/C++, web styles, configuration files, shell scripts, PDF, and Markdown. The same colors appear in the file list, search results, and details panel. Extension matching is case-insensitive; other files keep their category or generic icon.
 
 Use the extension field in the toolbar to filter files in the current folder or recent files. Enter `pdf` or `.pdf`; matching is case-insensitive and uses the final extension (`gz` for `archive.tar.gz`). Folders stay visible for navigation. The filter stays active when navigating; clear the field to show all files again.
 

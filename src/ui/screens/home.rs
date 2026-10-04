@@ -1,4 +1,8 @@
-use crate::{app::FileManager, ui::icons::icon, ui::theme::*};
+use crate::{
+    app::FileManager,
+    ui::icons::{file_icon, icon},
+    ui::theme::*,
+};
 use gpui::{Animation, AnimationExt, Context, Div, FontWeight, div, prelude::*, px, uniform_list};
 use std::time::Duration;
 
@@ -56,7 +60,11 @@ impl FileManager {
             .pt_5()
             .pb_4()
             .bg(translucent(SURFACE, 0.16))
-            .child(icon(symbol, 34., ACCENT_BLUE))
+            .child(if has_selection {
+                file_icon(symbol, 34.)
+            } else {
+                icon(symbol, 34., ACCENT_BLUE).into_any_element()
+            })
             .child(div().text_size(px(14.)).text_ellipsis().child(name))
             .child(
                 div()
@@ -334,11 +342,7 @@ impl FileManager {
                                     .hover(|style| {
                                         style.bg(if selected { translucent(ACCENT_BLUE, 0.11) } else { color(HOVER) })
                                     })
-                                    .child(icon(
-                                        entry.icon(),
-                                        19.,
-                                        if entry.directory { ACCENT_BLUE } else { MUTED },
-                                    ))
+                                    .child(file_icon(entry.icon(), 19.))
                                     .child(name)
                                     .child(
                                         div()

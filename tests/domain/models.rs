@@ -48,13 +48,19 @@ fn specialized_icons_are_embedded_valid_svg_assets() {
     use gpui::AssetSource;
     let assets = crate::ui::icons::IconAssets;
     for extension in [
-        "py", "js", "ts", "tsx", "rs", "html", "css", "json", "toml", "sh", "c", "cpp", "pdf", "md",
+        "py", "js", "ts", "tsx", "rs", "html", "css", "json", "toml", "sh", "c", "cpp", "pdf",
+        "md", "txt", "png", "mp3", "zip",
     ] {
         let name = entry(&format!("file.{extension}"), false).icon();
         let bytes = assets.load(&format!("icons/{name}.svg")).unwrap().unwrap();
         let svg = std::str::from_utf8(&bytes).unwrap();
         let document = roxmltree::Document::parse(svg).unwrap();
         assert_eq!(document.root_element().tag_name().name(), "svg");
-        assert!(document.descendants().any(|node| node.has_tag_name("path")));
+        assert!(document.descendants().any(|node| {
+            matches!(
+                node.tag_name().name(),
+                "path" | "rect" | "circle" | "ellipse"
+            )
+        }));
     }
 }
