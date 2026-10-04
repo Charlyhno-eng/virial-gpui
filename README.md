@@ -27,6 +27,7 @@ Press `Ctrl+P` to open the global path picker. It searches accessible locations 
 
 ## See Virial in action
 
+![Virial logo](assets/images/virial-gpui-interface0.png)
 ![Virial logo](assets/images/virial-gpui-interface1.png)
 ![Virial logo](assets/images/virial-gpui-interface2.png)
 
