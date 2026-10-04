@@ -6,7 +6,38 @@ use crate::{
         theme::*,
     },
 };
-use gpui::{Context, Div, div, img, prelude::*, px};
+use gpui::{App, Context, Div, SharedString, StyledText, div, img, prelude::*, px};
+use std::sync::OnceLock;
+
+fn code_font(cx: &App) -> SharedString {
+    static FONT: OnceLock<SharedString> = OnceLock::new();
+    FONT.get_or_init(|| {
+        // GPUI's Linux backend requires a family name, not the generic
+        // "monospace" alias (which falls back to the UI's proportional font).
+        let available = cx.text_system().all_font_names();
+        [
+            "Cascadia Code",
+            "JetBrains Mono",
+            "Fira Code",
+            "DejaVu Sans Mono",
+            "Noto Sans Mono",
+            "Noto Mono",
+            "Liberation Mono",
+            "Ubuntu Mono",
+            "Ubuntu Sans Mono",
+            "Hack",
+            "FreeMono",
+            "Nimbus Mono PS",
+            "Courier New",
+            "Courier",
+        ]
+        .into_iter()
+        .find(|name| available.iter().any(|font| font == name))
+        .unwrap_or(".ZedMono")
+        .into()
+    })
+    .clone()
+}
 
 impl FileManager {
     pub(crate) fn preview_panel(&self, expanded: bool, cx: &mut Context<Self>) -> Div {
@@ -69,6 +100,10 @@ impl FileManager {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
+                    .map(|mut body| {
+                        body.style().restrict_scroll_to_axis = Some(true);
+                        body
+                    })
                     .child(match &self.preview {
                         Preview::Image(path) => div()
                             .p_3()
@@ -93,6 +128,44 @@ impl FileManager {
                             .p_3()
                             .text_size(px(12.))
                             .child(text.clone())
+                            .into_any_element(),
+                        Preview::Code(code) => div()
+                            .id(if expanded {
+                                "expanded-code-preview"
+                            } else {
+                                "code-preview"
+                            })
+                            .flex()
+                            .w_full()
+                            .py_3()
+                            .overflow_x_scroll()
+                            .map(|mut code| {
+                                code.style().restrict_scroll_to_axis = Some(true);
+                                code
+                            })
+                            .bg(color(CODE_BACKGROUND))
+                            .font_family(code_font(cx))
+                            .text_size(px(12.))
+                            .line_height(px(18.))
+                            .whitespace_nowrap()
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .px_3()
+                                    .text_right()
+                                    .text_color(color(CODE_GUTTER))
+                                    .child(code.line_numbers.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .pr_3()
+                                    .text_color(color(CODE_TEXT))
+                                    .child(
+                                        StyledText::new(code.text.clone())
+                                            .with_highlights(code.highlights.iter().cloned()),
+                                    ),
+                            )
                             .into_any_element(),
                         Preview::Loading => div()
                             .p_3()

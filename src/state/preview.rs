@@ -1,4 +1,5 @@
 //! Selection-driven, bounded previews loaded away from the UI thread.
+use super::code_preview::CodePreview;
 use crate::{app::FileManager, domain::models::Entry};
 use gpui::Context;
 use std::{fs::File, io::Read, path::PathBuf};
@@ -8,6 +9,7 @@ pub(crate) enum Preview {
     Folder(usize),
     Image(PathBuf),
     Text(String),
+    Code(CodePreview),
     Unavailable,
 }
 
@@ -49,7 +51,10 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
         }
         Err(_) => return Preview::Unavailable,
     };
-    Preview::Text(text.to_owned())
+    match CodePreview::new(&entry.path, text) {
+        Some(code) => Preview::Code(code),
+        None => Preview::Text(text.to_owned()),
+    }
 }
 
 impl FileManager {
