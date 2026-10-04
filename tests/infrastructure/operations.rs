@@ -9,8 +9,8 @@ fn mutations_preserve_links_refuse_collisions_and_change_extensions() {
     symlink("missing", source.join("link")).unwrap();
     let destination = root.join("destination");
     fs::create_dir(&destination).unwrap();
-    execute(Operation::Paste {
-        source: source.clone(),
+    execute(Operation::Transfer {
+        sources: vec![source.clone()],
         directory: destination.clone(),
         cut: false,
     })
@@ -24,16 +24,16 @@ fn mutations_preserve_links_refuse_collisions_and_change_extensions() {
         Path::new("missing")
     );
     assert!(
-        execute(Operation::Paste {
-            source: source.clone(),
+        execute(Operation::Transfer {
+            sources: vec![source.clone()],
             directory: destination.clone(),
             cut: false
         })
         .is_err()
     );
     assert!(
-        execute(Operation::Paste {
-            source: source.clone(),
+        execute(Operation::Transfer {
+            sources: vec![source.clone()],
             directory: source.clone(),
             cut: false
         })
@@ -61,8 +61,8 @@ fn mutations_preserve_links_refuse_collisions_and_change_extensions() {
         })
         .is_err()
     );
-    execute(Operation::Paste {
-        source: source.join("renamed.md"),
+    execute(Operation::Transfer {
+        sources: vec![source.join("renamed.md")],
         directory: destination.clone(),
         cut: true,
     })
@@ -71,5 +71,126 @@ fn mutations_preserve_links_refuse_collisions_and_change_extensions() {
     execute(Operation::Compress(source.clone())).unwrap();
     assert!(root.join("source.tar.gz").exists());
     assert!(execute(Operation::Compress(source)).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn batch_move_carries_folders_links_and_selected_descendants_once() {
+    let root = std::env::temp_dir().join(format!("virial-batch-move-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    let source = root.join("source");
+    let destination = root.join("destination");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&destination).unwrap();
+    fs::create_dir(source.join("folder")).unwrap();
+    fs::write(source.join("folder/nested.txt"), "nested").unwrap();
+    fs::write(source.join("file.txt"), "file").unwrap();
+    symlink("missing", source.join("link")).unwrap();
+    execute(Operation::Transfer {
+        sources: vec![
+            source.join("folder/nested.txt"),
+            source.join("file.txt"),
+            source.join("folder"),
+            source.join("link"),
+            source.join("file.txt"),
+        ],
+        directory: destination.clone(),
+        cut: true,
+    })
+    .unwrap();
+    assert_eq!(
+        fs::read(destination.join("folder/nested.txt")).unwrap(),
+        b"nested"
+    );
+    assert_eq!(fs::read(destination.join("file.txt")).unwrap(), b"file");
+    assert_eq!(
+        fs::read_link(destination.join("link")).unwrap(),
+        Path::new("missing")
+    );
+    assert!(!destination.join("nested.txt").exists());
+    assert_eq!(fs::read_dir(&source).unwrap().count(), 0);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn batch_preflight_refuses_collisions_and_duplicate_names_before_any_move() {
+    let root = std::env::temp_dir().join(format!("virial-batch-collision-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    let source = root.join("source");
+    let destination = root.join("destination");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&destination).unwrap();
+    fs::write(source.join("a.txt"), "a").unwrap();
+    fs::write(source.join("b.txt"), "b").unwrap();
+    symlink("missing", destination.join("b.txt")).unwrap();
+    let error = execute(Operation::Transfer {
+        sources: vec![source.join("a.txt"), source.join("b.txt")],
+        directory: destination.clone(),
+        cut: true,
+    })
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert!(source.join("a.txt").exists());
+    assert!(source.join("b.txt").exists());
+    assert!(!destination.join("a.txt").exists());
+    assert_eq!(
+        fs::read_link(destination.join("b.txt")).unwrap(),
+        Path::new("missing")
+    );
+    fs::write(root.join("a.txt"), "different").unwrap();
+    let error = execute(Operation::Transfer {
+        sources: vec![source.join("a.txt"), root.join("a.txt")],
+        directory: destination.clone(),
+        cut: false,
+    })
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert!(!destination.join("a.txt").exists());
+    let error = execute(Operation::Transfer {
+        sources: vec![source.join("a.txt"), source.join("missing.txt")],
+        directory: destination.clone(),
+        cut: true,
+    })
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    assert!(source.join("a.txt").exists());
+    assert!(!destination.join("a.txt").exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn transfers_check_canonical_ancestry_and_allow_moves_to_the_existing_parent() {
+    let root = std::env::temp_dir().join(format!("virial-batch-ancestry-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    let source = root.join("folder");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(source.join("child")).unwrap();
+    fs::write(source.join("file.txt"), "original").unwrap();
+    symlink(&source, root.join("alias")).unwrap();
+    for cut in [false, true] {
+        let error = execute(Operation::Transfer {
+            sources: vec![source.clone()],
+            directory: root.join("alias/child"),
+            cut,
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!source.join("child/folder").exists());
+    }
+    execute(Operation::Transfer {
+        sources: vec![root.join("alias/file.txt"), source.join("file.txt")],
+        directory: source.clone(),
+        cut: true,
+    })
+    .unwrap();
+    assert_eq!(fs::read(source.join("file.txt")).unwrap(), b"original");
+    assert!(
+        execute(Operation::Transfer {
+            sources: vec![source.join("file.txt")],
+            directory: source.clone(),
+            cut: false,
+        })
+        .is_err()
+    );
     fs::remove_dir_all(root).unwrap();
 }

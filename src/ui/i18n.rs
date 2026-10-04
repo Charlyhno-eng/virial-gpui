@@ -114,6 +114,9 @@ impl Language {
             "Hidden files can be shown from the toolbar" => {
                 "Affichez les fichiers cachés depuis la barre d’outils"
             }
+            "Selected items will be moved to the desktop Trash" => {
+                "Les éléments sélectionnés seront déplacés vers la corbeille du bureau"
+            }
             "Double-click to open · Enter" => "Double-clic pour ouvrir · Entrée",
             "No recent files" => "Aucun fichier récent",
             "Files opened with Virial and desktop applications appear here" => {
@@ -140,6 +143,17 @@ impl Language {
             size.replace('.', ",").replace('B', "o")
         } else {
             size
+        }
+    }
+
+    pub fn selected_count(self, count: usize) -> String {
+        match self {
+            Self::French => format!(
+                "{count} élément{} sélectionné{}",
+                if count > 1 { "s" } else { "" },
+                if count > 1 { "s" } else { "" }
+            ),
+            Self::English => format!("{count} item{} selected", if count == 1 { "" } else { "s" }),
         }
     }
 

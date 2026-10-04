@@ -58,7 +58,7 @@ impl FileManager {
                             "open",
                             "open",
                             self.language.text("Open"),
-                            self.selected.is_some(),
+                            self.selection.primary().is_some(),
                             false,
                         )
                         .on_click(cx.listener(|view, _, _, cx| view.open_selected(cx))),
@@ -150,6 +150,13 @@ impl FileManager {
                                                             .text_color(color(TEXT))
                                                     })
                                                     .child(label)
+                                                    .when_some(
+                                                        path.directory()
+                                                            .map(|path| path.to_path_buf()),
+                                                        |crumb, directory| {
+                                                            self.drop_target(crumb, directory, cx)
+                                                        },
+                                                    )
                                                     .on_click(cx.listener(
                                                         move |view, _, _, cx| {
                                                             view.navigate_location(path.clone(), cx)

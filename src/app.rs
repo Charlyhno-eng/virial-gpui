@@ -41,7 +41,9 @@ impl FileManager {
             hidden: false,
             loading: false,
             error: None,
-            selected: None,
+            selection: Default::default(),
+            marquee: None,
+            external_drop: None,
             scroll: UniformListScrollHandle::new(),
             focus,
             listing: None,
@@ -67,6 +69,7 @@ impl FileManager {
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
         self.directory_sizes = None;
         self.menu = None;
+        self.marquee = None;
         self.loading = true;
         self.error = None;
         let hidden = self.hidden;
@@ -87,21 +90,37 @@ impl FileManager {
                 view.loading = false;
                 match result {
                     Ok(entries) => {
-                        let selected_path = view
-                            .selected
+                        let selected_paths: std::collections::HashSet<_> =
+                            view.selected_paths().into_iter().collect();
+                        let focus_path = view
+                            .selection
+                            .focus
+                            .and_then(|index| view.entries.get(index))
+                            .map(|entry| entry.path.clone());
+                        let anchor_path = view
+                            .selection
+                            .anchor
                             .and_then(|index| view.entries.get(index))
                             .map(|entry| entry.path.clone());
                         let changed = view.location != location;
+                        view.marquee = None;
+                        view.selection.clear();
                         if changed {
                             view.scroll = UniformListScrollHandle::new();
-                        }
-                        view.selected = if changed {
-                            None
                         } else {
-                            entries
+                            view.selection.indices = entries
                                 .iter()
-                                .position(|entry| Some(&entry.path) == selected_path.as_ref())
-                        };
+                                .enumerate()
+                                .filter(|(_, entry)| selected_paths.contains(&entry.path))
+                                .map(|(index, _)| index)
+                                .collect();
+                            view.selection.focus = entries
+                                .iter()
+                                .position(|entry| Some(&entry.path) == focus_path.as_ref());
+                            view.selection.anchor = entries
+                                .iter()
+                                .position(|entry| Some(&entry.path) == anchor_path.as_ref());
+                        }
                         if let Some(index) = history_index {
                             view.history.restore(index);
                         } else {
@@ -224,7 +243,8 @@ impl FileManager {
 
     pub(crate) fn open_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(entry) = self
-            .selected
+            .selection
+            .primary()
             .and_then(|index| self.entries.get(index))
             .cloned()
         {
@@ -299,32 +319,58 @@ impl FileManager {
         }
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
+        if key == "escape" && cx.stop_active_drag(window) {
+            self.external_drop = None;
+            cx.notify();
+            return;
+        }
         match key {
             "left" if modifiers.alt => self.back(cx),
             "right" if modifiers.alt => self.forward(cx),
             "up" if modifiers.alt => self.up(cx),
             "h" if modifiers.control => self.toggle_hidden(cx),
-            "f5" => self.refresh(cx),
+            "f5" if !modifiers.modified() => self.refresh(cx),
+            "left" | "backspace" if !modifiers.modified() => self.up(cx),
+            "right" if !modifiers.modified() => {
+                if let Some(entry) = self
+                    .selection
+                    .primary()
+                    .and_then(|index| self.entries.get(index))
+                    .filter(|entry| entry.directory)
+                    .cloned()
+                {
+                    self.open(entry, cx);
+                }
+            }
             "enter" if !modifiers.modified() => self.open_selected(cx),
             "escape" => {
                 if window.is_fullscreen() {
                     window.toggle_fullscreen();
                 }
-                self.selected = None;
+                self.selection.clear();
+                self.marquee = None;
                 cx.notify();
             }
-            "up" | "down" if !modifiers.modified() && !self.entries.is_empty() => {
-                let index = match (self.selected, key) {
-                    (Some(index), "up") => index.saturating_sub(1),
-                    (Some(index), _) => (index + 1).min(self.entries.len() - 1),
-                    (None, "up") => self.entries.len() - 1,
-                    (None, _) => 0,
+            "up" | "down" | "home" | "end" | "pageup" | "pagedown"
+                if !modifiers.control
+                    && !modifiers.alt
+                    && !modifiers.platform
+                    && !self.entries.is_empty() =>
+            {
+                let height = f32::from(self.scroll.0.borrow().base_handle.bounds().size.height);
+                let page = (height / crate::ui::theme::ROW_HEIGHT).floor() as usize;
+                let Some(index) = self
+                    .selection
+                    .keyboard_target(key, self.entries.len(), page)
+                else {
+                    return;
                 };
-                self.selected = Some(index);
+                self.selection.click(index, false, modifiers.shift);
                 self.scroll.scroll_to_item(index, ScrollStrategy::Center);
                 cx.notify();
             }
-            _ => {}
+            _ => return,
         }
+        cx.stop_propagation();
     }
 }

@@ -23,6 +23,34 @@ the toolbar's exit control returns to the previous window state. Escape closes a
 open menu or dialog first. The maximize control and a double-click on the title
 bar expand the window within the desktop's work area.
 
+Select files and folders with a click, **Ctrl-click** to toggle individual items,
+or **Shift-click** to select a range. **Ctrl+Shift-click** adds a range to the
+selection, and **Ctrl+A** selects all items. Drag from the empty area below the
+rows or the narrow left gutter to draw a selection rectangle; hold **Ctrl** or
+**Shift** to add to the selection. Dragging near the top or bottom scrolls the
+list. Click empty space or press **Escape** to clear the selection.
+
+Navigate without the mouse while keeping the toolbar buttons available:
+**Up/Down** select entries, **Home/End** jump to the first/last entry, and
+**Page Up/Page Down** move by one visible page. Hold **Shift** with these keys
+to extend the selection. **Enter** opens the selected entry; **Right** opens a
+selected folder, and **Left** or **Backspace** goes to its parent.
+**Alt+Left/Alt+Right** navigate back/forward through history, **Alt+Up** goes
+to the parent folder, and **Ctrl+H** toggles hidden files.
+
+Drag a selected file or folder to move the whole selection into a folder row,
+a directory in the sidebar, or a breadcrumb. Hold **Ctrl** while dropping to
+copy instead; **Escape** cancels an active drag. Dropping on the current folder's background also accepts files;
+files dropped from another application are copied, preserving their originals.
+Copy, cut, paste, copy path, and Move to Trash apply to the whole selection.
+Rename, Open with, compression, and properties require one selected item.
+
+Transfers run in the background and never overwrite existing items. Conflicting
+names and destinations inside a selected folder are rejected before transferring
+any items. Dropping items into their existing parent is a no-op when moving.
+If an I/O error interrupts a batch, already completed transfers remain in place;
+the list refreshes and displays the error.
+
 ## Prerequisites
 
 - Linux with a graphical desktop session

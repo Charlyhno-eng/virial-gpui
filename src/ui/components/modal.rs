@@ -66,10 +66,23 @@ impl FileManager {
                         ),
                     )
                     .child(input.clone()),
-                Dialog::Trash(entry) => content.child(entry.name.clone()).child(
-                    self.language
-                        .text("This item will be moved to the desktop Trash"),
-                ),
+                Dialog::Trash(entries) => content
+                    .child(self.language.selected_count(entries.len()))
+                    .child(
+                        div()
+                            .id("trash-selection")
+                            .max_h(px(200.))
+                            .overflow_y_scroll()
+                            .children(
+                                entries
+                                    .iter()
+                                    .map(|entry| div().text_ellipsis().child(entry.name.clone())),
+                            ),
+                    )
+                    .child(
+                        self.language
+                            .text("Selected items will be moved to the desktop Trash"),
+                    ),
                 Dialog::Properties { entry, details } => content.child(entry.name.clone()).child(
                     div()
                         .id("property-details")
@@ -161,18 +174,13 @@ impl FileManager {
         let mut actions = Vec::new();
         if let Some(entry) = &entry {
             actions.push(Action::Open);
-            if !entry.directory {
-                actions.push(Action::OpenWith);
+            if self.selection.indices.len() == 1 {
+                if !entry.directory {
+                    actions.push(Action::OpenWith);
+                }
+                actions.extend([Action::Rename, Action::Compress, Action::Properties]);
             }
-            actions.extend([
-                Action::Cut,
-                Action::Copy,
-                Action::Rename,
-                Action::Trash,
-                Action::Compress,
-                Action::CopyPath,
-                Action::Properties,
-            ]);
+            actions.extend([Action::Cut, Action::Copy, Action::Trash, Action::CopyPath]);
         } else if self.location.directory().is_some() {
             actions.extend([Action::NewFolder, Action::NewFile]);
         }

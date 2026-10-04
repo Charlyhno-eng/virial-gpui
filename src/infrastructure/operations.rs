@@ -10,8 +10,8 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub enum Operation {
-    Paste {
-        source: PathBuf,
+    Transfer {
+        sources: Vec<PathBuf>,
         directory: PathBuf,
         cut: bool,
     },
@@ -24,7 +24,7 @@ pub enum Operation {
         name: String,
         folder: bool,
     },
-    Trash(PathBuf),
+    Trash(Vec<PathBuf>),
     Compress(PathBuf),
     Launch {
         desktop: PathBuf,
@@ -128,6 +128,96 @@ fn command(command: &mut Command) -> io::Result<()> {
     }
 }
 
+fn transfer(sources: Vec<PathBuf>, directory: PathBuf, cut: bool) -> io::Result<()> {
+    let directory = directory.canonicalize()?;
+    if !directory.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            "Destination is not a folder",
+        ));
+    }
+    // Resolve parent aliases without following the selected item itself (it may be a link).
+    let mut sources = sources
+        .into_iter()
+        .map(|source| {
+            let name = source
+                .file_name()
+                .ok_or_else(|| io::Error::other("No file name"))?;
+            let parent = source
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            Ok(parent.canonicalize()?.join(name))
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    sources.sort();
+    sources.dedup();
+    let folders = sources
+        .iter()
+        .filter_map(|source| {
+            fs::symlink_metadata(source)
+                .ok()
+                .filter(|metadata| metadata.is_dir())
+                .map(|_| source.clone())
+        })
+        .collect::<std::collections::HashSet<_>>();
+    // A selected parent carries its descendants along; do not transfer them twice.
+    sources.retain(|source| {
+        !source
+            .ancestors()
+            .skip(1)
+            .any(|parent| folders.contains(parent))
+    });
+    let mut targets = std::collections::HashSet::new();
+    let mut transfers = Vec::new();
+    for source in sources {
+        let metadata = fs::symlink_metadata(&source)?;
+        if metadata.is_dir() && directory.starts_with(source.canonicalize()?) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Cannot transfer a folder into itself",
+            ));
+        }
+        let destination = directory.join(source.file_name().unwrap());
+        if cut && source == destination {
+            continue;
+        }
+        if !targets.insert(destination.clone()) {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "Selected items have the same destination name",
+            ));
+        }
+        match fs::symlink_metadata(&destination) {
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!("{} already exists", destination.display()),
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        transfers.push((source, destination));
+    }
+    // Validate every destination before starting; atomic no-replace operations
+    // still protect against files created after this preflight.
+    for (source, destination) in transfers {
+        if cut {
+            match rename(&source, &destination) {
+                Ok(()) => continue,
+                Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        copy(&source, &destination)?;
+        if cut {
+            remove(&source)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn execute(operation: Operation) -> io::Result<()> {
     match operation {
         Operation::Rename { source, name } => rename(
@@ -155,39 +245,12 @@ pub fn execute(operation: Operation) -> io::Result<()> {
                     .map(|_| ())
             }
         }
-        Operation::Paste {
-            source,
+        Operation::Transfer {
+            sources,
             directory,
             cut,
-        } => {
-            let directory = directory.canonicalize()?;
-            let destination = directory.join(
-                source
-                    .file_name()
-                    .ok_or_else(|| io::Error::other("No file name"))?,
-            );
-            if fs::symlink_metadata(&source)?.is_dir()
-                && directory.starts_with(source.canonicalize()?)
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Cannot copy a folder into itself",
-                ));
-            }
-            if cut {
-                match rename(&source, &destination) {
-                    Ok(()) => return Ok(()),
-                    Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {}
-                    Err(error) => return Err(error),
-                }
-            }
-            copy(&source, &destination)?;
-            if cut {
-                remove(&source)?;
-            }
-            Ok(())
-        }
-        Operation::Trash(path) => command(Command::new("gio").arg("trash").arg("--").arg(path)),
+        } => transfer(sources, directory, cut),
+        Operation::Trash(paths) => command(Command::new("gio").arg("trash").arg("--").args(paths)),
         Operation::Launch { desktop, file } => {
             command(Command::new("gio").arg("launch").arg(desktop).arg(file))
         }

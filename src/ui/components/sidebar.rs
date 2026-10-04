@@ -76,6 +76,7 @@ impl FileManager {
         } else {
             self.location == location
         };
+        let destination = location.directory().map(|path| path.to_path_buf());
         div()
             .id(("place", index))
             .flex()
@@ -101,6 +102,9 @@ impl FileManager {
             )
             .when(active, |row| {
                 row.child(div().w(px(3.)).h(px(12.)).rounded_full().bg(color(ACCENT)))
+            })
+            .when_some(destination, |row, directory| {
+                self.drop_target(row, directory, cx)
             })
             .on_click(cx.listener(move |view, _, window, cx| {
                 view.focus.focus(window);

@@ -30,7 +30,7 @@ pub enum Dialog {
         applications: Vec<Application>,
         loading: bool,
     },
-    Trash(Entry),
+    Trash(Vec<Entry>),
     Properties {
         entry: Entry,
         details: String,
@@ -82,9 +82,16 @@ impl FileManager {
         if self.busy || self.dialog.is_some() {
             return;
         }
-        self.selected = entry
+        if let Some(index) = entry
             .as_ref()
-            .and_then(|entry| self.entries.iter().position(|item| item.path == entry.path));
+            .and_then(|entry| self.entries.iter().position(|item| item.path == entry.path))
+        {
+            if !self.selection.indices.contains(&index) {
+                self.selection.click(index, false, false);
+            }
+        } else {
+            self.selection.clear();
+        }
         self.focus.focus(window);
         self.menu = Some(Menu { position, entry });
         cx.notify();
@@ -106,14 +113,45 @@ impl FileManager {
             .filter(|entry| entry.directory)
             .map(|entry| entry.path.clone())
             .or_else(|| self.location.directory().map(|path| path.to_path_buf()));
+        let selected = self.selected_entries();
+        if entry.is_some() {
+            match action {
+                Action::Copy | Action::Cut => {
+                    self.clipboard = Some((self.selected_paths(), matches!(action, Action::Cut)));
+                    cx.notify();
+                    return;
+                }
+                Action::Trash => {
+                    self.dialog = Some(Dialog::Trash(selected));
+                    cx.notify();
+                    return;
+                }
+                Action::CopyPath => {
+                    cx.write_to_clipboard(ClipboardItem::new_string(
+                        self.selected_paths()
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    ));
+                    return;
+                }
+                Action::Rename | Action::OpenWith | Action::Compress | Action::Properties
+                    if selected.len() > 1 =>
+                {
+                    return;
+                }
+                _ => {}
+            }
+        }
         match action {
             Action::Refresh => self.refresh(cx),
             Action::Paste => {
-                if let (Some((source, cut)), Some(directory)) = (self.clipboard.clone(), directory)
+                if let (Some((sources, cut)), Some(directory)) = (self.clipboard.clone(), directory)
                 {
                     self.run_operation(
-                        Operation::Paste {
-                            source,
+                        Operation::Transfer {
+                            sources,
                             directory,
                             cut,
                         },
@@ -139,12 +177,6 @@ impl FileManager {
                 if let Some(entry) = entry {
                     match action {
                         Action::Open => self.open(entry, cx),
-                        Action::Copy | Action::Cut => {
-                            self.clipboard = Some((entry.path, matches!(action, Action::Cut)));
-                        }
-                        Action::CopyPath => cx.write_to_clipboard(ClipboardItem::new_string(
-                            entry.path.display().to_string(),
-                        )),
                         Action::Rename => {
                             // Keep the entire filename editable, including the extension.
                             if let Some(name) =
@@ -161,7 +193,6 @@ impl FileManager {
                                     Some(self.language.text("This name is not valid UTF-8").into());
                             }
                         }
-                        Action::Trash => self.dialog = Some(Dialog::Trash(entry)),
                         Action::Compress => self.run_operation(Operation::Compress(entry.path), cx),
                         Action::OpenWith => {
                             self.dialog = Some(Dialog::Applications {
@@ -287,7 +318,9 @@ impl FileManager {
                     }),
                 }
             }
-            Some(Dialog::Trash(entry)) => Some(Operation::Trash(entry.path.clone())),
+            Some(Dialog::Trash(entries)) => Some(Operation::Trash(
+                entries.iter().map(|entry| entry.path.clone()).collect(),
+            )),
             _ => None,
         };
         if let Some(operation) = operation {
@@ -302,10 +335,10 @@ impl FileManager {
         self.busy = true;
         self.error = None;
         let origin = self.location.clone();
-        let cut_source = match &operation {
-            Operation::Paste {
-                source, cut: true, ..
-            } => Some(source.clone()),
+        let cut_sources = match &operation {
+            Operation::Transfer {
+                sources, cut: true, ..
+            } => Some(sources.clone()),
             _ => None,
         };
         let recent_path = match &operation {
@@ -326,10 +359,10 @@ impl FileManager {
                 view.busy = false;
                 match result {
                     Ok(()) => {
-                        if cut_source.as_ref().is_some_and(|source| {
+                        if cut_sources.as_ref().is_some_and(|sources| {
                             view.clipboard
                                 .as_ref()
-                                .is_some_and(|(path, cut)| *cut && path == source)
+                                .is_some_and(|(paths, cut)| *cut && paths == sources)
                         }) {
                             view.clipboard = None;
                         }
@@ -338,6 +371,10 @@ impl FileManager {
                         }
                     }
                     Err(error) => {
+                        // A batch can partially succeed after an I/O failure.
+                        if view.location == origin {
+                            view.refresh(cx);
+                        }
                         view.error = Some(format!(
                             "{}: {error}",
                             view.language.text("Operation failed")
@@ -370,6 +407,13 @@ impl FileManager {
             cx.notify();
             return true;
         }
+        if key == "a" && modifiers.control {
+            self.selection.indices = (0..self.entries.len()).collect();
+            self.selection.focus = self.selection.indices.first().copied();
+            self.selection.anchor = self.selection.focus;
+            cx.notify();
+            return true;
+        }
         let action = match key {
             "c" if modifiers.control => Some(Action::Copy),
             "x" if modifiers.control => Some(Action::Cut),
@@ -383,7 +427,8 @@ impl FileManager {
             let entry = if matches!(action, Action::Paste | Action::NewFolder) {
                 None
             } else {
-                self.selected
+                self.selection
+                    .primary()
                     .and_then(|index| self.entries.get(index))
                     .cloned()
             };

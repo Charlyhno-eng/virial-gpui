@@ -4,6 +4,9 @@ use gpui::{Context, Decorations, Render, Window, div, prelude::*, px};
 
 impl Render for FileManager {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !cx.has_active_drag() {
+            self.external_drop = None;
+        }
         window.set_window_title(&format!(
             "{} — Virial",
             self.location.description(self.language)
@@ -22,6 +25,13 @@ impl Render for FileManager {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_move(cx.listener(Self::move_window))
+            .on_mouse_move(cx.listener(Self::update_marquee))
+            .on_drag_move(cx.listener(Self::track_external_drag))
+            .capture_any_mouse_up(cx.listener(Self::finish_mouse_selection))
+            .on_mouse_up_out(
+                gpui::MouseButton::Left,
+                cx.listener(Self::finish_mouse_selection),
+            )
             .relative()
             .size_full()
             .flex()
