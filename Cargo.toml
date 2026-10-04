@@ -1,0 +1,11 @@
+[package]
+name = "virial-gpui"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A simple Linux file manager built with GPUI"
+
+[dependencies]
+gpui = "=0.2.2"
+# GPUI's xattr 0.2 dependency uses ENOATTR, removed by newer libc releases.
+libc = "=0.2.186"
