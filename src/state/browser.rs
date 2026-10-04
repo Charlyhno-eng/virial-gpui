@@ -2,6 +2,16 @@
 use crate::{app::FileManager, domain::models::Entry, state::selection::Selection};
 use gpui::{Context, ScrollStrategy};
 
+pub(crate) fn matches_extension(entry: &Entry, extension: &str) -> bool {
+    extension.is_empty()
+        || entry.directory
+        || entry
+            .path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.to_lowercase() == extension)
+}
+
 pub(crate) fn sort_entries(entries: &mut [Entry], selection: &mut Selection, descending: bool) {
     let paths: std::collections::HashSet<_> = selection
         .indices

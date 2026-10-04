@@ -45,3 +45,20 @@ fn name_sort_keeps_folders_first_and_preserves_selection_paths() {
     );
     assert_eq!(selection.primary(), Some(0));
 }
+
+#[test]
+fn extension_filter_matches_exact_final_extension_and_keeps_folders() {
+    let entry = |name: &str, directory| Entry {
+        path: format!("/test/{name}").into(),
+        name: name.into(),
+        directory,
+        bytes: None,
+    };
+    assert!(matches_extension(&entry("report.PDF", false), "pdf"));
+    assert!(!matches_extension(&entry("report.pdf.bak", false), "pdf"));
+    assert!(!matches_extension(&entry("README", false), "pdf"));
+    assert!(!matches_extension(&entry(".pdf", false), "pdf"));
+    assert!(matches_extension(&entry("archive.tar.gz", false), "gz"));
+    assert!(matches_extension(&entry("folder", true), "pdf"));
+    assert!(matches_extension(&entry("README", false), ""));
+}

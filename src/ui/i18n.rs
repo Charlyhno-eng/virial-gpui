@@ -39,6 +39,7 @@ impl Language {
         match english {
             "Full screen · Space" => "Plein écran · Espace",
             "Compact list" => "Liste compacte",
+            "Extension (e.g. pdf)…" => "Extension (ex. pdf)…",
             "Search everywhere…" => "Rechercher partout…",
             "Search in" => "Rechercher dans",
             "Type" => "Type",

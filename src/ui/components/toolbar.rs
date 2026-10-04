@@ -99,6 +99,18 @@ impl FileManager {
                             }),
                     ),
             )
+            .when(
+                self.location != crate::domain::location::Location::Workspaces,
+                |bar| {
+                    bar.child(
+                        div()
+                            .id("extension-filter")
+                            .w(px(170.))
+                            .max_w_full()
+                            .child(self.extension_input.clone()),
+                    )
+                },
+            )
             .child(
                 div()
                     .id("search-field")

@@ -53,6 +53,14 @@ impl FileManager {
             dialog: None,
             clipboard: None,
             busy: false,
+            extension_filter: String::new(),
+            extension_input: cx.new(|cx| {
+                let mut input =
+                    crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
+                input.compact = true;
+                input.placeholder = Language::system().text("Extension (e.g. pdf)…").into();
+                input
+            }),
             search_input: cx.new(|cx| {
                 let mut input =
                     crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
@@ -72,6 +80,20 @@ impl FileManager {
         };
         cx.observe(&view.search_input, |view, _, cx| {
             view.update_global_search(cx)
+        })
+        .detach();
+        cx.observe(&view.extension_input, |view, _, cx| {
+            let extension = view
+                .extension_input
+                .read(cx)
+                .text
+                .trim()
+                .trim_start_matches('.')
+                .to_lowercase();
+            if extension != view.extension_filter {
+                view.extension_filter = extension;
+                view.refresh(cx);
+            }
         })
         .detach();
         view.navigate(path, cx);
@@ -118,7 +140,10 @@ impl FileManager {
             let _ = view.update(cx, |view, cx| {
                 view.loading = false;
                 match result {
-                    Ok((entries, workspaces)) => {
+                    Ok((mut entries, workspaces)) => {
+                        entries.retain(|entry| {
+                            crate::state::browser::matches_extension(entry, &view.extension_filter)
+                        });
                         view.workspaces = workspaces;
                         let selected_paths: std::collections::HashSet<_> =
                             view.selected_paths().into_iter().collect();
@@ -362,6 +387,13 @@ impl FileManager {
                 self.navigate_location(Location::Workspaces, cx);
             }
             cx.stop_propagation();
+            return;
+        }
+        if self.extension_input.read(cx).is_focused(window) {
+            if matches!(event.keystroke.key.as_str(), "enter" | "escape") {
+                self.focus.focus(window);
+                cx.stop_propagation();
+            }
             return;
         }
         if self.action_key(event, window, cx) {
