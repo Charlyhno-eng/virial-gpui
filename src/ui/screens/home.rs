@@ -410,7 +410,14 @@ impl FileManager {
                                         },
                                     ))
                                     .when(!renaming && !view.busy && !view.loading && view.marquee.is_none(), |row| {
-                                        row.when(!trash, |row| row.on_drag(payload, |drag, _, _, cx| {
+                                        let manager = cx.entity();
+                                        row.when(!trash, |row| row.on_drag(payload, move |drag, _, _, cx| {
+                                            manager.update(cx, |view, cx| {
+                                                view.details_open = false;
+                                                view.preview_expanded = false;
+                                                view.menu = None;
+                                                cx.notify();
+                                            });
                                             cx.new(|_| drag.clone())
                                         }))
                                         .on_click(cx.listener(

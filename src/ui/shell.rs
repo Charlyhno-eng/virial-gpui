@@ -21,7 +21,17 @@ impl Render for FileManager {
         }
         let preview_visible =
             self.details_open && self.location != crate::domain::location::Location::Workspaces;
-        let target_width = if preview_visible { 0. } else { SIDEBAR_WIDTH };
+        let target_width = if preview_visible && !cx.has_active_drag() {
+            0.
+        } else {
+            SIDEBAR_WIDTH
+        };
+        // Keep destinations reachable as soon as a drag starts, even when the
+        // selected item's preview had collapsed the navigation sidebar.
+        if cx.has_active_drag() {
+            self.sidebar_width = SIDEBAR_WIDTH;
+            self.sidebar_transition = None;
+        }
         let current_target = self
             .sidebar_transition
             .map_or(self.sidebar_width, |(_, _, to)| to);
