@@ -298,6 +298,58 @@ fn optimized_encoders_reduce_size_without_resizing() {
 }
 
 #[test]
+fn png_optimization_reduces_conversion_and_cutout_sizes_without_changing_pixels() {
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+
+    let root = tempfile::tempdir().unwrap();
+    let executable = remover(root.path(), "cp -- \"$5\" \"$6\"");
+    for transparent in [false, true] {
+        // A limited palette scattered across the image benefits from indexed PNG.
+        // Include partial alpha and nonzero RGB under fully transparent pixels.
+        let pixels = image::RgbaImage::from_fn(256, 256, |x, y| {
+            let value = ((x * 73 + y * 131 + x * y * 17) % 64) as u8;
+            image::Rgba([
+                value * 3,
+                value * 2,
+                255 - value,
+                if transparent { (value % 4) * 85 } else { 255 },
+            ])
+        });
+        let image = if transparent {
+            DynamicImage::ImageRgba8(pixels.clone())
+        } else {
+            DynamicImage::ImageRgb8(DynamicImage::ImageRgba8(pixels.clone()).into_rgb8())
+        };
+        let mut baseline = Vec::new();
+        PngEncoder::new_with_quality(&mut baseline, CompressionType::Best, FilterType::Adaptive)
+            .write_image(image.as_bytes(), 256, 256, image.color().into())
+            .unwrap();
+        let source = root.path().join("source.png");
+        fs::write(&source, &baseline).unwrap();
+        let edit = if transparent {
+            ImageEdit::RemoveBackground
+        } else {
+            ImageEdit::Convert(ExportFormat::Png)
+        };
+        let name = if transparent {
+            "cutout.png"
+        } else {
+            "converted.png"
+        };
+        export_with_rembg(&source, name, edit, &executable).unwrap();
+        let output = fs::read(root.path().join(name)).unwrap();
+        assert_eq!(image::load_from_memory(&output).unwrap().to_rgba8(), pixels);
+        assert!(
+            output.len() < baseline.len() * 3 / 4,
+            "{edit:?}: {} bytes versus {} before optimization",
+            output.len(),
+            baseline.len()
+        );
+        assert_eq!(fs::read(&source).unwrap(), baseline);
+    }
+}
+
+#[test]
 fn png_preserves_grayscale_and_sixteen_bit_transparency() {
     let root = tempfile::tempdir().unwrap();
     let gray = DynamicImage::ImageLuma16(image::ImageBuffer::from_pixel(

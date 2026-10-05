@@ -165,18 +165,30 @@ fn encode(image: DynamicImage, path: &Path, format: ExportFormat) -> io::Result<
     match format {
         ExportFormat::Png => {
             use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-            PngEncoder::new_with_quality(
-                File::create(path)?,
-                CompressionType::Best,
-                FilterType::Adaptive,
+            let mut bytes = Vec::new();
+            PngEncoder::new_with_quality(&mut bytes, CompressionType::Best, FilterType::Adaptive)
+                .write_image(
+                    image.as_bytes(),
+                    image.width(),
+                    image.height(),
+                    image.color().into(),
+                )
+                .map_err(io::Error::other)?;
+            // Try lossless palette/bit-depth reductions and alternative PNG filters.
+            // Keep hidden RGB values and 16-bit precision as well as visible pixels.
+            let mut options = oxipng::Options::from_preset(3);
+            options.timeout = Some(std::time::Duration::from_secs(10));
+            let optimized =
+                oxipng::optimize_from_memory(&bytes, &options).map_err(io::Error::other)?;
+            // Optimization must never inflate the already compressed export.
+            fs::write(
+                path,
+                if optimized.len() < bytes.len() {
+                    &optimized
+                } else {
+                    &bytes
+                },
             )
-            .write_image(
-                image.as_bytes(),
-                image.width(),
-                image.height(),
-                image.color().into(),
-            )
-            .map_err(io::Error::other)
         }
         ExportFormat::Jpeg => {
             image::codecs::jpeg::JpegEncoder::new_with_quality(File::create(path)?, 75)
