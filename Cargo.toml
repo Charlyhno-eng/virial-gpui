@@ -25,3 +25,5 @@ oxipng = { version = "10.2", default-features = false }
 # Native outgoing file drags are not exposed by upstream GPUI 0.2.2.
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
+# Fix Rust's future-incompatibility warning in proc-macro-error2 2.0.1.
+proc-macro-error2 = { path = "vendor/proc-macro-error2" }
