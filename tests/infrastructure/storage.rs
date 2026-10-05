@@ -27,6 +27,12 @@ fn lists_directories_first_and_handles_hidden_files_and_links() {
 }
 
 #[test]
+fn reports_available_space_for_an_existing_filesystem() {
+    let directory = tempfile::tempdir().unwrap();
+    assert!(available_space(directory.path()).is_ok());
+}
+
+#[test]
 fn folder_sizes_include_hidden_files_but_skip_nested_links_and_special_files() {
     let root = std::env::temp_dir().join(format!("virial-size-test-{}", std::process::id()));
     let folder = root.join("folder");

@@ -149,6 +149,7 @@ impl Language {
             "DEVICES" => "PÉRIPHÉRIQUES",
             "WORKSPACES" => "ESPACES DE TRAVAIL",
             "LOCAL FILES" => "FICHIERS",
+            "free" => "libres",
             "Back" => "Précédent",
             "Forward" => "Suivant",
             "Up" => "Parent",

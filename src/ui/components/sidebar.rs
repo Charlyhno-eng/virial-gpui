@@ -25,6 +25,7 @@ impl gpui::Render for DeviceTooltip {
 
 impl FileManager {
     pub(crate) fn sidebar(&self, cx: &mut Context<Self>) -> Div {
+        let available_space = crate::infrastructure::storage::available_space(&self.home).ok();
         div()
             .w(px(SIDEBAR_WIDTH))
             .h_full()
@@ -85,11 +86,21 @@ impl FileManager {
                     .flex_shrink_0()
                     .flex()
                     .items_center()
+                    .justify_between()
                     .border_t_1()
                     .border_color(color(BORDER))
                     .text_size(px(10.))
                     .text_color(color(MUTED))
-                    .child(self.language.text("LOCAL FILES")),
+                    .child(self.language.text("LOCAL FILES"))
+                    .when_some(available_space, |footer, bytes| {
+                        footer.child(div().flex_1().min_w_0().text_ellipsis().text_right().child(
+                            format!(
+                                "{} {}",
+                                self.language.size(Some(bytes)),
+                                self.language.text("free")
+                            ),
+                        ))
+                    }),
             )
     }
 

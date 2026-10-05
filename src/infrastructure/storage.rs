@@ -2,6 +2,7 @@ use crate::domain::models::Entry;
 use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
 use std::{
     collections::HashSet,
+    ffi::CString,
     fs, io,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -91,6 +92,25 @@ pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
     }
     check_cancelled(cancelled)?;
     Ok(total)
+}
+
+pub fn available_space(path: &Path) -> io::Result<u64> {
+    let path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Path contains a NUL byte"))?;
+    let mut stats = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // SAFETY: `path` is NUL-terminated and `stats` points to writable storage.
+    if unsafe { libc::statvfs(path.as_ptr(), stats.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `statvfs` initialized `stats` when it returned successfully.
+    let stats = unsafe { stats.assume_init() };
+    let block_size = if stats.f_frsize > 0 {
+        stats.f_frsize
+    } else {
+        stats.f_bsize
+    };
+    let bytes = (stats.f_bavail as u128).saturating_mul(block_size as u128);
+    Ok(bytes.min(u64::MAX as u128) as u64)
 }
 
 #[cfg(test)]
