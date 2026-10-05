@@ -449,7 +449,7 @@ impl FileManager {
         };
         let data = self.data_home.clone();
         let task = cx.background_executor().spawn(async move {
-            match crate::infrastructure::operations::execute(operation) {
+            match crate::infrastructure::undo::execute(&data, operation) {
                 Ok(extracted) => {
                     let result = recent_path
                         .map(|path| crate::infrastructure::recent::record(&data, &path))
@@ -517,6 +517,16 @@ impl FileManager {
             cx.notify();
             return true;
         }
+        if key == "z"
+            && modifiers.control
+            && !modifiers.shift
+            && !modifiers.alt
+            && !modifiers.platform
+        {
+            self.undo_operation(cx);
+            cx.stop_propagation();
+            return true;
+        }
         if key == "a" && modifiers.control {
             self.selection.indices = (0..self.entries.len()).collect();
             self.selection.focus = self.selection.indices.first().copied();
@@ -546,5 +556,58 @@ impl FileManager {
             return true;
         }
         false
+    }
+
+    fn undo_operation(&mut self, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        self.busy = true;
+        self.menu = None;
+        self.error = None;
+        let data = self.data_home.clone();
+        let origin = self.location.clone();
+        let requested = origin.clone();
+        let task = cx.background_executor().spawn(async move {
+            let result = crate::infrastructure::undo::undo(&data);
+            // Undo can remove the folder currently being browsed, including a ZIP folder.
+            let directory = requested.directory().and_then(|path| {
+                path.ancestors()
+                    .find(|parent| {
+                        parent.is_dir()
+                            || crate::infrastructure::archive::split(parent).is_some_and(
+                                |(_, member)| {
+                                    member.as_os_str().is_empty()
+                                        || crate::infrastructure::archive::entry(parent)
+                                            .is_ok_and(|entry| entry.directory)
+                                },
+                            )
+                    })
+                    .map(|path| path.to_path_buf())
+            });
+            (result, directory)
+        });
+        cx.spawn(async move |view, cx| {
+            let (result, directory) = task.await;
+            let _ = view.update(cx, |view, cx| {
+                view.busy = false;
+                // A failed restore can still have changed some paths in a batch.
+                if view.location == origin
+                    && let Some(directory) = directory
+                {
+                    view.navigate(directory, cx);
+                } else {
+                    view.refresh(cx);
+                }
+                view.error = match result {
+                    Ok(true) => None,
+                    Ok(false) => Some(view.language.text("Nothing to undo").into()),
+                    Err(error) => Some(format!("{}: {error}", view.language.text("Undo failed"))),
+                };
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
     }
 }

@@ -5964,6 +5964,7 @@ dependencies = [
  "gpui",
  "libc",
  "roxmltree",
+ "sha2 0.10.9",
  "tempfile",
  "two-face",
  "unicode-segmentation",

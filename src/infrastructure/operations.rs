@@ -48,7 +48,7 @@ pub fn named_path(directory: &Path, name: &str) -> io::Result<PathBuf> {
     Ok(directory.join(name))
 }
 
-fn rename(source: &Path, destination: &Path) -> io::Result<()> {
+pub(super) fn rename(source: &Path, destination: &Path) -> io::Result<()> {
     let source = CString::new(source.as_os_str().as_bytes())?;
     let destination = CString::new(destination.as_os_str().as_bytes())?;
     // Linux atomic no-replace rename also protects against a concurrent creator.

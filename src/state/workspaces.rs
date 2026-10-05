@@ -72,9 +72,15 @@ impl FileManager {
         self.busy = true;
         self.error = None;
         let data = self.data_home.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { crate::infrastructure::workspaces::edit(&data, edit) });
+        let task = cx.background_executor().spawn(async move {
+            let path = data.join("virial/workspaces");
+            // The history shares this parent, which is created before taking a snapshot.
+            std::fs::create_dir_all(path.parent().unwrap())?;
+            let path = path.parent().unwrap().canonicalize()?.join("workspaces");
+            crate::infrastructure::undo::record(&data, vec![path], || {
+                crate::infrastructure::workspaces::edit(&data, edit)
+            })
+        });
         cx.spawn(async move |view, cx| {
             let result = task.await;
             let _ = view.update(cx, |view, cx| {

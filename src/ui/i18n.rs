@@ -37,6 +37,11 @@ impl Language {
             return english;
         }
         match english {
+            "Nothing to undo" => "Aucune action à annuler",
+            "Undo failed" => "Échec de l’annulation",
+            "Wait for the current operation to finish before closing" => {
+                "Attendez la fin de l’opération en cours avant de fermer"
+            }
             "Mounted" => "Monté",
             "Click to mount" => "Cliquer pour monter",
             "Unmount volume" => "Démonter le volume",

@@ -97,11 +97,21 @@ impl FileManager {
         .detach();
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
-            let _ = weak.update(cx, |view, _| {
+            weak.update(cx, |view, cx| {
+                if view.busy {
+                    view.error = Some(
+                        view.language
+                            .text("Wait for the current operation to finish before closing")
+                            .into(),
+                    );
+                    cx.notify();
+                    return false;
+                }
                 view.layout.capture(window);
                 view.layout.save();
-            });
-            true
+                true
+            })
+            .unwrap_or(true)
         });
         cx.on_release(|view, _| view.layout.save()).detach();
         cx.on_app_quit(|view, _| {
