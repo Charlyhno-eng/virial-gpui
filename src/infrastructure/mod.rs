@@ -4,6 +4,7 @@ pub(crate) mod layout;
 pub(crate) mod media;
 pub(crate) mod operations;
 pub(crate) mod progress;
+pub(crate) mod queue;
 pub(crate) mod recent;
 pub(crate) mod search;
 pub(crate) mod storage;

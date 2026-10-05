@@ -1,6 +1,7 @@
 mod button;
 pub(crate) mod input;
 mod modal;
+mod operations;
 mod sidebar;
 pub(super) mod titlebar;
 mod toolbar;

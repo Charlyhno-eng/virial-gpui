@@ -37,6 +37,39 @@ impl Language {
             return english;
         }
         match english {
+            "Finish or cancel queued operations before undoing" => {
+                "Terminez ou annulez les opérations en attente avant d’annuler une action"
+            }
+            "Cannot recover operation queue" => "Impossible de récupérer la file d’opérations",
+            "Operation needs attention" => "Une opération nécessite votre attention",
+            "Paused" => "En pause",
+            "Resume" => "Reprendre",
+            "Background" => "Arrière-plan",
+            "items" => "éléments",
+            "seconds remaining" => "secondes restantes",
+            "Identical contents already exist" => "Un contenu identique existe déjà",
+            "Destination name conflict" => "Conflit de nom à destination",
+            "Source" => "Source",
+            "Destination" => "Destination",
+            "Existing contents are preserved. Keep both creates a numbered name." => {
+                "Le contenu existant est conservé. Conserver les deux crée un nom numéroté."
+            }
+            "Skip" => "Ignorer",
+            "Keep both" => "Conserver les deux",
+            "Skip all" => "Tout ignorer",
+            "Keep all" => "Tout conserver",
+            "The journal and undo backups are retained. Resolve the problem, then retry." => {
+                "Le journal et les sauvegardes sont conservés. Résolvez le problème puis réessayez."
+            }
+            "Retry" => "Réessayer",
+            "Verify copied contents (SHA-256)" => "Vérifier le contenu copié (SHA-256)",
+            "Waiting operations" => "Opérations en attente",
+            "Waiting operation" => "Opération en attente",
+            "Restore deleted items?" => "Restaurer les éléments supprimés ?",
+            "Deleted items:" => "Éléments supprimés :",
+            "Restore the entire batch? Existing files and later edits are protected." => {
+                "Restaurer tous ces éléments ? Les fichiers existants et les modifications ultérieures sont protégés."
+            }
             "Convert image…" => "Convertir l’image…",
             "Remove background…" => "Supprimer le fond…",
             "Output file name" => "Nom du fichier de sortie",

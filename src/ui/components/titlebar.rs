@@ -153,7 +153,7 @@ impl FileManager {
                     .child(
                         control("window-close", "close", self.language.text("Close"), true)
                             .on_click(cx.listener(|view, _, window, cx| {
-                                if view.busy {
+                                if view.busy || view.queue_running {
                                     view.error = Some(view.language.text("Wait for the current operation to finish before closing").into());
                                     cx.notify();
                                     return;

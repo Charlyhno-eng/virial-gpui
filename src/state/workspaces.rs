@@ -15,7 +15,11 @@ impl FileManager {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.busy || self.dialog.is_some() || self.global_search.is_some() {
+        if self.busy
+            || self.active_operation.is_some()
+            || self.dialog.is_some()
+            || self.global_search.is_some()
+        {
             return;
         }
         self.menu = None;
@@ -66,7 +70,7 @@ impl FileManager {
     }
 
     pub(crate) fn edit_workspace(&mut self, edit: Edit, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.busy || self.active_operation.is_some() {
             return;
         }
         self.busy = true;
@@ -94,6 +98,7 @@ impl FileManager {
                         ))
                     }
                 }
+                view.start_queued_operation(false, cx);
                 cx.notify();
             });
         })

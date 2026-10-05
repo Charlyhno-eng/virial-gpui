@@ -42,6 +42,7 @@ impl FileManager {
                 Dialog::Name { .. } => "New file…",
                 Dialog::Applications { .. } => "Open with…",
                 Dialog::Trash(_) => "Move to Trash…",
+                Dialog::Undo { .. } => "Restore deleted items?",
                 Dialog::Properties { .. } => "Properties",
             };
             let mut content = div()
@@ -122,6 +123,11 @@ impl FileManager {
                         self.language
                             .text("Selected items will be moved to the desktop Trash"),
                     ),
+                Dialog::Undo { summary, .. } => {
+                    let count = summary.split('\t').nth(1).unwrap_or("?");
+                    content.child(format!("{} {count}", self.language.text("Deleted items:")))
+                        .child(self.language.text("Restore the entire batch? Existing files and later edits are protected."))
+                },
                 Dialog::Properties { entry, details } => content.child(entry.name.clone()).child(
                     div()
                         .id("property-details")
@@ -177,7 +183,10 @@ impl FileManager {
             };
             let confirm = matches!(
                 dialog,
-                Dialog::Name { .. } | Dialog::Trash(_) | Dialog::ImageExport { .. }
+                Dialog::Name { .. }
+                    | Dialog::Trash(_)
+                    | Dialog::ImageExport { .. }
+                    | Dialog::Undo { .. }
             );
             content = content.child(
                 div()

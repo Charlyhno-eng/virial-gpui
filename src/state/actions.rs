@@ -46,6 +46,10 @@ pub enum Dialog {
         loading: bool,
     },
     Trash(Vec<Entry>),
+    Undo {
+        summary: String,
+        entry: String,
+    },
     Properties {
         entry: Entry,
         details: String,
@@ -467,6 +471,12 @@ impl FileManager {
             Some(Dialog::Trash(entries)) => Some(Operation::Trash(
                 entries.iter().map(|entry| entry.path.clone()).collect(),
             )),
+            Some(Dialog::Undo { entry, .. }) => {
+                let entry = entry.clone();
+                self.close_dialog(window, cx);
+                self.perform_undo(Some(entry), cx);
+                return;
+            }
             _ => None,
         };
         if let Some(operation) = operation {
@@ -475,105 +485,13 @@ impl FileManager {
         }
     }
     pub(crate) fn run_operation(&mut self, operation: Operation, cx: &mut Context<Self>) {
-        if self.busy {
-            return;
-        }
-        self.busy = true;
-        self.error = None;
-        let progress = matches!(&operation, Operation::Transfer { .. })
-            .then(crate::infrastructure::progress::Progress::default);
-        self.transfer_progress = progress.clone();
-        if progress.is_some() {
-            let executor = cx.background_executor().clone();
-            cx.spawn(async move |view, cx| {
-                loop {
-                    executor.timer(std::time::Duration::from_millis(100)).await;
-                    let active = view
-                        .update(cx, |view, cx| {
-                            if view.transfer_progress.is_none() {
-                                return false;
-                            }
-                            cx.notify();
-                            true
-                        })
-                        .unwrap_or(false);
-                    if !active {
-                        break;
-                    }
-                }
-            })
-            .detach();
-        }
-        let origin = self.location.clone();
-        let cut_sources = match &operation {
-            Operation::Transfer {
-                sources, cut: true, ..
-            } => Some(sources.clone()),
-            _ => None,
-        };
-        let recent_path = match &operation {
-            Operation::Launch { file, .. } => Some(file.clone()),
-            _ => None,
-        };
-        let data = self.data_home.clone();
-        let task = cx.background_executor().spawn(async move {
-            let result = if let Some(progress) = progress.as_ref() {
-                crate::infrastructure::undo::execute_with_progress(&data, operation, Some(progress))
-            } else {
-                crate::infrastructure::undo::execute(&data, operation)
-            };
-            match result {
-                Ok(extracted) => {
-                    let result = recent_path
-                        .map(|path| crate::infrastructure::recent::record(&data, &path))
-                        .transpose()
-                        .map(|_| ());
-                    (result, extracted)
-                }
-                Err(error) => (Err(error), None),
-            }
-        });
-        cx.spawn(async move |view, cx| {
-            let (result, extracted) = task.await;
-            let _ = view.update(cx, |view, cx| {
-                view.busy = false;
-                view.transfer_progress = None;
-                if let Some(extracted) = extracted {
-                    view.opened_archive_files.push(extracted);
-                }
-                match result {
-                    Ok(()) => {
-                        if cut_sources.as_ref().is_some_and(|sources| {
-                            view.clipboard
-                                .as_ref()
-                                .is_some_and(|(paths, cut)| *cut && paths == sources)
-                        }) {
-                            view.clipboard = None;
-                        }
-                        if view.location == origin {
-                            view.refresh(cx);
-                        }
-                    }
-                    Err(error) => {
-                        // A batch can partially succeed after an I/O failure.
-                        if view.location == origin {
-                            view.refresh(cx);
-                        }
-                        view.error = Some(format!(
-                            "{}: {error}",
-                            view.language.text("Operation failed")
-                        ))
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
+        self.enqueue_operation(operation, cx);
     }
+
     pub(crate) fn restore_trash(&mut self, cx: &mut Context<Self>) {
         let paths = self.selected_paths();
         if self.busy
+            || self.active_operation.is_some()
             || paths.is_empty()
             || self.location != crate::domain::location::Location::Trash
         {
@@ -593,6 +511,7 @@ impl FileManager {
                 view.error = result
                     .err()
                     .map(|error| format!("{}: {error}", view.language.text("Restore failed")));
+                view.start_queued_operation(false, cx);
                 cx.notify();
             });
         })
@@ -662,7 +581,43 @@ impl FileManager {
     }
 
     fn undo_operation(&mut self, cx: &mut Context<Self>) {
-        if self.busy {
+        if self.busy || self.active_operation.is_some() || !self.operation_queue.is_empty() {
+            self.error = Some(
+                self.language
+                    .text("Finish or cancel queued operations before undoing")
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
+        self.busy = true;
+        let data = self.data_home.clone();
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::infrastructure::undo::latest_summary(&data) });
+        cx.spawn(async move |view, cx| {
+            let summary = task.await;
+            let _ = view.update(cx, |view, cx| {
+                view.busy = false;
+                match summary {
+                    Ok(Some((entry, summary))) if summary.starts_with("Trash\t") => {
+                        view.dialog = Some(Dialog::Undo { summary, entry });
+                        cx.notify();
+                    }
+                    Ok(_) => view.perform_undo(None, cx),
+                    Err(error) => {
+                        view.error =
+                            Some(format!("{}: {error}", view.language.text("Undo failed")));
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn perform_undo(&mut self, expected: Option<String>, cx: &mut Context<Self>) {
+        if self.busy || self.active_operation.is_some() {
             return;
         }
         self.busy = true;
@@ -672,7 +627,11 @@ impl FileManager {
         let origin = self.location.clone();
         let requested = origin.clone();
         let task = cx.background_executor().spawn(async move {
-            let result = crate::infrastructure::undo::undo(&data);
+            let result = if let Some(expected) = expected {
+                crate::infrastructure::undo::undo_expected(&data, &expected)
+            } else {
+                crate::infrastructure::undo::undo(&data)
+            };
             // Undo can remove the folder currently being browsed, including a ZIP folder.
             let directory = requested.directory().and_then(|path| {
                 path.ancestors()
@@ -707,6 +666,7 @@ impl FileManager {
                     Ok(false) => Some(view.language.text("Nothing to undo").into()),
                     Err(error) => Some(format!("{}: {error}", view.language.text("Undo failed"))),
                 };
+                view.start_queued_operation(false, cx);
                 cx.notify();
             });
         })

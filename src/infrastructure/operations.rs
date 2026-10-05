@@ -83,6 +83,9 @@ pub(super) fn copy_with_progress(
     destination: &Path,
     progress: Option<&super::progress::Progress>,
 ) -> io::Result<()> {
+    if let Some(progress) = progress {
+        progress.checkpoint()?;
+    }
     let metadata = fs::symlink_metadata(source)?;
     if metadata.is_symlink() {
         symlink(fs::read_link(source)?, destination)?;
@@ -145,6 +148,9 @@ fn copy_chunks(
     progress: Option<&super::progress::Progress>,
 ) -> io::Result<()> {
     loop {
+        if let Some(progress) = progress {
+            progress.checkpoint()?;
+        }
         let copied = io::copy(&mut input.take(COPY_CHUNK), output)?;
         if let Some(progress) = progress {
             progress.advance(copied);

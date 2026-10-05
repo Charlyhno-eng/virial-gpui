@@ -5,6 +5,7 @@ mod code_preview;
 pub(crate) mod devices;
 pub(crate) mod global_search;
 pub(crate) mod mouse;
+pub(crate) mod operations;
 pub(crate) mod preview;
 pub(crate) mod selection;
 pub(crate) mod workspaces;

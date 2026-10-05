@@ -185,68 +185,7 @@ impl Render for FileManager {
                     "expanded-preview",
                 ))
             })
-            .when_some(self.transfer_progress.as_ref(), |root, progress| {
-                use crate::infrastructure::progress::Phase;
-                let state = progress.snapshot();
-                let label = self.language.text(match state.phase {
-                    Phase::Preparing => "Preparing transfer…",
-                    Phase::SavingUndo => "Saving undo history…",
-                    Phase::Moving => "Moving…",
-                    Phase::Copying => "Copying…",
-                    Phase::Finishing => "Finishing transfer…",
-                });
-                let fraction = state
-                    .total
-                    .filter(|total| *total > 0)
-                    .map(|total| (state.completed as f32 / total as f32).clamp(0., 1.));
-                root.child(
-                    div()
-                        .absolute()
-                        .bottom(px(38.))
-                        .right(px(16.))
-                        .w(px(280.))
-                        .p_3()
-                        .rounded_lg()
-                        .bg(color(BACKGROUND))
-                        .border_1()
-                        .border_color(color(BORDER))
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(
-                            div().flex().justify_between().child(label).children(
-                                fraction.map(|fraction| format!("{:.0}%", fraction * 100.)),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .w_full()
-                                .h(px(6.))
-                                .rounded_full()
-                                .overflow_hidden()
-                                .bg(color(BORDER))
-                                .child({
-                                    let bar = div()
-                                        .h_full()
-                                        .bg(color(ACCENT_BLUE))
-                                        .w(gpui::relative(fraction.unwrap_or(0.3)));
-                                    if fraction.is_none() {
-                                        use gpui::{Animation, AnimationExt};
-                                        bar.with_animation(
-                                            "transfer-preparation",
-                                            Animation::new(std::time::Duration::from_secs(1))
-                                                .repeat()
-                                                .with_easing(gpui::pulsating_between(0.3, 1.)),
-                                            |bar, delta| bar.opacity(delta),
-                                        )
-                                        .into_any_element()
-                                    } else {
-                                        bar.into_any_element()
-                                    }
-                                }),
-                        ),
-                )
-            })
+            .children(self.operation_panel(cx))
             .children(titlebar::resize_handles(window))
             .children(self.context_overlay(window, cx))
             .children(self.global_search_overlay(window, cx))

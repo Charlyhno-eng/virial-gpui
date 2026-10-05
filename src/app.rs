@@ -61,6 +61,12 @@ impl FileManager {
             clipboard: None,
             busy: false,
             transfer_progress: None,
+            operation_queue: Default::default(),
+            active_operation: None,
+            queue_running: false,
+            queue_failed: false,
+            queue_background: false,
+            verify_transfers: false,
             extension_filter: String::new(),
             extension_input: cx.new(|cx| {
                 let mut input =
@@ -106,7 +112,7 @@ impl FileManager {
         let weak = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |view, cx| {
-                if view.busy {
+                if view.busy || view.queue_running {
                     view.error = Some(
                         view.language
                             .text("Wait for the current operation to finish before closing")
@@ -147,6 +153,7 @@ impl FileManager {
         .detach();
         view.navigate(path, cx);
         view.monitor_devices(cx);
+        view.recover_operations(cx);
         view
     }
 

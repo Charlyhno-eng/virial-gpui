@@ -116,7 +116,7 @@ fn affected(operation: &Operation) -> io::Result<Vec<PathBuf>> {
 
 /// Hash contents, names, link targets and permissions, without following symlinks.
 /// Timestamps and inodes are excluded so restoring a snapshot permits earlier undos.
-fn fingerprint(path: &Path) -> io::Result<String> {
+pub(crate) fn fingerprint(path: &Path) -> io::Result<String> {
     fingerprint_with_progress(path, None)
 }
 
@@ -124,14 +124,44 @@ fn fingerprint_with_progress(
     path: &Path,
     progress: Option<&super::progress::Progress>,
 ) -> io::Result<String> {
+    fingerprint_impl(path, progress, true, true)
+}
+
+pub(crate) fn fingerprint_controlled(
+    path: &Path,
+    progress: &super::progress::Progress,
+) -> io::Result<String> {
+    fingerprint_impl(path, Some(progress), false, true)
+}
+
+pub(crate) fn content_fingerprint(
+    path: &Path,
+    progress: &super::progress::Progress,
+) -> io::Result<String> {
+    fingerprint_impl(path, Some(progress), false, false)
+}
+
+fn fingerprint_impl(
+    path: &Path,
+    progress: Option<&super::progress::Progress>,
+    report: bool,
+    permissions: bool,
+) -> io::Result<String> {
     fn visit(
         path: &Path,
         hash: &mut Sha256,
         progress: Option<&super::progress::Progress>,
         buffer: &mut Vec<u8>,
+        report: bool,
+        permissions: bool,
     ) -> io::Result<()> {
+        if let Some(progress) = progress {
+            progress.checkpoint()?;
+        }
         let metadata = fs::symlink_metadata(path)?;
-        hash.update(metadata.permissions().mode().to_le_bytes());
+        if permissions {
+            hash.update(metadata.permissions().mode().to_le_bytes());
+        }
         if metadata.is_symlink() {
             hash.update(b"link");
             let target = fs::read_link(path)?;
@@ -148,7 +178,7 @@ fn fingerprint_with_progress(
                 let bytes = name.as_bytes();
                 hash.update((bytes.len() as u64).to_le_bytes());
                 hash.update(bytes);
-                visit(&child.path(), hash, progress, buffer)?;
+                visit(&child.path(), hash, progress, buffer, report, permissions)?;
             }
         } else if metadata.is_file() {
             hash.update(b"file");
@@ -160,12 +190,15 @@ fn fingerprint_with_progress(
                 buffer.resize(256 * 1024, 0);
             }
             loop {
+                if let Some(progress) = progress {
+                    progress.checkpoint()?;
+                }
                 let read = file.read(buffer)?;
                 if read == 0 {
                     break;
                 }
                 hash.update(&buffer[..read]);
-                if let Some(progress) = progress {
+                if report && let Some(progress) = progress {
                     progress.advance(read as u64);
                 }
             }
@@ -175,7 +208,7 @@ fn fingerprint_with_progress(
                 "Special files cannot be recorded for undo",
             ));
         }
-        if let Some(progress) = progress {
+        if report && let Some(progress) = progress {
             progress.advance(1);
         }
         Ok(())
@@ -187,7 +220,14 @@ fn fingerprint_with_progress(
         }
     }
     let mut hash = Sha256::new();
-    visit(path, &mut hash, progress, &mut Vec::new())?;
+    visit(
+        path,
+        &mut hash,
+        progress,
+        &mut Vec::new(),
+        report,
+        permissions,
+    )?;
     Ok(format!("{:x}", hash.finalize()))
 }
 
@@ -209,10 +249,15 @@ fn save(directory: &Path, records: &[Record], ready: bool) -> io::Result<()> {
 }
 
 fn load(directory: &Path) -> io::Result<Vec<Record>> {
+    load_manifest(directory, false)
+}
+
+fn load_manifest(directory: &Path, allow_pending: bool) -> io::Result<Vec<Record>> {
     let text = fs::read_to_string(directory.join("manifest"))?;
     let mut lines = text.lines();
     match lines.next() {
         Some("virial-undo-1 ready") => {}
+        Some("virial-undo-1 pending") if allow_pending => {}
         Some("virial-undo-1 pending") => {
             return Err(io::Error::other(
                 "An interrupted operation has incomplete undo history; its backups have been retained",
@@ -284,11 +329,14 @@ fn history(data: &Path) -> io::Result<(PathBuf, File)> {
     Ok((directory.canonicalize()?, lock))
 }
 
-fn sync_snapshot(path: &Path) -> io::Result<()> {
+fn sync_snapshot(path: &Path, progress: Option<&super::progress::Progress>) -> io::Result<()> {
     let mut pending = vec![path.to_path_buf()];
     let mut files = Vec::new();
     let mut directories = Vec::new();
     while let Some(path) = pending.pop() {
+        if let Some(progress) = progress {
+            progress.checkpoint()?;
+        }
         let metadata = fs::symlink_metadata(&path)?;
         if metadata.is_symlink() {
             continue;
@@ -308,6 +356,9 @@ fn sync_snapshot(path: &Path) -> io::Result<()> {
     let workers = files.len().div_ceil(32).clamp(1, 4);
     if workers == 1 {
         for file in &files {
+            if let Some(progress) = progress {
+                progress.checkpoint()?;
+            }
             File::open(file)?.sync_all()?;
         }
     } else {
@@ -317,6 +368,9 @@ fn sync_snapshot(path: &Path) -> io::Result<()> {
                 .map(|chunk| {
                     scope.spawn(move || -> io::Result<()> {
                         for file in chunk {
+                            if let Some(progress) = progress {
+                                progress.checkpoint()?;
+                            }
                             File::open(file)?.sync_all()?;
                         }
                         Ok(())
@@ -332,6 +386,9 @@ fn sync_snapshot(path: &Path) -> io::Result<()> {
     }
     // Persist directory entries only after all file data, children before parents.
     for directory in directories.into_iter().rev() {
+        if let Some(progress) = progress {
+            progress.checkpoint()?;
+        }
         File::open(directory)?.sync_all()?;
     }
     Ok(())
@@ -365,7 +422,7 @@ fn snapshot_with_progress(
         operations::copy(source, destination)?;
     }
     timestamps(source, destination)?;
-    sync_snapshot(destination)
+    sync_snapshot(destination, progress)
 }
 
 // Snapshots may include read-only folders. Make only our private copies writable
@@ -493,6 +550,212 @@ fn record_with_progress<T>(
     result
 }
 
+/// A queued operation records its intended final states before any mutation.
+/// Recovery accepts only original or planned contents, never arbitrary later edits.
+pub(crate) fn durable(
+    data: &Path,
+    id: &str,
+    planned: Vec<(PathBuf, String)>,
+    summary: &str,
+    progress: &super::progress::Progress,
+    action: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    let _guard = LOCK
+        .lock()
+        .map_err(|_| io::Error::other("Undo lock unavailable"))?;
+    let (history, _lock) = history(data)?;
+    let previous = entries(&history)?;
+    let existing = previous
+        .iter()
+        .find(|(_, path)| fs::read_to_string(path.join("operation")).is_ok_and(|key| key == id));
+    let (directory, mut records) = if let Some((_, directory)) = existing {
+        let records = load_manifest(directory, true)?;
+        if load(directory).is_ok() {
+            // The action and its undo entry were already finalized before the crash.
+            progress.begin(super::progress::Phase::Finishing, None);
+            return Ok(());
+        }
+        if records.len() != planned.len()
+            || records
+                .iter()
+                .zip(&planned)
+                .any(|(record, (path, after))| record.path != *path || record.after != *after)
+        {
+            return Err(io::Error::other(
+                "Recovery plan does not match saved undo history",
+            ));
+        }
+        for (index, record) in records.iter().enumerate() {
+            let current = fingerprint(&record.path)?;
+            if current != record.before && current != record.after {
+                return Err(io::Error::other(format!(
+                    "Cannot resume: {} changed after interruption",
+                    record.path.display()
+                )));
+            }
+            if record.before != "-"
+                && fingerprint(&directory.join(index.to_string()))? != record.before
+            {
+                return Err(io::Error::other("Cannot resume: undo backup is damaged"));
+            }
+        }
+        (directory.clone(), records)
+    } else {
+        if let Some((_, latest)) = previous.last() {
+            load(latest)?;
+        }
+        let number = previous.last().map_or(Ok(1), |(number, _)| {
+            number.checked_add(1).ok_or_else(invalid)
+        })?;
+        let staging = tempfile::Builder::new()
+            .prefix(".pending-")
+            .tempdir_in(&history)?;
+        let total = planned
+            .iter()
+            .map(|(path, _)| super::progress::weight(path))
+            .collect::<io::Result<Vec<_>>>()?
+            .into_iter()
+            .sum::<u64>();
+        progress.begin(
+            super::progress::Phase::SavingUndo,
+            Some(total.saturating_mul(4)),
+        );
+        let mut records = Vec::new();
+        for (index, (path, after)) in planned.into_iter().enumerate() {
+            if path.starts_with(&history) || history.starts_with(&path) {
+                return Err(io::Error::other(
+                    "Cannot modify the undo history or a folder containing it",
+                ));
+            }
+            let before = fingerprint_with_progress(&path, Some(progress))?;
+            if before != "-" {
+                let backup = staging.path().join(index.to_string());
+                snapshot_with_progress(&path, &backup, Some(progress))?;
+                if fingerprint_with_progress(&backup, Some(progress))? != before
+                    || fingerprint_with_progress(&path, Some(progress))? != before
+                {
+                    return Err(io::Error::other(
+                        "File changed while recording undo history; retry",
+                    ));
+                }
+            }
+            records.push(Record {
+                path,
+                before,
+                after,
+            });
+        }
+        save(staging.path(), &records, false)?;
+        for (name, value) in [("operation", id), ("summary", summary)] {
+            let mut file = File::create(staging.path().join(name))?;
+            file.write_all(value.as_bytes())?;
+            file.sync_all()?;
+        }
+        let directory = history.join(number.to_string());
+        fs::rename(staging.path(), &directory)?;
+        File::open(&history)?.sync_all()?;
+        (directory, records)
+    };
+    let result = action();
+    // I/O failures retain a pending plan and partial copies for Retry. Only an
+    // explicit cancellation finalizes partial successes as a ready undo batch.
+    if result
+        .as_ref()
+        .is_err_and(|error| error.kind() != io::ErrorKind::Interrupted)
+    {
+        return result;
+    }
+
+    progress.begin(super::progress::Phase::Finishing, None);
+    let total = records
+        .iter()
+        .map(|record| super::progress::weight(&record.path))
+        .collect::<io::Result<Vec<_>>>()?
+        .into_iter()
+        .sum();
+    progress.begin(super::progress::Phase::Finishing, Some(total));
+    for record in &mut records {
+        let current = fingerprint_with_progress(&record.path, Some(progress))?;
+        if current != record.before && current != record.after {
+            return Err(io::Error::other(format!(
+                "Contents changed during operation: {}; journal and backups retained",
+                record.path.display()
+            )));
+        }
+        record.after = current;
+    }
+    save(&directory, &records, true)?;
+    // Keep even a no-op entry until the queue journal is removed. Its operation
+    // marker prevents replay in the crash window between finalization and removal.
+    if records.iter().any(|record| record.before != record.after) {
+        let oldest = entries(&history)?.len().saturating_sub(LIMIT);
+        for (_, path) in previous.into_iter().take(oldest) {
+            discard_entry(&path)?;
+        }
+    }
+    result
+}
+
+pub(crate) fn discard_noop(data: &Path, id: &str) -> io::Result<()> {
+    let _guard = LOCK
+        .lock()
+        .map_err(|_| io::Error::other("Undo lock unavailable"))?;
+    let (history, _lock) = history(data)?;
+    for (_, directory) in entries(&history)? {
+        if fs::read_to_string(directory.join("operation")).is_ok_and(|key| key == id) {
+            let records = load(&directory)?;
+            if records.iter().all(|record| record.before == record.after) {
+                discard_entry(&directory)?;
+            }
+            break;
+        }
+    }
+    Ok(())
+}
+
+// Cleanup is allowed only after the durable manifest reached its ready state.
+pub(crate) fn finalized(data: &Path, id: &str) -> io::Result<bool> {
+    let _guard = LOCK
+        .lock()
+        .map_err(|_| io::Error::other("Undo lock unavailable"))?;
+    let (history, _lock) = history(data)?;
+    for (_, directory) in entries(&history)? {
+        if fs::read_to_string(directory.join("operation")).is_ok_and(|key| key == id) {
+            return Ok(load(&directory).is_ok());
+        }
+    }
+    Ok(false)
+}
+
+fn entry_key(directory: &Path) -> io::Result<String> {
+    match fs::read_to_string(directory.join("operation")) {
+        Ok(id) => Ok(id),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(directory
+            .file_name()
+            .ok_or_else(invalid)?
+            .to_string_lossy()
+            .into_owned()),
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) fn latest_summary(data: &Path) -> io::Result<Option<(String, String)>> {
+    let _guard = LOCK
+        .lock()
+        .map_err(|_| io::Error::other("Undo lock unavailable"))?;
+    let (history, _lock) = history(data)?;
+    let Some((_, directory)) = entries(&history)?.pop() else {
+        return Ok(None);
+    };
+    load(&directory)?;
+    match fs::read_to_string(directory.join("summary")) {
+        Ok(summary) => Ok(Some((entry_key(&directory)?, summary))),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
 pub fn execute(data: &Path, operation: Operation) -> io::Result<Option<archive::Materialized>> {
     execute_with_progress(data, operation, None)
 }
@@ -626,6 +889,14 @@ fn restore_moves(records: &[Record]) -> io::Result<()> {
 
 /// Returns false for an empty history. A failed undo retains the entry for retry.
 pub fn undo(data: &Path) -> io::Result<bool> {
+    undo_impl(data, None)
+}
+
+pub(crate) fn undo_expected(data: &Path, expected: &str) -> io::Result<bool> {
+    undo_impl(data, Some(expected))
+}
+
+fn undo_impl(data: &Path, expected: Option<&str>) -> io::Result<bool> {
     let _guard = LOCK
         .lock()
         .map_err(|_| io::Error::other("Undo lock unavailable"))?;
@@ -633,6 +904,9 @@ pub fn undo(data: &Path) -> io::Result<bool> {
     let Some((_, directory)) = entries(&history)?.pop() else {
         return Ok(false);
     };
+    if expected.is_some_and(|expected| entry_key(&directory).map_or(true, |key| key != expected)) {
+        return Err(io::Error::other("Undo history changed; press Ctrl+Z again"));
+    }
     let records = load(&directory)?;
     // Check the entire batch and its backups before restoring any item.
     for (index, record) in records.iter().enumerate() {
