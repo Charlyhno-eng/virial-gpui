@@ -444,11 +444,17 @@ impl FileManager {
         }
         if self.rename.is_some() {
             match event.keystroke.key.as_str() {
-                "escape" => self.cancel_rename(window, cx),
-                "enter" if !event.keystroke.modifiers.modified() => self.confirm_rename(window, cx),
+                "escape" => {
+                    self.cancel_rename(window, cx);
+                    cx.stop_propagation();
+                }
+                "enter" if !event.keystroke.modifiers.modified() => {
+                    self.confirm_rename(window, cx);
+                    cx.stop_propagation();
+                }
                 _ => {}
             }
-            cx.stop_propagation();
+            // Unhandled keys must reach GPUI's text input handler for typing and IME.
             return;
         }
         if self.global_search_key(event, window, cx) {
