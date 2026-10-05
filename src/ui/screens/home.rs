@@ -399,6 +399,9 @@ impl FileManager {
                                         move |view, event: &gpui::MouseDownEvent, window, cx| {
                                             if view.busy || view.loading || renaming { return; }
                                             view.focus.focus(window);
+                                            view.cancel_pending_preview();
+                                            view.details_open = false;
+                                            view.preview_expanded = false;
                                             // Defer Ctrl toggles until release so Ctrl-drag
                                             // can copy an existing multiple selection.
                                             if event.modifiers.shift || (!event.modifiers.control
@@ -416,6 +419,7 @@ impl FileManager {
                                                 window.start_file_drag(uris);
                                             }
                                             manager.update(cx, |view, cx| {
+                                                view.cancel_pending_preview();
                                                 view.details_open = false;
                                                 view.preview_expanded = false;
                                                 view.menu = None;
@@ -425,17 +429,24 @@ impl FileManager {
                                         }))
                                         .on_click(cx.listener(
                                             move |view, event: &gpui::ClickEvent, _, cx| {
-                                                if !event.standard_click() { return; }
-                                                view.details_open = event.click_count() == 1;
+                                                if !event.standard_click() || event.is_keyboard() { return; }
+                                                let click_count = event.click_count();
+                                                if click_count != 1 {
+                                                    view.cancel_pending_preview();
+                                                }
+                                                view.details_open = false;
                                                 view.preview_expanded = false;
                                                 let modifiers = event.modifiers();
                                                 if modifiers.control && !modifiers.shift {
                                                     view.selection.click(index, true, false);
                                                 } else if !modifiers.control && !modifiers.shift {
                                                     view.selection.click(index, false, false);
-                                                    if event.click_count() >= 2 {
+                                                    if click_count >= 2 {
                                                         view.open(entry.clone(), cx);
                                                     }
+                                                }
+                                                if click_count == 1 {
+                                                    view.defer_preview(cx);
                                                 }
                                                 cx.notify();
                                             },

@@ -62,6 +62,8 @@ pub struct FileManager {
     pub(crate) sidebar_width: f32,
     pub(crate) sidebar_transition: Option<(std::time::Instant, f32, f32)>,
     pub(crate) preview_expanded: bool,
+    pub(crate) pending_preview: Option<Task<()>>,
+    pub(crate) preview_click_generation: u64,
     pub(crate) layout: crate::infrastructure::layout::Layout,
     pub(crate) preview_resize: Option<(gpui::Pixels, f32)>,
     pub(crate) preview_path: Option<PathBuf>,

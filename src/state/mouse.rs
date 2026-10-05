@@ -264,6 +264,7 @@ impl FileManager {
             return;
         }
         self.focus.focus(window);
+        self.cancel_pending_preview();
         self.details_open = false;
         self.preview_expanded = false;
         self.menu = None;

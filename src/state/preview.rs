@@ -243,6 +243,7 @@ impl FileManager {
     }
 
     pub(crate) fn close_preview(&mut self, cx: &mut Context<Self>) {
+        self.cancel_pending_preview();
         self.preview_expanded = false;
         self.details_open = false;
         self.selection.clear();

@@ -19,6 +19,8 @@ use std::{
     time::Duration,
 };
 
+const PREVIEW_CLICK_DELAY: Duration = Duration::from_millis(400);
+
 pub(crate) use crate::state::app_state::FileManager;
 
 impl FileManager {
@@ -80,6 +82,8 @@ impl FileManager {
             sidebar_width: crate::ui::theme::SIDEBAR_WIDTH,
             sidebar_transition: None,
             preview_expanded: false,
+            pending_preview: None,
+            preview_click_generation: 0,
             layout: crate::infrastructure::layout::Layout::load(),
             preview_resize: None,
             preview_path: None,
@@ -153,6 +157,7 @@ impl FileManager {
     }
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
+        self.cancel_pending_preview();
         self.preview_expanded = false;
         self.details_open = false;
         self.directory_sizes = None;
@@ -355,7 +360,27 @@ impl FileManager {
         }
     }
 
+    pub(crate) fn cancel_pending_preview(&mut self) {
+        self.preview_click_generation = self.preview_click_generation.wrapping_add(1);
+        self.pending_preview = None;
+    }
+
+    pub(crate) fn defer_preview(&mut self, cx: &mut Context<Self>) {
+        self.cancel_pending_preview();
+        let generation = self.preview_click_generation;
+        self.pending_preview = Some(cx.spawn(async move |view, cx| {
+            cx.background_executor().timer(PREVIEW_CLICK_DELAY).await;
+            let _ = view.update(cx, |view, cx| {
+                if view.preview_click_generation == generation {
+                    view.details_open = true;
+                    cx.notify();
+                }
+            });
+        }));
+    }
+
     pub(crate) fn open(&mut self, entry: Entry, cx: &mut Context<Self>) {
+        self.cancel_pending_preview();
         if self.location == Location::Trash {
             return;
         }
