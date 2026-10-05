@@ -57,7 +57,6 @@ impl FileManager {
                                 )
                             }),
                     )
-                    .child(self.place(103, "Workspaces", "view", Location::Workspaces, cx))
                     .child(self.place(101, "Recent", "recent", Location::Recent, cx))
                     .child(section_label(self.language.text("DEVICES")))
                     .child(self.place(100, "File System", "drive", PathBuf::from("/").into(), cx))
@@ -75,7 +74,9 @@ impl FileManager {
                                 .text_color(color(ERROR))
                                 .child(error.clone()),
                         )
-                    }),
+                    })
+                    .child(section_label(self.language.text("WORKSPACES")))
+                    .child(self.place(103, "Workspaces", "view", Location::Workspaces, cx)),
             )
             .child(
                 div()

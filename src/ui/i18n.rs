@@ -147,6 +147,7 @@ impl Language {
             "Recent" => "Récents",
             "PLACES" => "EMPLACEMENTS",
             "DEVICES" => "PÉRIPHÉRIQUES",
+            "WORKSPACES" => "ESPACES DE TRAVAIL",
             "LOCAL FILES" => "FICHIERS",
             "Back" => "Précédent",
             "Forward" => "Suivant",
