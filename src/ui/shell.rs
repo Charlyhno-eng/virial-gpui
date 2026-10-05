@@ -141,7 +141,15 @@ impl Render for FileManager {
                 root.child(components::reveal(
                     div()
                         .absolute()
-                        .inset_0()
+                        .left_0()
+                        .right_0()
+                        .bottom_0()
+                        // Keep preview controls clear of the window controls in the title bar.
+                        .top(if fullscreen {
+                            px(0.)
+                        } else {
+                            px(titlebar::HEIGHT)
+                        })
                         .bg(color(BACKGROUND))
                         .flex()
                         .child(self.preview_panel(true, window, cx)),

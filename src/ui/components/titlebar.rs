@@ -5,6 +5,8 @@ use gpui::{
     prelude::*, px,
 };
 
+pub(in crate::ui) const HEIGHT: f32 = 32.;
+
 struct ControlHint(&'static str);
 impl Render for ControlHint {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -61,7 +63,7 @@ impl FileManager {
     pub(crate) fn titlebar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
         let maximized = window.is_maximized();
         div()
-            .h(px(32.))
+            .h(px(HEIGHT))
             .flex_shrink_0()
             .flex()
             .items_center()
