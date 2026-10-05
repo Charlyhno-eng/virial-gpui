@@ -164,6 +164,8 @@ impl NameInput {
             "backspace" | "delete" => {
                 let range = if !self.selection.is_empty() {
                     self.selection.clone()
+                } else if modifiers.control {
+                    word_range(&self.text, cursor, key == "backspace")
                 } else if key == "backspace" {
                     previous..cursor
                 } else {
@@ -434,7 +436,62 @@ impl Render for NameInput {
                     .child(crate::ui::icons::icon("search", 14., MUTED))
                     .child(div().flex_1().min_w_0().child(InputElement(cx.entity())))
             })
-            .when(!self.search_icon, |input| input.child(InputElement(cx.entity())))
+            .when(!self.search_icon, |input| {
+                input.child(InputElement(cx.entity()))
+            })
+    }
+}
+
+fn word_range(text: &str, cursor: usize, backwards: bool) -> Range<usize> {
+    let graphemes: Vec<_> = text.grapheme_indices(true).collect();
+    if backwards {
+        let mut start = cursor;
+        let mut saw_word = false;
+        for (index, grapheme) in graphemes.iter().rev().copied() {
+            if index + grapheme.len() > cursor {
+                continue;
+            }
+            if grapheme.chars().all(char::is_whitespace) {
+                if saw_word {
+                    break;
+                }
+                start = index;
+            } else {
+                saw_word = true;
+                start = index;
+            }
+        }
+        start..cursor
+    } else {
+        let mut end = cursor;
+        let mut saw_word = false;
+        let starts_in_whitespace = text[cursor..]
+            .graphemes(true)
+            .next()
+            .is_some_and(|grapheme| grapheme.chars().all(char::is_whitespace));
+        let mut finished = false;
+        for (index, grapheme) in graphemes.iter().copied() {
+            if index < cursor {
+                continue;
+            }
+            if grapheme.chars().all(char::is_whitespace) {
+                if !saw_word {
+                    end = index + grapheme.len();
+                } else if starts_in_whitespace {
+                    break;
+                } else {
+                    end = index + grapheme.len();
+                    finished = true;
+                }
+            } else {
+                if finished {
+                    break;
+                }
+                saw_word = true;
+                end = index + grapheme.len();
+            }
+        }
+        cursor..end
     }
 }
 
