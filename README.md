@@ -5,6 +5,8 @@
 
 Virial is a Linux file manager for browsing local folders, mounted drives, and recent files. Navigate with the sidebar and breadcrumbs, organize related folders into persistent workspaces, and preview supported images and text files. The browser also supports common file actions, including selecting, copying, moving, renaming, and trashing files.
 
+When a path has more than two breadcrumbs, the toolbar shows an ellipsis followed by the last two. Click a visible breadcrumb to navigate to that folder.
+
 Virial adapts its interface language to the system language. English is used when the system language is not supported.
 
 Context menus show an icon beside each available action.

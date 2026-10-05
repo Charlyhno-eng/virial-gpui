@@ -4,6 +4,8 @@ use gpui::{Context, Div, Window, div, prelude::*, px};
 
 impl FileManager {
     pub(crate) fn toolbar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
+        let breadcrumbs = self.location.breadcrumbs(&self.home, self.language);
+        let hidden_count = breadcrumbs.len().saturating_sub(2);
         div()
             .flex()
             .flex_wrap()
@@ -47,57 +49,62 @@ impl FileManager {
                     .flex_1()
                     .min_w(px(140.))
                     .overflow_x_scroll()
-                    .children(
-                        self.location
-                            .breadcrumbs(&self.home, self.language)
-                            .into_iter()
-                            .enumerate()
-                            .map(|(index, (label, path))| {
-                                let current = path == self.location;
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .flex_shrink_0()
-                                    .when(index > 0, |crumb| {
-                                        crumb.child(icon("forward", 13., MUTED))
-                                    })
-                                    .child(
-                                        div()
-                                            .id(("crumb", index))
-                                            .flex()
-                                            .items_center()
-                                            .gap_1()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded_sm()
-                                            .border_b_1()
-                                            .border_color(gpui::transparent_black())
-                                            .cursor_pointer()
-                                            .text_size(px(11.))
-                                            .text_color(color(if current { TEXT } else { MUTED }))
-                                            .hover(|style| {
-                                                style
-                                                    .bg(translucent(ACCENT_BLUE, 0.06))
-                                                    .border_color(translucent(ACCENT_BLUE, 0.24))
-                                                    .text_color(color(TEXT))
-                                            })
-                                            .when(index == 0, |crumb| {
-                                                crumb.child(icon("home", 14., MUTED))
-                                            })
-                                            .child(label)
-                                            .when_some(
-                                                path.directory().map(|path| path.to_path_buf()),
-                                                |crumb, directory| {
-                                                    self.drop_target(crumb, directory, cx)
-                                                },
-                                            )
-                                            .on_click(cx.listener(move |view, _, window, cx| {
-                                                view.focus.focus(window);
-                                                view.navigate_location(path.clone(), cx);
-                                            })),
-                                    )
-                            }),
-                    ),
+                    .when(hidden_count > 0, |crumbs| {
+                        crumbs.child(
+                            div()
+                                .flex_shrink_0()
+                                .px_2()
+                                .py_1()
+                                .text_size(px(11.))
+                                .text_color(color(MUTED))
+                                .child("…"),
+                        )
+                    })
+                    .children(breadcrumbs.into_iter().enumerate().skip(hidden_count).map(
+                        |(index, (label, path))| {
+                            let current = path == self.location;
+                            div()
+                                .flex()
+                                .items_center()
+                                .flex_shrink_0()
+                                .when(index > 0, |crumb| crumb.child(icon("forward", 13., MUTED)))
+                                .child(
+                                    div()
+                                        .id(("crumb", index))
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .px_2()
+                                        .py_1()
+                                        .rounded_sm()
+                                        .border_b_1()
+                                        .border_color(gpui::transparent_black())
+                                        .cursor_pointer()
+                                        .text_size(px(11.))
+                                        .text_color(color(if current { TEXT } else { MUTED }))
+                                        .hover(|style| {
+                                            style
+                                                .bg(translucent(ACCENT_BLUE, 0.06))
+                                                .border_color(translucent(ACCENT_BLUE, 0.24))
+                                                .text_color(color(TEXT))
+                                        })
+                                        .when(index == 0, |crumb| {
+                                            crumb.child(icon("home", 14., MUTED))
+                                        })
+                                        .child(label)
+                                        .when_some(
+                                            path.directory().map(|path| path.to_path_buf()),
+                                            |crumb, directory| {
+                                                self.drop_target(crumb, directory, cx)
+                                            },
+                                        )
+                                        .on_click(cx.listener(move |view, _, window, cx| {
+                                            view.focus.focus(window);
+                                            view.navigate_location(path.clone(), cx);
+                                        })),
+                                )
+                        },
+                    )),
             )
             .when(
                 self.location != crate::domain::location::Location::Workspaces,
