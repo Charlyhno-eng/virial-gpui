@@ -93,6 +93,18 @@ From the project directory, build and install the executable, desktop launcher, 
 ./install.sh
 ```
 
+### Tests and performance
+
+GitHub Actions runs the tests, builds the release executable, and checks filesystem performance on Ubuntu for pushes and pull requests. You can also start the workflow manually. Run the same checks locally after installing the prerequisites:
+
+```sh
+cargo test --locked
+cargo build --release --locked
+cargo test --release --locked infrastructure::performance::filesystem_performance -- --ignored --exact --nocapture --test-threads=1
+```
+
+The performance smoke test measures listing 5,000 files and searching 5,000 files across 50 folders. It excludes fixture creation, warms the filesystem cache, and reports the median and maximum of seven samples. Each operation must have a median below two seconds; this broad budget catches severe slowdowns on shared runners. Results appear in the workflow summary and the `filesystem-performance` artifact. These checks do not measure graphical rendering, startup, or cold-cache performance.
+
 ### Optional background removal
 
 To install Virial with local [rembg](https://github.com/danielgatis/rembg) background removal, use one command from the project directory:

@@ -1,0 +1,61 @@
+name: Tests and performance
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev poppler-utils
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run tests
+        run: cargo test --locked
+      - name: Build application
+        run: cargo build --release --locked
+      - name: Measure filesystem performance
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --release --locked infrastructure::performance::filesystem_performance -- --ignored --exact --nocapture --test-threads=1 2>&1 | tee performance.txt
+      - name: Add performance results to summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f performance.txt ]; then
+            {
+              echo '### Filesystem performance (release, warm cache)'
+              echo '```text'
+              cat performance.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filesystem-performance
+          path: performance.txt
+          if-no-files-found: ignore
+          retention-days: 14

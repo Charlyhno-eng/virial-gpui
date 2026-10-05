@@ -9,3 +9,7 @@ pub(crate) mod undo;
 pub(crate) mod workspaces;
 
 pub(crate) mod trash;
+
+#[cfg(test)]
+#[path = "../../tests/infrastructure/performance.rs"]
+mod performance;
