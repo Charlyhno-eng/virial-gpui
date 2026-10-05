@@ -1,3 +1,4 @@
+use crate::infrastructure::image_edit::{ExportFormat, ImageEdit};
 use crate::{
     app::FileManager,
     state::preview::Preview,
@@ -96,6 +97,48 @@ impl FileManager {
                     .gap_1()
                     .flex_shrink_0()
                     .when(
+                        matches!(&self.preview, Preview::Image(_) | Preview::ArchiveImage(_)),
+                        |toolbar| {
+                            let enabled = !self.busy
+                                && self.location != crate::domain::location::Location::Trash;
+                            toolbar
+                                .child(
+                                    navigation_button(
+                                        "convert-image",
+                                        "image-convert",
+                                        self.language.text("Convert image…"),
+                                        enabled,
+                                    )
+                                    .on_click(cx.listener(
+                                        |view, _, window, cx| {
+                                            view.image_export_dialog(
+                                                ImageEdit::Convert(ExportFormat::Png),
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    )),
+                                )
+                                .child(
+                                    navigation_button(
+                                        "remove-image-background",
+                                        "background-remove",
+                                        self.language.text("Remove background…"),
+                                        enabled,
+                                    )
+                                    .on_click(cx.listener(
+                                        |view, _, window, cx| {
+                                            view.image_export_dialog(
+                                                ImageEdit::RemoveBackground,
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    )),
+                                )
+                        },
+                    )
+                    .when(
                         expanded && matches!(&self.preview, Preview::Code(_)),
                         |toolbar| {
                             toolbar.child(
@@ -140,6 +183,28 @@ impl FileManager {
                             view.focus.focus(window);
                         })),
                     ),
+            )
+            .when(
+                matches!(&self.preview, Preview::Image(_) | Preview::ArchiveImage(_)),
+                |panel| {
+                    panel
+                        .when(self.busy, |panel| {
+                            panel.child(
+                                div()
+                                    .px_3()
+                                    .py_2()
+                                    .text_color(color(MUTED))
+                                    .child(self.language.text("Working…")),
+                            )
+                        })
+                        .children(self.error.as_ref().map(|error| {
+                            div()
+                                .px_3()
+                                .py_2()
+                                .text_color(color(ERROR))
+                                .child(error.clone())
+                        }))
+                },
             )
             .child(
                 div()

@@ -1,3 +1,4 @@
+use crate::infrastructure::image_edit::{ExportFormat, ImageEdit};
 use crate::ui::components::reveal;
 use crate::ui::icons::icon;
 use crate::{
@@ -26,6 +27,10 @@ impl FileManager {
     ) -> Option<Div> {
         if let Some(dialog) = &self.dialog {
             let heading = match dialog {
+                Dialog::ImageExport { edit, .. } => match edit {
+                    ImageEdit::Convert(_) => "Convert image…",
+                    ImageEdit::RemoveBackground => "Remove background…",
+                },
                 Dialog::Name {
                     action: NameAction::Workspace { .. },
                     ..
@@ -59,6 +64,24 @@ impl FileManager {
                 content = content.child(div().text_color(color(ERROR)).child(error.clone()));
             }
             content = match dialog {
+                Dialog::ImageExport { source, edit, input } => {
+                    let mut panel = content
+                        .child(div().text_ellipsis().child(source.display().to_string()))
+                        .child(self.language.text("Save a new image beside the original; existing files are never overwritten"));
+                    if let ImageEdit::Convert(selected) = edit {
+                        panel = panel.child(div().flex().gap_2().children(
+                            ExportFormat::ALL.into_iter().enumerate().map(|(index, format)| {
+                                div().id(("image-export-format", index)).px_3().py_2().rounded_md()
+                                    .bg(color(if *selected == format { SELECTED } else { HOVER }))
+                                    .cursor_pointer().child(format.label())
+                                    .on_click(cx.listener(move |view, _, window, cx| view.image_export_format(format, window, cx)))
+                            })
+                        )).child(self.language.text("Animated images export their first frame. JPEG uses a white background for transparency."));
+                    } else {
+                        panel = panel.child(self.language.text("Creates a transparent PNG using local rembg. The first use downloads a model; setup is described in README.md."));
+                    }
+                    panel.child(self.language.text("Output file name")).child(input.clone())
+                },
                 Dialog::Name { action: NameAction::Workspace { folder, names }, input } => content
                     .child(self.language.text(if folder.is_some() { "Use an existing name to add this folder, or a new name to create a workspace" } else { "Create an empty workspace, then add folders from the context menu" }))
                     .children(folder.as_ref().map(|path| div().text_color(color(MUTED)).child(path.display().to_string())))
@@ -152,7 +175,10 @@ impl FileManager {
                         .child(list)
                 }
             };
-            let confirm = matches!(dialog, Dialog::Name { .. } | Dialog::Trash(_));
+            let confirm = matches!(
+                dialog,
+                Dialog::Name { .. } | Dialog::Trash(_) | Dialog::ImageExport { .. }
+            );
             content = content.child(
                 div()
                     .flex()

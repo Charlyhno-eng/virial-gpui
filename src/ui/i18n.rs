@@ -37,6 +37,21 @@ impl Language {
             return english;
         }
         match english {
+            "Convert image…" => "Convertir l’image…",
+            "Remove background…" => "Supprimer le fond…",
+            "Output file name" => "Nom du fichier de sortie",
+            "The file extension must match the selected format" => {
+                "L’extension du fichier doit correspondre au format choisi"
+            }
+            "Save a new image beside the original; existing files are never overwritten" => {
+                "Enregistrer une nouvelle image à côté de l’original ; les fichiers existants ne sont jamais écrasés"
+            }
+            "Animated images export their first frame. JPEG uses a white background for transparency." => {
+                "Les images animées exportent leur première image. Le JPEG utilise un fond blanc pour la transparence."
+            }
+            "Creates a transparent PNG using local rembg. The first use downloads a model; setup is described in README.md." => {
+                "Crée un PNG transparent avec rembg en local. La première utilisation télécharge un modèle ; l’installation est décrite dans README.md."
+            }
             "Trash is empty" => "La corbeille est vide",
             "Deleted items appear here" => "Les éléments supprimés apparaissent ici",
             "Trash" => "Corbeille",

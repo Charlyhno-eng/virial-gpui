@@ -56,6 +56,11 @@ fn affected(operation: &Operation) -> io::Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     match operation {
         Operation::Launch { .. } => {}
+        Operation::ImageExport { source, name, edit } => {
+            paths.push(mutation_path(&super::image_edit::destination(
+                source, name, *edit,
+            )?)?);
+        }
         Operation::Rename { source, name } => {
             paths.push(mutation_path(source)?);
             paths.push(mutation_path(&operations::named_path(

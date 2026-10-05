@@ -31,6 +31,11 @@ pub enum NameAction {
     },
 }
 pub enum Dialog {
+    ImageExport {
+        source: PathBuf,
+        edit: crate::infrastructure::image_edit::ImageEdit,
+        input: Entity<NameInput>,
+    },
     Name {
         action: NameAction,
         input: Entity<NameInput>,
@@ -406,6 +411,37 @@ impl FileManager {
             return;
         }
         let operation = match &self.dialog {
+            Some(Dialog::ImageExport {
+                source,
+                edit,
+                input,
+            }) => {
+                let name = input.read(cx).text.clone();
+                if crate::infrastructure::operations::named_path(
+                    source.parent().unwrap_or_else(|| std::path::Path::new(".")),
+                    &name,
+                )
+                .is_err()
+                {
+                    self.error = Some(self.language.text("Invalid file name").into());
+                    cx.notify();
+                    return;
+                }
+                if crate::infrastructure::image_edit::destination(source, &name, *edit).is_err() {
+                    self.error = Some(
+                        self.language
+                            .text("The file extension must match the selected format")
+                            .into(),
+                    );
+                    cx.notify();
+                    return;
+                }
+                Some(Operation::ImageExport {
+                    source: source.clone(),
+                    name,
+                    edit: *edit,
+                })
+            }
             Some(Dialog::Name { action, input }) => {
                 let name = input.read(cx).text.clone();
                 let directory = match action {

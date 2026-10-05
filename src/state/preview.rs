@@ -1,7 +1,8 @@
 //! Selection-driven, bounded previews loaded away from the UI thread.
 use super::code_preview::CodePreview;
+use crate::infrastructure::image_edit::{ExportFormat, ImageEdit};
 use crate::{app::FileManager, domain::models::Entry};
-use gpui::Context;
+use gpui::{AppContext, Context, Window};
 use std::{fs::File, io::Read, path::PathBuf};
 
 pub(crate) enum Preview {
@@ -76,6 +77,54 @@ fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
 }
 
 impl FileManager {
+    pub(crate) fn image_export_dialog(
+        &mut self,
+        edit: ImageEdit,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy
+            || self.dialog.is_some()
+            || self.location == crate::domain::location::Location::Trash
+            || !matches!(&self.preview, Preview::Image(_) | Preview::ArchiveImage(_))
+        {
+            return;
+        }
+        let Some(source) = self.preview_path.clone() else {
+            return;
+        };
+        let name = edit.suggested_name(&source);
+        let input = cx.new(|cx| crate::ui::components::input::NameInput::new(name, window, cx));
+        self.menu = None;
+        self.error = None;
+        self.dialog = Some(super::actions::Dialog::ImageExport {
+            source,
+            edit,
+            input,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn image_export_format(
+        &mut self,
+        format: ExportFormat,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(super::actions::Dialog::ImageExport { edit, input, .. }) = &mut self.dialog
+            && matches!(edit, ImageEdit::Convert(_))
+        {
+            *edit = ImageEdit::Convert(format);
+            let name = PathBuf::from(&input.read(cx).text)
+                .with_extension(format.extension())
+                .to_string_lossy()
+                .into_owned();
+            *input = cx.new(|cx| crate::ui::components::input::NameInput::new(name, window, cx));
+            self.error = None;
+            cx.notify();
+        }
+    }
+
     pub(crate) fn sync_preview(&mut self, cx: &mut Context<Self>) {
         let entry = self
             .selection

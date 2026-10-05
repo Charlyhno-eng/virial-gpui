@@ -26,6 +26,11 @@ pub enum Operation {
     },
     Trash(Vec<PathBuf>),
     Compress(PathBuf),
+    ImageExport {
+        source: PathBuf,
+        name: String,
+        edit: super::image_edit::ImageEdit,
+    },
     Launch {
         desktop: PathBuf,
         file: PathBuf,
@@ -249,6 +254,9 @@ pub fn execute(operation: Operation) -> io::Result<Option<super::archive::Materi
         _ => {}
     }
     match operation {
+        Operation::ImageExport { source, name, edit } => {
+            super::image_edit::export(&source, &name, edit)
+        }
         Operation::Rename { source, name } => rename(
             &source,
             &named_path(

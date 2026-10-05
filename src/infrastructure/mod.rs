@@ -1,4 +1,5 @@
 pub(crate) mod archive;
+pub(crate) mod image_edit;
 pub(crate) mod layout;
 pub(crate) mod operations;
 pub(crate) mod recent;
