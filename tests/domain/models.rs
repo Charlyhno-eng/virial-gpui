@@ -32,7 +32,11 @@ fn extension_icons_are_case_insensitive_and_keep_fallbacks() {
         ("report.PDF", "pdf"),
         ("README.md", "markdown"),
         ("photo.png", "image"),
+        ("photo.JPEG", "image"),
         ("song.mp3", "music"),
+        ("song.FLAC", "music"),
+        ("movie.mp4", "video"),
+        ("movie.WEBM", "video"),
         ("backup.tar.gz", "archive"),
         ("notes.txt", "file"),
         ("unknown.xyz", "file"),
@@ -43,6 +47,7 @@ fn extension_icons_are_case_insensitive_and_keep_fallbacks() {
         assert_eq!(entry(name, true).icon(), "folder", "{name}");
     }
     assert_eq!(entry("App.tsx", false).kind(), "Source code");
+    assert_eq!(entry("movie.mp4", false).kind(), "Video");
 }
 
 #[test]
@@ -51,7 +56,7 @@ fn specialized_icons_are_embedded_valid_svg_assets() {
     let assets = crate::ui::icons::IconAssets;
     for extension in [
         "py", "js", "ts", "tsx", "rs", "html", "css", "scss", "json", "toml", "sh", "c", "cpp",
-        "pdf", "md", "txt", "png", "mp3", "zip",
+        "pdf", "md", "txt", "png", "mp3", "mp4", "zip",
     ] {
         let name = entry(&format!("file.{extension}"), false).icon();
         let bytes = assets.load(&format!("icons/{name}.svg")).unwrap().unwrap();
