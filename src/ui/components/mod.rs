@@ -26,9 +26,9 @@ pub fn reveal<E: IntoElement + Styled + 'static>(
 pub fn section_label(label: &'static str) -> Div {
     div()
         .px_3()
-        .pt_4()
-        .pb_2()
-        .text_size(px(10.))
+        .pt_3()
+        .pb_1()
+        .text_size(px(9.5))
         .text_color(color(MUTED))
         .child(label)
 }
