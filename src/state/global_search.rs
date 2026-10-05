@@ -1,11 +1,13 @@
 use crate::{
-    app::FileManager,
-    infrastructure::search::{SearchResults, search},
-    state::app_state::DirectorySizeTask,
+    app::FileManager, infrastructure::search::SearchResults, state::app_state::DirectorySizeTask,
 };
 use gpui::{Context, KeyDownEvent, Window};
 use std::{
-    sync::{Arc, atomic::AtomicBool, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -76,22 +78,38 @@ impl FileManager {
         picker.pending_open = false;
         picker.scroll = gpui::UniformListScrollHandle::new();
         cx.notify();
-        let roots = vec![self.home.clone(), std::path::PathBuf::from("/")];
-        let hidden = true;
+        let index = self.search_index.handle();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();
         let executor = cx.background_executor().clone();
-        let (sender, receiver) = mpsc::channel();
+        // Keep only one pending batch; a slow frame must not accumulate old results.
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let worker_query = query.clone();
         let worker = executor.clone().spawn(async move {
-            executor.timer(Duration::from_millis(200)).await;
-            search(roots, &query, hidden, &worker_cancelled, |results| {
-                sender.send(results).is_ok()
-            });
+            let mut previous = None;
+            loop {
+                if worker_cancelled.load(Ordering::Relaxed) {
+                    break;
+                }
+                let revision = index.revision();
+                if previous != Some(revision) {
+                    let Some(results) = index.query(&worker_query, true, &worker_cancelled) else {
+                        break;
+                    };
+                    match sender.try_send(results) {
+                        Ok(()) => previous = Some(revision),
+                        Err(mpsc::TrySendError::Full(_)) => {}
+                        Err(mpsc::TrySendError::Disconnected(_)) => break,
+                    }
+                }
+                // Inventory updates stream while typing; a new query starts immediately.
+                executor.timer(Duration::from_millis(50)).await;
+            }
         });
         let executor = cx.background_executor().clone();
         let task = cx.spawn(async move |view, cx| {
             loop {
-                executor.timer(Duration::from_millis(100)).await;
+                executor.timer(Duration::from_millis(16)).await;
                 let mut latest = None;
                 let mut disconnected = false;
                 loop {
@@ -107,6 +125,9 @@ impl FileManager {
                 if let Some(results) = latest {
                     let _ = view.update(cx, |view, cx| {
                         if let Some(picker) = &mut view.global_search {
+                            if picker.query != query {
+                                return;
+                            }
                             let selected_path = picker
                                 .selection_moved
                                 .then(|| {

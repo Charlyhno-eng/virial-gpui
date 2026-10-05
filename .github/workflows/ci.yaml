@@ -39,6 +39,11 @@ jobs:
         run: |
           set -o pipefail
           cargo test --release --locked infrastructure::performance::filesystem_performance -- --ignored --exact --nocapture --test-threads=1 2>&1 | tee performance.txt
+      - name: Measure indexed search performance
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --release --locked infrastructure::search::index::tests::indexed_search_performance -- --ignored --exact --nocapture --test-threads=1 2>&1 | tee -a performance.txt
       - name: Add performance results to summary
         if: always()
         shell: bash

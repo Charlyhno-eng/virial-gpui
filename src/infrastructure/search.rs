@@ -1,5 +1,8 @@
-//! Cancellable global path search. No external index or command is required.
+//! Cancellable, ranked global path search with a shared background catalog.
+mod index;
 use crate::domain::models::Entry;
+pub(crate) use index::SearchIndex;
+#[cfg(test)]
 use std::{
     collections::{HashSet, VecDeque},
     fs,
@@ -47,6 +50,8 @@ fn score(name: &str, path: &str, terms: &[String]) -> Option<usize> {
     Some(total)
 }
 
+// Reference traversal for ranking regressions and the cold filesystem benchmark.
+#[cfg(test)]
 pub(crate) fn search(
     roots: Vec<PathBuf>,
     query: &str,

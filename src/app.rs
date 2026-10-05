@@ -28,6 +28,15 @@ impl FileManager {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/"));
+        let search_cache = std::env::var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home.join(".cache"))
+            .join("virial/search/catalog-v1.jsonl");
+        let search_index = crate::infrastructure::search::SearchIndex::start(
+            vec![home.clone(), PathBuf::from("/")],
+            search_cache,
+        );
         let focus = cx.focus_handle();
         focus.focus(window);
         let mut view = Self {
@@ -84,6 +93,7 @@ impl FileManager {
                 input
             }),
             global_search: None,
+            search_index,
             search_return_focus: false,
             details_open: false,
             sidebar_width: crate::ui::theme::SIDEBAR_WIDTH,

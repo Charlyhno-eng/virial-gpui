@@ -41,7 +41,7 @@ Code file icons use logos for popular languages and frameworks. Images, music, v
 
 Use the extension field in the toolbar to filter files in the current folder or recent files. Enter `pdf` or `.pdf`; matching is case-insensitive and uses the final extension (`gz` for `archive.tar.gz`). Folders stay visible for navigation. The filter stays active when navigating; clear the field to show all files again.
 
-Press `Ctrl+P` to search accessible locations as you type. Virial searches from your home folder and does not require zoxide or a prebuilt search index.
+Press `Ctrl+P` to search accessible locations as you type. Virial inventories your home folder first, then other accessible locations, in the background. Searches reuse an in-memory name and path index; file contents and sizes are not read. The index is cached under `$XDG_CACHE_HOME/virial/search` (default: `~/.cache/virial/search`) and refreshed on launch. Local folder changes update automatically; mounts and locations without filesystem notifications are reconciled every minute. Results appear progressively during the first inventory. Search speed depends on the number of indexed paths and query, rather than total file sizes; the initial inventory still depends on storage speed. No external search service is required.
 
 ---
 
@@ -97,7 +97,13 @@ cargo build --release --locked
 cargo test --release --locked infrastructure::performance::filesystem_performance -- --ignored --exact --nocapture --test-threads=1
 ```
 
-The performance smoke test measures listing and searching 5,000 files across 50 folders; each operation must have a median below two seconds.
+The performance smoke test measures listing and searching 5,000 files across 50 folders; each operation must have a median below two seconds. Measure warm indexed searches over one million synthetic paths with:
+
+```sh
+cargo test --release --locked infrastructure::search::index::tests::indexed_search_performance -- --ignored --exact --nocapture --test-threads=1
+```
+
+This benchmark covers prefix, fuzzy, multi-term, and no-match queries, reports medians, and uses the same two-second smoke budget. It excludes filesystem inventory and cache loading.
 
 Measure copying and moving a 64 MiB file plus 1,000 small files, including progress and undo recording, with:
 
