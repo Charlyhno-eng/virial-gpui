@@ -93,6 +93,7 @@ impl FileManager {
             preview_scroll: gpui::ScrollHandle::new(),
             preview_focused: false,
             preview_task: None,
+            preview_media_image: None,
             opened_archive_files: Vec::new(),
             name_descending: false,
             titlebar_drag: None,
@@ -159,6 +160,9 @@ impl FileManager {
 
     fn load(&mut self, location: Location, history_index: Option<usize>, cx: &mut Context<Self>) {
         self.cancel_pending_preview();
+        self.preview = crate::state::preview::Preview::Unavailable;
+        self.preview_task = None;
+        self.preview_path = None;
         self.preview_expanded = false;
         self.details_open = false;
         self.directory_sizes = None;
@@ -362,6 +366,9 @@ impl FileManager {
     }
 
     pub(crate) fn cancel_pending_preview(&mut self) {
+        if let crate::state::preview::Preview::Media(media) = &self.preview {
+            media.control(crate::infrastructure::media::Control::Pause(true));
+        }
         self.preview_click_generation = self.preview_click_generation.wrapping_add(1);
         self.pending_preview = None;
     }

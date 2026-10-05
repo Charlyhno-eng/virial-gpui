@@ -6001,6 +6001,7 @@ dependencies = [
  "gpui",
  "image",
  "libc",
+ "libloading",
  "oxipng",
  "roxmltree",
  "sha2 0.10.9",

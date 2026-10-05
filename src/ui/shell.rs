@@ -9,6 +9,24 @@ impl Render for FileManager {
             self.focus.focus(window);
         }
         self.sync_preview(cx);
+        let media_frame = match &self.preview {
+            crate::state::preview::Preview::Media(media) if self.details_open => {
+                let snapshot = media.snapshot();
+                if !snapshot.failed {
+                    window.request_animation_frame();
+                }
+                snapshot.frame
+            }
+            _ => None,
+        };
+        if self.preview_media_image.as_ref().map(|image| image.id)
+            != media_frame.as_ref().map(|image| image.id)
+        {
+            if let Some(previous) = self.preview_media_image.take() {
+                let _ = window.drop_image(previous);
+            }
+            self.preview_media_image = media_frame;
+        }
         // Keep the current width when reversing a transition mid-animation.
         let now = std::time::Instant::now();
         if let Some((start, from, to)) = self.sidebar_transition {

@@ -72,6 +72,7 @@ pub struct FileManager {
     pub(crate) preview_line: usize,
     pub(crate) preview_scroll: ScrollHandle,
     pub(crate) preview_focused: bool,
+    pub(crate) preview_media_image: Option<Arc<gpui::RenderImage>>,
     pub(crate) preview_task: Option<Task<()>>,
     pub(crate) opened_archive_files: Vec<crate::infrastructure::archive::Materialized>,
     pub(crate) name_descending: bool,

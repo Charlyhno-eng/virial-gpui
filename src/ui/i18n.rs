@@ -88,6 +88,14 @@ impl Language {
             "Current location" => "Emplacement actuel",
             "Preview" => "Aperçu",
             "Preview · Space" => "Aperçu · Espace",
+            "Play" => "Lire",
+            "Pause" => "Pause",
+            "Restart" => "Recommencer",
+            "Mute" => "Couper le son",
+            "Unmute" => "Activer le son",
+            "Cannot preview media. Install libmpv2 and check that the file is playable." => {
+                "Aperçu indisponible. Installez libmpv2 et vérifiez que le fichier est lisible."
+            }
             "Loading preview…" => "Chargement de l’aperçu…",
             "No content preview available" => "Aucun aperçu du contenu disponible",
             "Workspaces" => "Espaces de travail",

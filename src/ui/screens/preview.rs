@@ -12,6 +12,23 @@ use gpui::{
 };
 use std::sync::OnceLock;
 
+fn media_time(seconds: f64) -> String {
+    let seconds = seconds.max(0.) as u64;
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+fn media_button(id: &'static str, label: &'static str) -> gpui::Stateful<Div> {
+    div()
+        .id(id)
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .text_size(px(12.))
+        .cursor_pointer()
+        .hover(|style| style.bg(color(HOVER)))
+        .child(label)
+}
+
 fn line_scroll_offset(
     viewport: Bounds<Pixels>,
     line: Bounds<Pixels>,
@@ -94,6 +111,98 @@ impl FileManager {
             self.layout.preview_width =
                 Some((width + f32::from(start - event.position.x)).clamp(160., maximum));
             cx.notify();
+        }
+    }
+
+    fn media_preview_panel(
+        &self,
+        media: &crate::infrastructure::media::Media,
+        expanded: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        use crate::infrastructure::media::Control;
+        let snapshot = media.snapshot();
+        let mut panel = div().flex().flex_col().p_3().gap_3();
+        if snapshot.failed {
+            return panel.text_color(color(MUTED)).child(self.language.text(
+                "Cannot preview media. Install libmpv2 and check that the file is playable.",
+            ));
+        }
+        if !snapshot.ready {
+            return panel
+                .text_color(color(MUTED))
+                .child(self.language.text("Loading preview…"));
+        }
+        if media.video {
+            panel = panel.child(
+                div()
+                    .w_full()
+                    .h(px(if expanded { 540. } else { 270. }))
+                    .bg(color(0x000000))
+                    .children(self.preview_media_image.as_ref().map(|frame| {
+                        img(frame.clone())
+                            .w_full()
+                            .h_full()
+                            .object_fit(gpui::ObjectFit::Contain)
+                    })),
+            );
+        } else {
+            panel = panel.child(
+                div()
+                    .flex()
+                    .justify_center()
+                    .py_6()
+                    .child(crate::ui::icons::icon("music", 64., MUTED)),
+            );
+        }
+        let paused = snapshot.paused;
+        let muted = snapshot.muted;
+        panel
+            .child(div().text_color(color(MUTED)).child(format!(
+                "{} / {}",
+                media_time(snapshot.position),
+                media_time(snapshot.duration),
+            )))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .child(
+                        media_button(
+                            "media-play",
+                            self.language.text(if paused { "Play" } else { "Pause" }),
+                        )
+                        .on_click(cx.listener(move |view, _, _, _| {
+                            view.media_control(Control::Pause(!paused))
+                        })),
+                    )
+                    .child(media_button("media-back", "−10 s").on_click(
+                        cx.listener(|view, _, _, _| view.media_control(Control::Seek(-10.))),
+                    ))
+                    .child(media_button("media-forward", "+10 s").on_click(
+                        cx.listener(|view, _, _, _| view.media_control(Control::Seek(10.))),
+                    ))
+                    .child(
+                        media_button("media-restart", self.language.text("Restart")).on_click(
+                            cx.listener(|view, _, _, _| view.media_control(Control::Restart)),
+                        ),
+                    )
+                    .child(
+                        media_button(
+                            "media-mute",
+                            self.language.text(if muted { "Unmute" } else { "Mute" }),
+                        )
+                        .on_click(cx.listener(move |view, _, _, _| {
+                            view.media_control(Control::Mute(!muted))
+                        })),
+                    ),
+            )
+    }
+
+    fn media_control(&self, control: crate::infrastructure::media::Control) {
+        if let Preview::Media(media) = &self.preview {
+            media.control(control);
         }
     }
 
@@ -290,6 +399,9 @@ impl FileManager {
                                     .w_full()
                                     .h(px(if expanded { 640. } else { 360. })),
                             )
+                            .into_any_element(),
+                        Preview::Media(media) => self
+                            .media_preview_panel(media, expanded, cx)
                             .into_any_element(),
                         Preview::Text(text) => {
                             let lines = text.split('\n').enumerate().map(|(index, line)| {

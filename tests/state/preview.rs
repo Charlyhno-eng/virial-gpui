@@ -221,3 +221,57 @@ fn image_previews_read_header_metadata_locally_and_in_zip() {
     assert!(matches!(preview, Preview::Image(..)));
     assert!(preview.image_metadata().is_none());
 }
+
+#[test]
+fn media_previews_route_local_and_zip_audio_and_video_and_reject_special_files() {
+    use std::io::Write;
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("media.zip");
+    let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+    for name in ["track.MP3", "clip.MP4"] {
+        writer
+            .start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"invalid media").unwrap();
+        std::fs::write(root.path().join(name), b"invalid media").unwrap();
+    }
+    writer.finish().unwrap();
+    for directory in [root.path(), archive.as_path()] {
+        for (name, video) in [("track.MP3", false), ("clip.MP4", true)] {
+            let entry = Entry {
+                path: directory.join(name),
+                name: name.into(),
+                directory: false,
+                bytes: None,
+            };
+            let Preview::Media(media) = read_preview(&entry, false) else {
+                panic!("expected media preview")
+            };
+            assert_eq!(media.video, video);
+            assert!(media.snapshot().paused);
+        }
+    }
+    let missing = Entry {
+        path: root.path().join("missing.mp3"),
+        name: "missing.mp3".into(),
+        directory: false,
+        bytes: None,
+    };
+    assert!(matches!(
+        read_preview(&missing, false),
+        Preview::Unavailable
+    ));
+    let fifo = root.path().join("special.wav");
+    let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let special = Entry {
+        path: fifo,
+        name: "special.wav".into(),
+        directory: false,
+        bytes: None,
+    };
+    assert!(matches!(
+        read_preview(&special, false),
+        Preview::Unavailable
+    ));
+}

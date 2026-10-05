@@ -14,6 +14,7 @@ pub(crate) enum Preview {
         Option<ImageMetadata>,
     ),
     Pdf(crate::infrastructure::archive::Materialized),
+    Media(crate::infrastructure::media::Media),
     Text(String),
     Code(CodePreview),
     Unavailable,
@@ -54,6 +55,9 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
         return crate::infrastructure::storage::read_directory(&entry.path, hidden)
             .map(|entries| Preview::Folder(entries.len()))
             .unwrap_or(Preview::Unavailable);
+    }
+    if matches!(entry.kind(), "Audio" | "Video") {
+        return media_preview(entry).unwrap_or(Preview::Unavailable);
     }
     if entry
         .path
@@ -102,6 +106,24 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
         return Preview::Unavailable;
     }
     text_preview(entry, &bytes)
+}
+
+/// Local media streams directly; ZIP extraction is bounded to avoid filling disk.
+fn media_preview(entry: &Entry) -> Option<Preview> {
+    let archived = if crate::infrastructure::archive::is_member(&entry.path) {
+        Some(crate::infrastructure::archive::materialize(&entry.path, 512 * 1024 * 1024).ok()?)
+    } else {
+        None
+    };
+    let path = archived.as_ref().map_or(&entry.path, |file| &file.path);
+    if !std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return None;
+    }
+    Some(Preview::Media(crate::infrastructure::media::Media::new(
+        path.clone(),
+        entry.kind() == "Video",
+        archived,
+    )))
 }
 
 /// Render a bounded snapshot so local files and ZIP members follow the same limits.
@@ -288,6 +310,7 @@ impl FileManager {
         self.selection.clear();
         self.preview_path = None;
         self.preview_task = None;
+        self.preview = Preview::Unavailable;
         cx.notify();
     }
 }
