@@ -3,7 +3,7 @@
 # Virial
 ---
 
-Virial is a Linux file manager for browsing local folders, mounted drives, and recent files. Navigate with the sidebar and breadcrumbs, organize related folders into persistent workspaces, and preview supported images and text files. The browser also supports common file actions, including selecting, copying, moving, renaming, and trashing files.
+Virial is a Linux file manager for browsing local folders, mounted drives, and recent files. Navigate with the sidebar and breadcrumbs, organize related folders into persistent workspaces, and preview supported images, PDFs, and text files. The browser also supports common file actions, including selecting, copying, moving, renaming, and trashing files.
 
 When a path has more than two breadcrumbs, the toolbar shows an ellipsis followed by the last two. Click a visible breadcrumb to navigate to that folder.
 
@@ -23,6 +23,8 @@ The sidebar footer shows the available space on the filesystem containing your h
 
 Single-click a file or folder to show its preview and details. Drag the left edge of the preview panel to adjust its width, or use the expand button for a larger view. Virial remembers the preview width and the window size, position, and maximized or fullscreen state when you close it. Window placement under Wayland is controlled by the compositor. Double-click to open the item and hide the details. Navigating to another folder or clicking empty space hides the details; single-click an item to show them again.
 
+PDF previews show the first page, including PDF files inside ZIP archives, and support the expanded view. They require `pdftoppm` from Poppler (`poppler-utils` on Debian/Ubuntu). PDFs up to 20 MiB are rendered locally; invalid, password-protected, or slow files show the unavailable-preview message.
+
 Press `F2` or choose **Rename…** to edit an item's name directly in its row. The file name is selected without its final extension; folder names are selected in full. Press Enter to save, or Escape or click elsewhere to cancel. The extension remains editable.
 
 Image previews include **Convert image…** and **Remove background…** buttons, also available in the expanded view. Convert PNG, JPEG, WebP, GIF, or BMP images to PNG, JPEG, or WebP and choose an output file name. Animated images export their first frame; JPEG composites transparency onto white. SVG processing is not supported. Exports create a new file beside the original (including inside ZIP archives), never overwrite an existing file, and support `Ctrl+Z`. Processing runs in the background and accepts images up to 20 MiB and 32 megapixels. Image exports are disabled in Trash.
@@ -40,7 +42,7 @@ For application-menu launches, include the virtual environment's `bin` directory
 
 Press `Ctrl+Z` in the browser to undo the latest file or workspace change. Virial keeps the last 20 changes across restarts, including copy, move, rename, Trash, creation, compression, and ZIP edits. Undo refuses to discard files changed since the action or overwrite conflicting contents. Saved contents are stored under `$XDG_DATA_HOME/virial/undo` (default: `~/.local/share/virial/undo`), so recording large files or folders needs additional disk space. Undoing Trash restores saved contents; the desktop Trash retains its copy. Let an operation finish before closing the window.
 
-Double-click a ZIP archive to browse it like a folder, using breadcrumbs and the usual navigation keys. Preview supported images and text, rename files or entire folders, and use cut/paste or drag-and-drop to move items within a ZIP, between ZIPs, or between a ZIP and a local folder. Ctrl-drag and copy/paste copy items. You can also create files and folders inside a ZIP. Changes are saved directly to the archive; existing destination names are never overwritten. Opening a member in another application uses a temporary copy kept until Virial closes; external edits are not saved back to the ZIP. Nested ZIP browsing and moving members to the desktop Trash are not supported. Archives containing encrypted members, links, or special files cannot be modified; encrypted members and links cannot be extracted.
+Double-click a ZIP archive to browse it like a folder, using breadcrumbs and the usual navigation keys. Preview supported images, PDFs, and text, rename files or entire folders, and use cut/paste or drag-and-drop to move items within a ZIP, between ZIPs, or between a ZIP and a local folder. Ctrl-drag and copy/paste copy items. You can also create files and folders inside a ZIP. Changes are saved directly to the archive; existing destination names are never overwritten. Opening a member in another application uses a temporary copy kept until Virial closes; external edits are not saved back to the ZIP. Nested ZIP browsing and moving members to the desktop Trash are not supported. Archives containing encrypted members, links, or special files cannot be modified; encrypted members and links cannot be extracted.
 
 Click a line in a text or code preview, then use the Up and Down arrow keys to move the highlighted line; the preview scrolls to keep it visible. Code previews keep the application's dark background and use cyberpunk syntax colors, including neon cyan, magenta, and violet, with a monospace font and line numbers. Source indentation and blank lines are preserved, with tabs displayed at four-column stops. Use horizontal scrolling or Shift + mouse wheel to read long lines. Supported languages include Rust, Python, JavaScript, TypeScript, C/C++, HTML, CSS, JSON, TOML, and shell scripts; unrecognized text files keep a plain text preview. Text and code previews show up to the first 64 KiB of the file.
 
@@ -67,7 +69,7 @@ Press `Ctrl+P` to open the global path picker. It searches accessible locations 
 On Debian or Ubuntu, install the native libraries and build tools used by GPUI:
 
 ```sh
-sudo apt update && sudo apt install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev udisks2
+sudo apt update && sudo apt install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev udisks2 poppler-utils
 ```
 
 Rust stable (1.85 or newer) and Cargo are also required. If they are not installed, install the toolchain with:

@@ -116,3 +116,71 @@ fn code_previews_stay_bounded_reject_binary_and_leave_the_file_unchanged() {
     assert!(matches!(read_preview(&entry, false), Preview::Unavailable));
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn pdf_previews_render_local_and_zip_pages_and_clean_up() {
+    use std::io::Write;
+    // This integration check needs the documented optional PDF renderer.
+    if std::process::Command::new("pdftoppm")
+        .arg("-v")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping PDF rendering check: pdftoppm is unavailable");
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("sample.PDF");
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 300] /Resources << >> /Contents 4 0 R >>",
+        "<< /Length 0 >>\nstream\n\nendstream",
+    ];
+    let mut pdf = String::from("%PDF-1.4\n");
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.push_str(&format!("{} 0 obj\n{object}\nendobj\n", index + 1));
+    }
+    let xref = pdf.len();
+    pdf.push_str("xref\n0 5\n0000000000 65535 f \n");
+    for offset in offsets {
+        pdf.push_str(&format!("{offset:010} 00000 n \n"));
+    }
+    pdf.push_str(&format!(
+        "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n"
+    ));
+    std::fs::write(&path, &pdf).unwrap();
+    let archive = root.path().join("sample.zip");
+    let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+    writer
+        .start_file("sample.PDF", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(pdf.as_bytes()).unwrap();
+    writer.finish().unwrap();
+    for path in [path.clone(), archive.join("sample.PDF")] {
+        let entry = Entry {
+            path: path.clone(),
+            name: "sample.PDF".into(),
+            directory: false,
+            bytes: None,
+        };
+        let Preview::Pdf(rendered) = read_preview(&entry, false) else {
+            panic!("expected PDF preview for {path:?}");
+        };
+        let image = image::open(&rendered.path).unwrap();
+        assert_eq!((image.width(), image.height()), (1067, 1600));
+        let rendered_path = rendered.path.clone();
+        drop(rendered);
+        assert!(!rendered_path.exists());
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), pdf);
+    std::fs::write(&path, b"invalid PDF").unwrap();
+    assert!(pdf_preview(&path).is_err());
+    File::create(&path)
+        .unwrap()
+        .set_len(20 * 1024 * 1024 + 1)
+        .unwrap();
+    assert!(pdf_preview(&path).is_err());
+}

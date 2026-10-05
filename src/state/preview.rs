@@ -10,6 +10,7 @@ pub(crate) enum Preview {
     Folder(usize),
     Image(PathBuf),
     ArchiveImage(crate::infrastructure::archive::Materialized),
+    Pdf(crate::infrastructure::archive::Materialized),
     Text(String),
     Code(CodePreview),
     Unavailable,
@@ -19,6 +20,15 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
     if entry.browsable() {
         return crate::infrastructure::storage::read_directory(&entry.path, hidden)
             .map(|entries| Preview::Folder(entries.len()))
+            .unwrap_or(Preview::Unavailable);
+    }
+    if entry
+        .path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+    {
+        return pdf_preview(&entry.path)
+            .map(Preview::Pdf)
             .unwrap_or(Preview::Unavailable);
     }
     if crate::infrastructure::archive::is_member(&entry.path) {
@@ -56,6 +66,78 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
         return Preview::Unavailable;
     }
     text_preview(entry, &bytes)
+}
+
+/// Render a bounded snapshot so local files and ZIP members follow the same limits.
+fn pdf_preview(
+    path: &std::path::Path,
+) -> std::io::Result<crate::infrastructure::archive::Materialized> {
+    use std::{
+        io,
+        process::{Command, Stdio},
+        time::{Duration, Instant},
+    };
+    const LIMIT: u64 = 20 * 1024 * 1024;
+    let directory = tempfile::tempdir()?;
+    let source = directory.path().join("source.pdf");
+    let archived = if crate::infrastructure::archive::is_member(path) {
+        Some(crate::infrastructure::archive::materialize(path, LIMIT)?)
+    } else {
+        None
+    };
+    let input = File::open(archived.as_ref().map_or(path, |file| file.path.as_path()))?;
+    let metadata = input.metadata()?;
+    if !metadata.is_file() || metadata.len() > LIMIT {
+        return Err(io::Error::other(
+            "PDF is too large or is not a regular file",
+        ));
+    }
+    if io::copy(&mut input.take(LIMIT + 1), &mut File::create(&source)?)? > LIMIT {
+        return Err(io::Error::other("PDF is too large"));
+    }
+    let output = directory.path().join("page");
+    let mut child = Command::new("pdftoppm")
+        .args([
+            "-f",
+            "1",
+            "-l",
+            "1",
+            "-singlefile",
+            "-scale-to",
+            "1600",
+            "-png",
+        ])
+        .arg(&source)
+        .arg(&output)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(Some(_)) => return Err(io::Error::other("Cannot render PDF")),
+            Ok(None) if start.elapsed() < Duration::from_secs(10) => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            result => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(result.err().unwrap_or_else(|| {
+                    io::Error::new(io::ErrorKind::TimedOut, "PDF preview timed out")
+                }));
+            }
+        }
+    }
+    let path = output.with_extension("png");
+    if !path.is_file() {
+        return Err(io::Error::other("PDF renderer produced no image"));
+    }
+    Ok(crate::infrastructure::archive::Materialized {
+        path,
+        _directory: directory,
+    })
 }
 
 fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {

@@ -222,6 +222,9 @@ impl FileManager {
                     })
                     .child(match &self.preview {
                         Preview::Image(path)
+                        | Preview::Pdf(crate::infrastructure::archive::Materialized {
+                            path, ..
+                        })
                         | Preview::ArchiveImage(crate::infrastructure::archive::Materialized {
                             path,
                             ..
