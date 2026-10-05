@@ -7,6 +7,10 @@ pub struct IconAssets;
 
 const ASSETS: &[(&str, &[u8])] = &[
     (
+        "icons/file-outline.svg",
+        include_bytes!("../../assets/icons/file-outline.svg"),
+    ),
+    (
         "icons/image-outline.svg",
         include_bytes!("../../assets/icons/image-outline.svg"),
     ),
@@ -243,6 +247,7 @@ pub fn icon(name: &str, size: f32, color: u32) -> Svg {
 // Colored file artwork becomes a solid silhouette when rendered as an alpha mask.
 fn interface_icon_name(name: &str) -> &str {
     match name {
+        "file" => "file-outline",
         "image" => "image-outline",
         "music" => "music-outline",
         "video" => "video-outline",

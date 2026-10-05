@@ -11,7 +11,7 @@ Virial adapts its interface language to the system language. English is used whe
 
 Context menus show an icon beside each available action.
 
-Pictures, Music, and Videos in the sidebar use distinct outline icons.
+Documents, Pictures, Music, and Videos in the sidebar use distinct outline icons.
 
 Right-click a file or folder and choose **Copy path** to copy its full path to the clipboard.
 
