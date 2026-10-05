@@ -1,4 +1,5 @@
 use crate::ui::components::reveal;
+use crate::ui::icons::icon;
 use crate::{
     app::FileManager,
     state::actions::{Action, Dialog, NameAction},
@@ -266,7 +267,8 @@ impl FileManager {
                     .rounded_sm()
                     .cursor_pointer()
                     .hover(|style| style.bg(color(HOVER)))
-                    .child(self.language.text(action.label()))
+                    .child(icon(action.icon(), 14., MUTED))
+                    .child(div().ml_2().child(self.language.text(action.label())))
                     .on_click(cx.listener(move |view, _, window, cx| {
                         view.action(action, entry.clone(), window, cx)
                     }))
@@ -298,5 +300,25 @@ impl FileManager {
                 )
                 .child(reveal(panel, "menu-reveal")),
         )
+    }
+}
+
+impl Action {
+    fn icon(self) -> &'static str {
+        match self {
+            Self::Restore => "restore",
+            Self::Open | Self::OpenWith => "open",
+            Self::Copy | Self::CopyPath => "copy",
+            Self::Cut => "cut",
+            Self::Paste => "paste",
+            Self::Rename => "edit",
+            Self::Trash => "trash",
+            Self::Compress => "archive",
+            Self::NewFolder | Self::AddWorkspace => "folder",
+            Self::NewFile => "file",
+            Self::Properties => "info",
+            Self::Refresh => "refresh",
+            Self::NewWorkspace => "folder-plus",
+        }
     }
 }

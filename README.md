@@ -7,6 +7,8 @@ Virial is a Linux file manager for browsing local folders, mounted drives, and r
 
 Virial adapts its interface language to the system language. English is used when the system language is not supported.
 
+Context menus show an icon beside each available action.
+
 USB drives and other removable storage appear automatically under **Devices**, including their filesystem labels, sizes, and mount status. Click a volume to browse it; unmounted volumes are mounted first. The × button unmounts one volume, and the eject button safely removes the entire drive after unmounting all its volumes. Operations fail if a volume is in use. If the current device is disconnected or unmounted, Virial returns to Home. Device management requires the UDisks2 system service (`udisks2` on Debian/Ubuntu); desktop authorization dialogs may appear when needed. Encrypted volume unlocking is handled by your desktop.
 
 Open **Trash** in the sidebar to see deleted files and folders, including items on mounted drives. Select items and click **Restore** in the toolbar or context menu to move them back to their original locations. Existing files are never overwritten; if the original parent folder is missing, recreate it before restoring. Restoration also works after restarting Virial and can be undone with `Ctrl+Z`.
