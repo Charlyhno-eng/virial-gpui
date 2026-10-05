@@ -105,7 +105,7 @@ impl FileManager {
                     bar.child(
                         div()
                             .id("extension-filter")
-                            .w(px(170.))
+                            .w(px(150.))
                             .max_w_full()
                             .child(self.extension_input.clone()),
                     )
@@ -114,12 +114,8 @@ impl FileManager {
             .child(
                 div()
                     .id("search-field")
-                    .w(px(220.))
+                    .w(px(200.))
                     .max_w_full()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(icon("search", 14., MUTED))
                     .child(self.search_input.clone()),
             )
             .when(window.is_fullscreen(), |bar| {

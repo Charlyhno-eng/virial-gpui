@@ -70,6 +70,7 @@ impl FileManager {
                 let mut input =
                     crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
                 input.compact = true;
+                input.search_icon = true;
                 input.placeholder = Language::system().text("Search everywhere…").into();
                 input
             }),

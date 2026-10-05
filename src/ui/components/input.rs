@@ -8,6 +8,7 @@ pub struct NameInput {
     pub text: String,
     pub(crate) placeholder: String,
     pub(crate) compact: bool,
+    pub(crate) search_icon: bool,
     focus: FocusHandle,
     selection: Range<usize>,
     anchor: usize,
@@ -41,6 +42,7 @@ impl NameInput {
             text,
             placeholder: String::new(),
             compact: false,
+            search_icon: false,
             focus,
             selection: 0..end,
             anchor: 0,
@@ -424,7 +426,15 @@ impl Render for NameInput {
                 MouseButton::Left,
                 cx.listener(|input, _, _, _| input.dragging = false),
             )
-            .child(InputElement(cx.entity()))
+            .when(self.search_icon, |input| {
+                input
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(crate::ui::icons::icon("search", 14., MUTED))
+                    .child(div().flex_1().min_w_0().child(InputElement(cx.entity())))
+            })
+            .when(!self.search_icon, |input| input.child(InputElement(cx.entity())))
     }
 }
 
