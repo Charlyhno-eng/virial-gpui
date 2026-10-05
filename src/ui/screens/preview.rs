@@ -179,48 +179,125 @@ impl FileManager {
                                     .h(px(if expanded { 640. } else { 360. })),
                             )
                             .into_any_element(),
-                        Preview::Text(text) => div()
-                            .p_3()
-                            .text_size(px(12.))
-                            .child(text.clone())
-                            .into_any_element(),
-                        Preview::Code(code) => div()
-                            .id(if expanded {
-                                "expanded-code-preview"
-                            } else {
-                                "code-preview"
-                            })
-                            .flex()
-                            .w_full()
-                            .py_3()
-                            .overflow_x_scroll()
-                            .map(|mut code| {
-                                code.style().restrict_scroll_to_axis = Some(true);
-                                code
-                            })
-                            .font_family(code_font(cx))
-                            .text_size(px(12.))
-                            .line_height(px(18.))
-                            .whitespace_nowrap()
-                            .child(
+                        Preview::Text(text) => {
+                            let lines = text.split('\n').enumerate().map(|(index, line)| {
                                 div()
-                                    .flex_shrink_0()
+                                    .w_full()
                                     .px_3()
-                                    .text_right()
-                                    .text_color(color(CODE_GUTTER))
-                                    .child(code.line_numbers.clone()),
-                            )
-                            .child(
-                                div()
-                                    .flex_shrink_0()
-                                    .pr_3()
-                                    .text_color(color(CODE_TEXT))
-                                    .child(
-                                        StyledText::new(code.text.clone())
-                                            .with_highlights(code.highlights.iter().cloned()),
-                                    ),
-                            )
-                            .into_any_element(),
+                                    .text_size(px(12.))
+                                    .line_height(px(18.))
+                                    .when(
+                                        self.preview_focused && self.preview_line == index,
+                                        |line| line.bg(color(SELECTED)),
+                                    )
+                                    .child(line.to_owned())
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Left,
+                                        cx.listener(move |view, _, window, cx| {
+                                            view.preview_focused = true;
+                                            view.preview_line = index;
+                                            view.focus.focus(window);
+                                            cx.notify();
+                                        }),
+                                    )
+                            });
+                            div()
+                                .id("text-preview-lines")
+                                .flex_1()
+                                .min_h_0()
+                                .py_3()
+                                .overflow_y_scroll()
+                                .track_scroll(&self.preview_scroll)
+                                .children(lines)
+                                .into_any_element()
+                        }
+                        Preview::Code(code) => {
+                            let mut offset = 0;
+                            let lines = code
+                                .text
+                                .split('\n')
+                                .zip(code.line_numbers.split('\n'))
+                                .enumerate()
+                                .map(|(index, (line, line_number))| {
+                                    let start = offset;
+                                    offset += line.len() + 1;
+                                    let end = start + line.len();
+                                    let highlights =
+                                        code.highlights.iter().filter_map(|(range, style)| {
+                                            let from = range.start.max(start);
+                                            let to = range.end.min(end);
+                                            (from < to)
+                                                .then(|| (from - start..to - start, style.clone()))
+                                        });
+                                    div()
+                                        .flex()
+                                        .w_full()
+                                        .h(px(18.))
+                                        .when(
+                                            self.preview_focused && self.preview_line == index,
+                                            |line| line.bg(color(SELECTED)),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_shrink_0()
+                                                .w(px(44.))
+                                                .pr_3()
+                                                .text_right()
+                                                .text_color(color(CODE_GUTTER))
+                                                .child(line_number.to_owned()),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_shrink_0()
+                                                .pr_3()
+                                                .text_color(color(CODE_TEXT))
+                                                .child(
+                                                    StyledText::new(line.to_owned())
+                                                        .with_highlights(highlights),
+                                                ),
+                                        )
+                                        .on_mouse_down(
+                                            gpui::MouseButton::Left,
+                                            cx.listener(move |view, _, window, cx| {
+                                                view.preview_focused = true;
+                                                view.preview_line = index;
+                                                view.focus.focus(window);
+                                                cx.notify();
+                                            }),
+                                        )
+                                });
+                            div()
+                                .id(if expanded {
+                                    "expanded-code-preview"
+                                } else {
+                                    "code-preview"
+                                })
+                                .flex_1()
+                                .min_h_0()
+                                .py_3()
+                                .overflow_y_scroll()
+                                .overflow_x_scroll()
+                                .track_scroll(&self.preview_scroll)
+                                .map(|mut code| {
+                                    code.style().restrict_scroll_to_axis = Some(true);
+                                    code
+                                })
+                                .font_family(code_font(cx))
+                                .text_size(px(12.))
+                                .line_height(px(18.))
+                                .whitespace_nowrap()
+                                .flex()
+                                .flex_col()
+                                .children(lines)
+                                .on_mouse_down(
+                                    gpui::MouseButton::Left,
+                                    cx.listener(|view, _, window, _| {
+                                        view.preview_focused = true;
+                                        view.focus.focus(window);
+                                    }),
+                                )
+                                .into_any_element()
+                        }
                         Preview::Loading => div()
                             .p_3()
                             .text_color(color(MUTED))

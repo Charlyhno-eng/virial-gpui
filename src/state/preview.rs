@@ -87,6 +87,8 @@ impl FileManager {
             return;
         }
         self.preview_path = path;
+        self.preview_line = 0;
+        self.preview_focused = false;
         self.preview_task = None;
         self.preview_expanded = false;
         if entry.is_none() {

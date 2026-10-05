@@ -249,6 +249,7 @@ impl FileManager {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.preview_focused = false;
         if self.busy || self.loading || self.dialog.is_some() {
             return;
         }

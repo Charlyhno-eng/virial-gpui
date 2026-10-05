@@ -2,7 +2,7 @@ use crate::{
     domain::{location::Location, models::Entry, services::History},
     ui::i18n::Language,
 };
-use gpui::{FocusHandle, Task, UniformListScrollHandle};
+use gpui::{FocusHandle, ScrollHandle, Task, UniformListScrollHandle};
 use std::{
     path::PathBuf,
     sync::{
@@ -64,6 +64,9 @@ pub struct FileManager {
     pub(crate) preview_resize: Option<(gpui::Pixels, f32)>,
     pub(crate) preview_path: Option<PathBuf>,
     pub(crate) preview: super::preview::Preview,
+    pub(crate) preview_line: usize,
+    pub(crate) preview_scroll: ScrollHandle,
+    pub(crate) preview_focused: bool,
     pub(crate) preview_task: Option<Task<()>>,
     pub(crate) opened_archive_files: Vec<crate::infrastructure::archive::Materialized>,
     pub(crate) name_descending: bool,

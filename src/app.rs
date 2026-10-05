@@ -81,6 +81,9 @@ impl FileManager {
             preview_resize: None,
             preview_path: None,
             preview: crate::state::preview::Preview::Unavailable,
+            preview_line: 0,
+            preview_scroll: gpui::ScrollHandle::new(),
+            preview_focused: false,
             preview_task: None,
             opened_archive_files: Vec::new(),
             name_descending: false,
@@ -461,6 +464,34 @@ impl FileManager {
         }
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
+        if self.preview_focused
+            && matches!(
+                self.preview,
+                crate::state::preview::Preview::Text(_) | crate::state::preview::Preview::Code(_)
+            )
+            && !modifiers.modified()
+            && matches!(key, "up" | "down" | "home" | "end" | "pageup" | "pagedown")
+        {
+            let line_count = match &self.preview {
+                crate::state::preview::Preview::Text(text) => text.split('\n').count(),
+                crate::state::preview::Preview::Code(code) => code.text.split('\n').count(),
+                _ => 1,
+            };
+            let page = (f32::from(self.preview_scroll.bounds().size.height) / 18.).floor() as usize;
+            self.preview_line = match key {
+                "up" => self.preview_line.saturating_sub(1),
+                "down" => (self.preview_line + 1).min(line_count - 1),
+                "home" => 0,
+                "end" => line_count - 1,
+                "pageup" => self.preview_line.saturating_sub(page.max(1)),
+                "pagedown" => (self.preview_line + page.max(1)).min(line_count - 1),
+                _ => self.preview_line,
+            };
+            self.preview_scroll.scroll_to_item(self.preview_line);
+            cx.notify();
+            cx.stop_propagation();
+            return;
+        }
         if key == "escape" && cx.stop_active_drag(window) {
             self.external_drop = None;
             cx.notify();
