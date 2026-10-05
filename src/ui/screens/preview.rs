@@ -216,6 +216,10 @@ impl FileManager {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
+                    .when(
+                        matches!(&self.preview, Preview::Text(_) | Preview::Code(_)),
+                        |body| body.flex().flex_col(),
+                    )
                     .map(|mut body| {
                         body.style().restrict_scroll_to_axis = Some(true);
                         body
