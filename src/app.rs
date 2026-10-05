@@ -77,6 +77,8 @@ impl FileManager {
             search_return_focus: false,
             details_open: false,
             preview_expanded: false,
+            layout: crate::infrastructure::layout::Layout::load(),
+            preview_resize: None,
             preview_path: None,
             preview: crate::state::preview::Preview::Unavailable,
             preview_task: None,
@@ -84,6 +86,25 @@ impl FileManager {
             name_descending: false,
             titlebar_drag: None,
         };
+        view.layout.capture(window);
+        cx.observe_window_bounds(window, |view, window, _| {
+            view.layout.capture(window);
+        })
+        .detach();
+        let weak = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            let _ = weak.update(cx, |view, _| {
+                view.layout.capture(window);
+                view.layout.save();
+            });
+            true
+        });
+        cx.on_release(|view, _| view.layout.save()).detach();
+        cx.on_app_quit(|view, _| {
+            view.layout.save();
+            async {}
+        })
+        .detach();
         cx.observe(&view.search_input, |view, _, cx| {
             view.update_global_search(cx)
         })

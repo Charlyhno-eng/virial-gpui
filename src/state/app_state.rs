@@ -60,6 +60,8 @@ pub struct FileManager {
     pub(crate) search_return_focus: bool,
     pub(crate) details_open: bool,
     pub(crate) preview_expanded: bool,
+    pub(crate) layout: crate::infrastructure::layout::Layout,
+    pub(crate) preview_resize: Option<(gpui::Pixels, f32)>,
     pub(crate) preview_path: Option<PathBuf>,
     pub(crate) preview: super::preview::Preview,
     pub(crate) preview_task: Option<Task<()>>,

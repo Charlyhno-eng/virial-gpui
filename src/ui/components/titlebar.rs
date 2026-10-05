@@ -150,7 +150,11 @@ impl FileManager {
                     )
                     .child(
                         control("window-close", "close", self.language.text("Close"), true)
-                            .on_click(|_, window, _| window.remove_window()),
+                            .on_click(cx.listener(|view, _, window, _| {
+                                view.layout.capture(window);
+                                view.layout.save();
+                                window.remove_window();
+                            })),
                     ),
             )
     }

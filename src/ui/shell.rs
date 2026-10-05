@@ -31,6 +31,7 @@ impl Render for FileManager {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_move(cx.listener(Self::move_window))
+            .on_mouse_move(cx.listener(Self::resize_preview))
             .on_mouse_move(cx.listener(Self::update_marquee))
             .on_drag_move(cx.listener(Self::track_external_drag))
             .on_drag_move(cx.listener(
@@ -39,6 +40,9 @@ impl Render for FileManager {
                 },
             ))
             .capture_any_mouse_up(cx.listener(Self::finish_mouse_selection))
+            .capture_any_mouse_up(cx.listener(|view, _, _, _| {
+                view.preview_resize = None;
+            }))
             .on_mouse_up_out(
                 gpui::MouseButton::Left,
                 cx.listener(Self::finish_mouse_selection),

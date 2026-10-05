@@ -8,8 +8,8 @@ mod ui;
 
 use app::FileManager;
 use gpui::{
-    App, Application, Bounds, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
-    WindowOptions, prelude::*, px, size,
+    App, Application, Bounds, WindowBackgroundAppearance, WindowDecorations, WindowOptions,
+    prelude::*, px, size,
 };
 
 fn main() {
@@ -45,11 +45,10 @@ fn main() {
                 })
                 .unwrap_or(preferred_size);
             let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                    None,
-                    initial_size,
-                    cx,
-                ))),
+                window_bounds: Some(
+                    crate::infrastructure::layout::Layout::load()
+                        .bounds(Bounds::centered(None, initial_size, cx), cx),
+                ),
                 titlebar: None,
                 window_decorations: Some(WindowDecorations::Client),
                 window_background: WindowBackgroundAppearance::Transparent,

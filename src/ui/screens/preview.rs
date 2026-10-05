@@ -40,6 +40,33 @@ fn code_font(cx: &App) -> SharedString {
 }
 
 impl FileManager {
+    pub(crate) fn preview_width(&self, window: &Window) -> f32 {
+        let width = f32::from(window.viewport_size().width);
+        self.layout
+            .preview_width
+            .unwrap_or(width * 0.48)
+            .clamp(160., (width - SIDEBAR_WIDTH - 160.).max(160.))
+    }
+
+    pub(crate) fn resize_preview(
+        &mut self,
+        event: &gpui::MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !event.dragging() {
+            self.preview_resize = None;
+            return;
+        }
+        if let Some((start, width)) = self.preview_resize {
+            let maximum =
+                (f32::from(window.viewport_size().width) - SIDEBAR_WIDTH - 160.).max(160.);
+            self.layout.preview_width =
+                Some((width + f32::from(start - event.position.x)).clamp(160., maximum));
+            cx.notify();
+        }
+    }
+
     pub(crate) fn preview_panel(
         &self,
         expanded: bool,
@@ -47,6 +74,7 @@ impl FileManager {
         cx: &mut Context<Self>,
     ) -> Div {
         div()
+            .relative()
             .flex()
             .flex_col()
             .min_h_0()
@@ -54,7 +82,7 @@ impl FileManager {
             .when(expanded, |panel| panel.flex_1())
             .when(!expanded, |panel| {
                 panel
-                    .w(window.viewport_size().width * 0.48)
+                    .w(px(self.preview_width(window)))
                     .flex_shrink_0()
                     .border_l_1()
                     .border_color(color(BORDER))
@@ -207,5 +235,26 @@ impl FileManager {
                     })
                     .child(self.details_panel(false, cx)),
             )
+            .when(!expanded, |panel| {
+                panel.child(
+                    div()
+                        .id("preview-resize")
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .w(px(6.))
+                        .h_full()
+                        .cursor(gpui::CursorStyle::ResizeLeftRight)
+                        .hover(|style| style.bg(color(ACCENT)))
+                        .on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
+                                view.preview_resize =
+                                    Some((event.position.x, view.preview_width(window)));
+                                cx.stop_propagation();
+                            }),
+                        ),
+                )
+            })
     }
 }

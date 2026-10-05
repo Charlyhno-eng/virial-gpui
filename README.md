@@ -11,7 +11,7 @@ USB drives and other removable storage appear automatically under **Devices**, i
 
 The sidebar footer shows the available space on the filesystem containing your home folder.
 
-Single-click a file or folder to show its preview and details. The preview side panel takes 48% of the window width and resizes with the window, with an expand button for a larger view. Double-click to open the item and hide the details. Navigating to another folder or clicking empty space hides the details; single-click an item to show them again.
+Single-click a file or folder to show its preview and details. Drag the left edge of the preview panel to adjust its width, or use the expand button for a larger view. Virial remembers the preview width and the window size, position, and maximized or fullscreen state when you close it. Window placement under Wayland is controlled by the compositor. Double-click to open the item and hide the details. Navigating to another folder or clicking empty space hides the details; single-click an item to show them again.
 
 Press `F2` or choose **Rename…** to edit an item's name directly in its row. The file name is selected without its final extension; folder names are selected in full. Press Enter to save, or Escape or click elsewhere to cancel. The extension remains editable.
 
