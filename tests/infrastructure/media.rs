@@ -1,5 +1,43 @@
 use super::*;
 
+#[test]
+fn production_configuration_keeps_automatic_audio_output_selection() {
+    let Ok(api) = Api::load() else {
+        eprintln!("Skipping audio configuration check: libmpv2 is required");
+        return;
+    };
+    for video in [false, true] {
+        // SAFETY: this test owns the handle and destroys it through Player.
+        let handle = unsafe { (api.create)() };
+        assert!(!handle.is_null());
+        let _player = Player {
+            api: api.clone(),
+            handle,
+        };
+        configure(&api, handle, video).unwrap();
+        assert!(unsafe { (api.initialize)(handle) } >= 0);
+        // Inspect production options before the playback tests override `ao`.
+        // An empty driver list enables probing; `auto` names a nonexistent driver.
+        unsafe {
+            let get_string = api
+                ._library
+                .get::<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>(
+                    b"mpv_get_property_string\0",
+                )
+                .unwrap();
+            let free = api
+                ._library
+                .get::<unsafe extern "C" fn(*mut c_void)>(b"mpv_free\0")
+                .unwrap();
+            let value = get_string(handle, c"options/ao".as_ptr());
+            assert!(!value.is_null());
+            let drivers = CStr::from_ptr(value).to_bytes().to_vec();
+            free(value.cast());
+            assert!(drivers.is_empty(), "forced audio drivers: {drivers:?}");
+        }
+    }
+}
+
 fn wait_for(media: &Media, condition: impl Fn(&Snapshot) -> bool) -> Snapshot {
     let start = Instant::now();
     loop {

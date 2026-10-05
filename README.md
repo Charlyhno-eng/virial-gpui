@@ -21,7 +21,7 @@ Open **Trash** in the sidebar to see deleted files and folders, including items 
 
 Single-click a file or folder to show its preview and details. The preview appears after the double-click interval, so double-clicking opens the item without first showing its preview. The left navigation sidebar gently collapses while a preview is open and returns when the preview closes, freeing space for the file list. Drag the left edge of the preview panel to adjust its width, or use the expand button for a larger view that keeps the window title bar accessible in windowed mode. Virial remembers the preview width and the window size, position, and maximized or fullscreen state when you close it. Window placement under Wayland is controlled by the compositor. Double-click to open the item and hide the details. Navigating to another folder or clicking empty space hides the details; single-click an item to show them again.
 
-Audio and video previews play inside the preview panel, including its expanded view. Files open paused; use **Play/Pause**, **−10 s**, **+10 s**, **Restart**, and **Mute/Unmute** to control playback. Closing the preview or changing selection stops playback; hiding it pauses playback. Audio formats include MP3, FLAC, OGG, WAV, and M4A; video formats include MP4, MKV, MOV, AVI, and WebM. Playback requires `libmpv2` (`sudo apt install libmpv2` on Debian/Ubuntu), with codec support determined by the installed library. Local files stream without a size limit; ZIP members are extracted temporarily and limited to 512 MiB. Missing libraries or invalid files show an unavailable-preview message.
+Audio and video previews play inside the preview panel, including its expanded view. Files open paused; use **Play/Pause**, **−10 s**, **+10 s**, **Restart**, and **Mute/Unmute** to control playback. Closing the preview or changing selection stops playback; hiding it pauses playback. Audio formats include MP3, FLAC, OGG, WAV, and M4A; video formats include MP4, MKV, MOV, AVI, and WebM. Playback requires `libmpv2` (`sudo apt install libmpv2` on Debian/Ubuntu), with codec support determined by the installed library. Virial automatically selects an available system audio output. Local files stream without a size limit; ZIP members are extracted temporarily and limited to 512 MiB. Missing libraries or invalid files show an unavailable-preview message.
 
 PDF previews show the first page, including PDF files inside ZIP archives, and support the expanded view. They require `pdftoppm` from Poppler (`poppler-utils` on Debian/Ubuntu). PDFs up to 20 MiB are rendered locally; invalid, password-protected, or slow files show the unavailable-preview message.
 
@@ -60,7 +60,7 @@ Press `Ctrl+P` to search accessible locations as you type. Virial inventories yo
 On Debian or Ubuntu, install the native libraries and build tools used by GPUI:
 
 ```sh
-sudo apt update && sudo apt install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev udisks2 poppler-utils
+sudo apt update && sudo apt install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev udisks2 poppler-utils libmpv2
 ```
 
 Rust stable (1.85 or newer) and Cargo are also required. If they are not installed, install the toolchain with:

@@ -194,6 +194,30 @@ impl Drop for Player {
     }
 }
 
+// Leave `ao` unset so mpv probes the available system audio outputs.
+// `auto` is an audio-device value, not an audio output driver.
+fn configure(api: &Api, handle: *mut c_void, video: bool) -> Result<(), ()> {
+    for (name, value) in [
+        (c"config", c"no"),
+        (c"load-scripts", c"no"),
+        (c"terminal", c"no"),
+        (c"pause", c"yes"),
+        (c"keep-open", c"yes"),
+        (c"idle", c"yes"),
+        (c"vo", if video { c"libmpv" } else { c"null" }),
+        (c"audio-display", c"no"),
+        (c"osc", c"no"),
+        (c"osd-level", c"0"),
+    ] {
+        // SAFETY: all options are nul-terminated and handle is not yet initialized.
+        if unsafe { (api.option)(handle, name.as_ptr(), value.as_ptr()) } < 0 {
+            eprintln!("Failed mpv option: {name:?}={value:?}");
+            return Err(());
+        }
+    }
+    Ok(())
+}
+
 fn run(
     path: &std::path::Path,
     video: bool,
@@ -212,24 +236,11 @@ fn run(
         api: api.clone(),
         handle,
     };
-    for (name, value) in [
-        (c"config", c"no"),
-        (c"load-scripts", c"no"),
-        (c"terminal", c"no"),
-        (c"pause", c"yes"),
-        (c"keep-open", c"yes"),
-        (c"idle", c"yes"),
-        (c"vo", if video { c"libmpv" } else { c"null" }),
-        (c"audio-display", c"no"),
-        (c"osc", c"no"),
-        (c"osd-level", c"0"),
-        (c"ao", if cfg!(test) { c"null" } else { c"auto" }),
-    ] {
-        // SAFETY: all options are nul-terminated and handle is not yet initialized.
-        if unsafe { (api.option)(handle, name.as_ptr(), value.as_ptr()) } < 0 {
-            eprintln!("Failed mpv option: {name:?}={value:?}");
-            return Err(());
-        }
+    configure(&api, handle, video)?;
+    // Integration tests decode without requiring a sound server or hardware.
+    #[cfg(test)]
+    if unsafe { (api.option)(handle, c"ao".as_ptr(), c"null".as_ptr()) } < 0 {
+        return Err(());
     }
     if unsafe { (api.initialize)(handle) } < 0 {
         return Err(());
