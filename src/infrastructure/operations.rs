@@ -1,8 +1,9 @@
 //! Filesystem mutations. Never overwrite a destination or follow links while copying.
 use std::{
     ffi::CString,
-    fs::{self, OpenOptions},
-    io::{self, Read, Write},
+    fs::{self, File, OpenOptions},
+    io::{self, Read},
+    os::fd::AsRawFd,
     os::unix::{ffi::OsStrExt, fs::symlink},
     path::{Component, Path, PathBuf},
     process::Command,
@@ -120,20 +121,10 @@ pub(super) fn copy_with_progress(
         .create_new(true)
         .open(destination)?;
     let result = (|| {
+        let mut input = File::open(source)?;
+        copy_contents(&mut input, &mut output, metadata.len(), progress)?;
         if let Some(progress) = progress {
-            let mut input = fs::File::open(source)?;
-            let mut buffer = vec![0; 1024 * 1024];
-            loop {
-                let read = input.read(&mut buffer)?;
-                if read == 0 {
-                    break;
-                }
-                output.write_all(&buffer[..read])?;
-                progress.advance(read as u64);
-            }
             progress.advance(1);
-        } else {
-            io::copy(&mut fs::File::open(source)?, &mut output)?;
         }
         output.set_permissions(metadata.permissions())
     })();
@@ -141,6 +132,73 @@ pub(super) fn copy_with_progress(
         let _ = fs::remove_file(destination);
     }
     result
+}
+
+// Keep progress updates bounded while retaining std::io::copy's Linux kernel
+// offload and its fallback for unsupported filesystems/syscalls. Take<File>
+// preserves that specialization; a manual read/write loop does not.
+const COPY_CHUNK: u64 = 4 * 1024 * 1024;
+
+fn copy_chunks(
+    input: &mut File,
+    output: &mut File,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<()> {
+    loop {
+        let copied = io::copy(&mut input.take(COPY_CHUNK), output)?;
+        if let Some(progress) = progress {
+            progress.advance(copied);
+        }
+        if copied < COPY_CHUNK {
+            return Ok(());
+        }
+    }
+}
+
+fn copy_contents(
+    input: &mut File,
+    output: &mut File,
+    size: u64,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<()> {
+    // Whole-file CoW cloning avoids copying blocks (including sparse holes) for
+    // transfers and undo snapshots. Small files are cheaper to copy directly.
+    if size >= 128 * 1024 {
+        loop {
+            // Both descriptors remain open. The destination was created with
+            // create_new, so this ioctl cannot overwrite a user's existing file.
+            let result =
+                unsafe { libc::ioctl(output.as_raw_fd(), libc::FICLONE, input.as_raw_fd()) };
+            if result == 0 {
+                if let Some(progress) = progress {
+                    progress.advance(output.metadata()?.len());
+                }
+                return Ok(());
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            match error.raw_os_error() {
+                Some(
+                    libc::EOPNOTSUPP
+                    | libc::ENOTTY
+                    | libc::EXDEV
+                    | libc::EINVAL
+                    | libc::ENOSYS
+                    | libc::EPERM,
+                ) => break,
+                // Disk-full and I/O failures remain errors, and the caller
+                // removes the partial destination before a move removes source.
+                _ => return Err(error),
+            }
+        }
+    }
+    if progress.is_some() {
+        copy_chunks(input, output, progress)
+    } else {
+        io::copy(input, output).map(|_| ())
+    }
 }
 
 pub(super) fn remove(source: &Path) -> io::Result<()> {

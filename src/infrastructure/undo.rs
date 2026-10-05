@@ -128,6 +128,7 @@ fn fingerprint_with_progress(
         path: &Path,
         hash: &mut Sha256,
         progress: Option<&super::progress::Progress>,
+        buffer: &mut Vec<u8>,
     ) -> io::Result<()> {
         let metadata = fs::symlink_metadata(path)?;
         hash.update(metadata.permissions().mode().to_le_bytes());
@@ -147,15 +148,19 @@ fn fingerprint_with_progress(
                 let bytes = name.as_bytes();
                 hash.update((bytes.len() as u64).to_le_bytes());
                 hash.update(bytes);
-                visit(&child.path(), hash, progress)?;
+                visit(&child.path(), hash, progress, buffer)?;
             }
         } else if metadata.is_file() {
             hash.update(b"file");
             hash.update(metadata.len().to_le_bytes());
             let mut file = File::open(path)?;
-            let mut buffer = [0; 65536];
+            // Allocate once for the whole tree, rather than clearing a large
+            // stack buffer for every file (including thousands of tiny files).
+            if buffer.is_empty() {
+                buffer.resize(256 * 1024, 0);
+            }
             loop {
-                let read = file.read(&mut buffer)?;
+                let read = file.read(buffer)?;
                 if read == 0 {
                     break;
                 }
@@ -182,7 +187,7 @@ fn fingerprint_with_progress(
         }
     }
     let mut hash = Sha256::new();
-    visit(path, &mut hash, progress)?;
+    visit(path, &mut hash, progress, &mut Vec::new())?;
     Ok(format!("{:x}", hash.finalize()))
 }
 
@@ -280,16 +285,56 @@ fn history(data: &Path) -> io::Result<(PathBuf, File)> {
 }
 
 fn sync_snapshot(path: &Path) -> io::Result<()> {
-    let metadata = fs::symlink_metadata(path)?;
-    if metadata.is_symlink() {
-        return Ok(());
-    }
-    if metadata.is_dir() {
-        for entry in fs::read_dir(path)? {
-            sync_snapshot(&entry?.path())?;
+    let mut pending = vec![path.to_path_buf()];
+    let mut files = Vec::new();
+    let mut directories = Vec::new();
+    while let Some(path) = pending.pop() {
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            for entry in fs::read_dir(&path)? {
+                pending.push(entry?.path());
+            }
+            directories.push(path);
+        } else {
+            files.push(path);
         }
     }
-    File::open(path)?.sync_all()
+    // Undo snapshots must be durable before a move starts. A bounded number of
+    // concurrent fsync calls lets the disk batch writes instead of serializing
+    // thousands of independent files. Small snapshots avoid thread overhead.
+    let workers = files.len().div_ceil(32).clamp(1, 4);
+    if workers == 1 {
+        for file in &files {
+            File::open(file)?.sync_all()?;
+        }
+    } else {
+        std::thread::scope(|scope| -> io::Result<()> {
+            let tasks = files
+                .chunks(files.len().div_ceil(workers))
+                .map(|chunk| {
+                    scope.spawn(move || -> io::Result<()> {
+                        for file in chunk {
+                            File::open(file)?.sync_all()?;
+                        }
+                        Ok(())
+                    })
+                })
+                .collect::<Vec<_>>();
+            for task in tasks {
+                task.join()
+                    .map_err(|_| io::Error::other("Snapshot sync worker failed"))??;
+            }
+            Ok(())
+        })?;
+    }
+    // Persist directory entries only after all file data, children before parents.
+    for directory in directories.into_iter().rev() {
+        File::open(directory)?.sync_all()?;
+    }
+    Ok(())
 }
 
 fn snapshot(source: &Path, destination: &Path) -> io::Result<()> {

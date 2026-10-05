@@ -263,3 +263,70 @@ fn move_progress_includes_undo_and_remains_undoable() {
     assert_eq!(fs::read(source.join("file")).unwrap(), b"contents");
     assert!(!target.join("source").exists());
 }
+
+#[test]
+fn kernel_copy_chunks_preserve_boundaries_and_progress() {
+    use super::super::progress::Progress;
+    for length in [0, COPY_CHUNK as usize, COPY_CHUNK as usize * 2 + 17] {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        let contents = (0..length)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        fs::write(&source, &contents).unwrap();
+        let mut input = File::open(&source).unwrap();
+        let mut output = File::create(&destination).unwrap();
+        let progress = Progress::default();
+        // Bypass the optional reflink so this exercises multiple kernel-copy
+        // chunks (or std's fallback on filesystems that cannot offload copies).
+        copy_chunks(&mut input, &mut output, Some(&progress)).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), contents);
+        assert_eq!(progress.snapshot().completed, length as u64);
+    }
+}
+
+#[test]
+fn accelerated_copy_preserves_sparse_contents_permissions_and_independence() {
+    use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    let file = File::create(&source).unwrap();
+    let size = COPY_CHUNK * 3 + 17;
+    file.set_len(size).unwrap();
+    file.write_all_at(b"header", 0).unwrap();
+    file.write_all_at(b"tail", size - 4).unwrap();
+    file.set_permissions(fs::Permissions::from_mode(0o640))
+        .unwrap();
+    let progress = super::super::progress::Progress::default();
+    copy_with_progress(&source, &destination, Some(&progress)).unwrap();
+    assert_eq!(fs::metadata(&destination).unwrap().len(), size);
+    assert_eq!(
+        fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+        0o640
+    );
+    assert_ne!(
+        fs::metadata(&source).unwrap().ino(),
+        fs::metadata(&destination).unwrap().ino()
+    );
+    let copied = fs::read(&destination).unwrap();
+    assert_eq!(&copied[..6], b"header");
+    assert!(copied[6..copied.len() - 4].iter().all(|byte| *byte == 0));
+    assert_eq!(&copied[copied.len() - 4..], b"tail");
+    assert_eq!(progress.snapshot().completed, size + 1);
+    File::options()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .write_all_at(b"edited", 0)
+        .unwrap();
+    let mut header = [0; 6];
+    File::open(&destination)
+        .unwrap()
+        .read_exact_at(&mut header, 0)
+        .unwrap();
+    assert_eq!(&header, b"header");
+    assert!(copy_with_progress(&source, &destination, Some(&progress)).is_err());
+    assert_eq!(fs::read(&destination).unwrap(), copied);
+}

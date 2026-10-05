@@ -9,6 +9,8 @@ Virial adapts its interface language to the system language. English is used whe
 
 Drag files or folders onto a folder in the list, a sidebar location, or a breadcrumb to move them there. The preview closes and the sidebar reappears while dragging. Dragging a selected item moves the entire selection; hold Ctrl to copy instead. Existing destination names are never overwritten, and moves support `Ctrl+Z`. During transfers, a progress panel shows undo preparation, copying or moving, and finalization. Local transfers show a percentage for each phase, including progress within large files; preparation and ZIP transfers show an activity indicator when the total is not available.
 
+Local moves on the same filesystem use a rename. Copies, moves across filesystems, and undo snapshots use accelerated Linux copying when available, including copy-on-write cloning on compatible filesystems, with an automatic fallback. Progress and undo checks remain active; speed depends on the drives and filesystem.
+
 Drag local files or folders out of Virial onto another application to open, attach, or import them. External drops copy files and keep the originals on X11 and Wayland. ZIP members support dragging within Virial only.
 
 USB drives and other removable storage appear automatically under **Devices**, including their filesystem labels, sizes, and mount status. Click a volume to browse it; unmounted volumes are mounted first. The × button unmounts one volume, and the eject button safely removes the entire drive after unmounting all its volumes. Operations fail if a volume is in use. If the current device is disconnected or unmounted, Virial returns to Home. Device management requires the UDisks2 system service (`udisks2` on Debian/Ubuntu); desktop authorization dialogs may appear when needed. Encrypted volume unlocking is handled by your desktop.
@@ -25,7 +27,7 @@ Image previews show the image format and pixel dimensions below the image, along
 
 Image previews include **Convert image…** and **Remove background…** buttons, also available in the expanded view. Convert PNG, JPEG, WebP, GIF, or BMP images to PNG, JPEG, or WebP and choose an output file name. Animated images export their first frame; JPEG composites transparency onto white. PNG uses high lossless compression and omits unnecessary alpha channels; JPEG uses quality 75 and WebP uses lossy quality 80 with transparency preserved. File size depends on image content and format: converting a JPEG to lossless PNG can still produce a larger file. SVG processing is not supported. Exports create a new file beside the original (including inside ZIP archives), never overwrite an existing file, and support `Ctrl+Z`. Processing runs in the background and accepts images up to 20 MiB and 32 megapixels. Image exports are disabled in Trash.
 
-Press `Ctrl+Z` in the browser to undo the latest file or workspace change. Virial keeps the last 20 changes across restarts, including copy, move, rename, Trash, creation, compression, and ZIP edits. Undo refuses to discard files changed since the action or overwrite conflicting contents. Saved contents are stored under `$XDG_DATA_HOME/virial/undo` (default: `~/.local/share/virial/undo`), so recording large files or folders needs additional disk space. Undoing Trash restores saved contents; the desktop Trash retains its copy. Let an operation finish before closing the window.
+Press `Ctrl+Z` in the browser to undo the latest file or workspace change. Virial keeps the last 20 changes across restarts, including copy, move, rename, Trash, creation, compression, and ZIP edits. Undo refuses to discard files changed since the action or overwrite conflicting contents. Saved contents are stored under `$XDG_DATA_HOME/virial/undo` (default: `~/.local/share/virial/undo`), so recording large files or folders can need additional disk space; copy-on-write snapshots share unchanged blocks when supported. Undoing Trash restores saved contents; the desktop Trash retains its copy. Let an operation finish before closing the window.
 
 Double-click a ZIP archive to browse it like a folder, using breadcrumbs and the usual navigation keys. Preview supported images, PDFs, and text, rename files or entire folders, and use cut/paste or drag-and-drop to move items within a ZIP, between ZIPs, or between a ZIP and a local folder. Ctrl-drag and copy/paste copy items. You can also create files and folders inside a ZIP. Changes are saved directly to the archive; existing destination names are never overwritten. Opening a member in another application uses a temporary copy kept until Virial closes; external edits are not saved back to the ZIP. Nested ZIP browsing and moving members to the desktop Trash are not supported. Archives containing encrypted members, links, or special files cannot be modified; encrypted members and links cannot be extracted.
 
@@ -92,6 +94,14 @@ cargo test --release --locked infrastructure::performance::filesystem_performanc
 ```
 
 The performance smoke test measures listing and searching 5,000 files across 50 folders; each operation must have a median below two seconds.
+
+Measure copying and moving a 64 MiB file plus 1,000 small files, including progress and undo recording, with:
+
+```sh
+cargo test --release --locked infrastructure::performance::transfer_performance -- --ignored --exact --nocapture --test-threads=1
+```
+
+This benchmark reports warm-cache medians on the current filesystem; it has no hardware-dependent time limit.
 
 ### Optional background removal
 

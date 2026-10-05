@@ -530,3 +530,42 @@ fn trash_worker() {
     assert!(undo(&data).unwrap());
     assert_eq!(fs::read(file).unwrap(), b"restore me");
 }
+
+#[test]
+fn moves_and_undoes_many_files_with_durable_snapshots() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let source = root.path().join("source");
+    let destination = root.path().join("destination");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&destination).unwrap();
+    for folder in 0..4 {
+        let directory = source.join(format!("folder-{folder}"));
+        fs::create_dir(&directory).unwrap();
+        for file in 0..40 {
+            fs::write(
+                directory.join(format!("file-{file}")),
+                format!("{folder}:{file}"),
+            )
+            .unwrap();
+        }
+        symlink("missing", directory.join("link")).unwrap();
+    }
+    let before = fingerprint(&source).unwrap();
+    let progress = super::super::progress::Progress::default();
+    execute_with_progress(
+        &data,
+        Operation::Transfer {
+            sources: vec![source.clone()],
+            directory: destination.clone(),
+            cut: true,
+        },
+        Some(&progress),
+    )
+    .unwrap();
+    assert!(!source.exists());
+    assert_eq!(fingerprint(&destination.join("source")).unwrap(), before);
+    assert!(undo(&data).unwrap());
+    assert_eq!(fingerprint(&source).unwrap(), before);
+    assert!(!destination.join("source").exists());
+}

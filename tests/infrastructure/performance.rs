@@ -69,3 +69,68 @@ fn filesystem_performance() {
         std::hint::black_box(results);
     });
 }
+
+// Informational comparison on the host filesystem; storage capabilities vary,
+// so timings are reported without a hardware-dependent pass/fail threshold.
+#[test]
+#[ignore = "run explicitly in release mode to measure transfer performance"]
+fn transfer_performance() {
+    use super::{operations, progress::Progress, undo};
+    use std::{io::Write, time::Duration};
+    assert!(!cfg!(debug_assertions), "Run this test with --release");
+    let fixture = tempfile::tempdir().unwrap();
+    let source = fixture.path().join("source");
+    let destination = fixture.path().join("destination");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&destination).unwrap();
+    let mut large = fs::File::create(source.join("large.bin")).unwrap();
+    let block = vec![0x5a; 1024 * 1024];
+    for _ in 0..64 {
+        large.write_all(&block).unwrap();
+    }
+    large.sync_all().unwrap();
+    for index in 0..1000 {
+        fs::write(source.join(format!("small-{index}")), [0x3c; 4096]).unwrap();
+    }
+    let measure = |name: &str, operation: &mut dyn FnMut() -> Duration| {
+        operation();
+        let mut samples = (0..7).map(|_| operation()).collect::<Vec<_>>();
+        samples.sort_unstable();
+        println!(
+            "PERF {name}: median_ms={:.3} max_ms={:.3} samples=7",
+            samples[3].as_secs_f64() * 1000.,
+            samples[6].as_secs_f64() * 1000.
+        );
+    };
+    measure("copy_64mib_and_1000_files_with_progress", &mut || {
+        let target = destination.join("copy");
+        let started = Instant::now();
+        operations::copy_with_progress(&source, &target, Some(&Progress::default())).unwrap();
+        let elapsed = started.elapsed();
+        assert_eq!(
+            fs::metadata(target.join("large.bin")).unwrap().len(),
+            64 * 1024 * 1024
+        );
+        assert_eq!(fs::read_dir(&target).unwrap().count(), 1001);
+        fs::remove_dir_all(&target).unwrap();
+        elapsed
+    });
+    measure("move_64mib_and_1000_files_with_undo", &mut || {
+        let data = tempfile::tempdir_in(fixture.path()).unwrap();
+        let started = Instant::now();
+        undo::execute_with_progress(
+            data.path(),
+            operations::Operation::Transfer {
+                sources: vec![source.clone()],
+                directory: destination.clone(),
+                cut: true,
+            },
+            Some(&Progress::default()),
+        )
+        .unwrap();
+        let elapsed = started.elapsed();
+        assert!(!source.exists());
+        fs::rename(destination.join("source"), &source).unwrap();
+        elapsed
+    });
+}
