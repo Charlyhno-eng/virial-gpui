@@ -24,6 +24,17 @@ pub(crate) struct Snapshot {
     pub duration: f64,
 }
 
+impl Snapshot {
+    pub(crate) fn changed_since(&self, previous: &Self) -> bool {
+        self.frame.as_ref().map(|frame| frame.id) != previous.frame.as_ref().map(|frame| frame.id)
+            || self.ready != previous.ready || self.failed != previous.failed
+            || self.paused != previous.paused || self.muted != previous.muted
+            // The controls display whole seconds, so audio needs no frame-rate redraw.
+            || self.position as u64 != previous.position as u64
+            || self.duration as u64 != previous.duration as u64
+    }
+}
+
 pub(crate) enum Control {
     Pause(bool),
     Seek(f64),
@@ -292,7 +303,7 @@ fn run(
                 }
             }
             // SAFETY: event belongs to this handle and is read before the next wait.
-            let event = unsafe { &*(api.wait)(handle, 0.02) };
+            let event = unsafe { &*(api.wait)(handle, 0.1) };
             if event.id == 7 && !event.data.is_null() {
                 let end = unsafe { &*event.data.cast::<EndFile>() };
                 if end.error < 0 || end.reason == 4 {
@@ -372,7 +383,14 @@ fn render_frames(
             let frame = Arc::new(RenderImage::new(vec![image::Frame::new(buffer)]));
             state.lock().unwrap().frame = Some(frame);
         }
-        std::thread::sleep(Duration::from_millis(16));
+        let snapshot = state.lock().unwrap();
+        let delay = if snapshot.ready && snapshot.paused {
+            Duration::from_millis(100)
+        } else {
+            Duration::from_millis(16)
+        };
+        drop(snapshot);
+        std::thread::sleep(delay);
     }
     unsafe {
         (api.render_free)(context);

@@ -385,6 +385,7 @@ impl FileManager {
                             .p_3()
                             .child(
                                 img(path.clone())
+                                    .image_cache(&self.preview_image_cache)
                                     .with_fallback({
                                         let message =
                                             self.language.text("No content preview available");

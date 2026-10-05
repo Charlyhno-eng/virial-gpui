@@ -145,3 +145,39 @@ fn invalid_media_reports_failure_and_releases_archive_copy() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+#[test]
+fn redraws_track_visible_media_changes_and_ignore_subsecond_audio_progress() {
+    let original = Snapshot {
+        ready: true,
+        paused: true,
+        duration: 4.,
+        ..Default::default()
+    };
+    assert!(!original.clone().changed_since(&original));
+    let mut current = original.clone();
+    current.position = 0.5;
+    assert!(!current.changed_since(&original));
+    current.position = 1.;
+    assert!(current.changed_since(&original));
+    current = original.clone();
+    current.paused = false;
+    assert!(current.changed_since(&original));
+    current = original.clone();
+    current.muted = true;
+    assert!(current.changed_since(&original));
+    current = original.clone();
+    current.failed = true;
+    assert!(current.changed_since(&original));
+    current = original.clone();
+    current.frame = Some(Arc::new(RenderImage::new(vec![image::Frame::new(
+        image::RgbaImage::new(1, 1),
+    )])));
+    assert!(current.changed_since(&original));
+    assert!(!current.clone().changed_since(&current));
+    let previous_frame = current.clone();
+    current.frame = Some(Arc::new(RenderImage::new(vec![image::Frame::new(
+        image::RgbaImage::new(1, 1),
+    )])));
+    assert!(current.changed_since(&previous_frame));
+}

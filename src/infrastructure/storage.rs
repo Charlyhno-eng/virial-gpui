@@ -46,6 +46,18 @@ pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// Count a folder without allocating entries, reading metadata or sorting names.
+pub fn directory_entry_count(path: &Path, hidden: bool) -> io::Result<usize> {
+    if let Some((archive, member)) = super::archive::split(path) {
+        return super::archive::read_directory(&archive, &member, hidden)
+            .map(|entries| entries.len());
+    }
+    fs::read_dir(path)?.try_fold(0, |count, item| {
+        let item = item?;
+        Ok(count + usize::from(hidden || !item.file_name().as_bytes().starts_with(b".")))
+    })
+}
+
 pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
     if let Some((archive, member)) = super::archive::split(path) {
         if cancelled.load(Ordering::Relaxed) {

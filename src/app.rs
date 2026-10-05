@@ -11,11 +11,7 @@ use gpui::{AppContext, Context, KeyDownEvent, ScrollStrategy, UniformListScrollH
 use std::{
     path::PathBuf,
     process::Command,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, TryRecvError},
-    },
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -28,15 +24,6 @@ impl FileManager {
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/"));
-        let search_cache = std::env::var_os("XDG_CACHE_HOME")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| home.join(".cache"))
-            .join("virial/search/catalog-v1.jsonl");
-        let search_index = crate::infrastructure::search::SearchIndex::start(
-            vec![home.clone(), PathBuf::from("/")],
-            search_cache,
-        );
         let focus = cx.focus_handle();
         focus.focus(window);
         let mut view = Self {
@@ -93,7 +80,7 @@ impl FileManager {
                 input
             }),
             global_search: None,
-            search_index,
+            search_index: None,
             search_return_focus: false,
             details_open: false,
             sidebar_width: crate::ui::theme::SIDEBAR_WIDTH,
@@ -110,6 +97,8 @@ impl FileManager {
             preview_focused: false,
             preview_task: None,
             preview_media_image: None,
+            preview_image_cache: gpui::RetainAllImageCache::new(cx),
+            preview_media_updates: None,
             opened_archive_files: Vec::new(),
             name_descending: false,
             titlebar_drag: None,
@@ -179,6 +168,8 @@ impl FileManager {
         self.cancel_pending_preview();
         self.preview = crate::state::preview::Preview::Unavailable;
         self.preview_task = None;
+        self.preview_media_updates = None;
+        self.preview_image_cache = gpui::RetainAllImageCache::new(cx);
         self.preview_path = None;
         self.preview_expanded = false;
         self.details_open = false;
@@ -264,7 +255,6 @@ impl FileManager {
                             &mut view.selection,
                             view.name_descending,
                         );
-                        view.load_directory_sizes(cx);
                     }
                     Err(error) => {
                         view.error = Some(format!(
@@ -281,67 +271,32 @@ impl FileManager {
     }
 
     pub(crate) fn load_directory_sizes(&mut self, cx: &mut Context<Self>) {
-        let folders = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, entry)| entry.directory)
-            .map(|(index, entry)| (index, entry.path.clone()))
-            .collect::<Vec<_>>();
-        if folders.is_empty() {
+        let Some(entry) = self
+            .selection
+            .primary()
+            .and_then(|index| self.entries.get(index))
+            .filter(|entry| self.details_open && entry.directory && entry.bytes.is_none())
+        else {
             return;
-        }
+        };
+        let path = entry.path.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();
-        let executor = cx.background_executor().clone();
-        let (sender, receiver) = mpsc::channel();
-        // One worker limits I/O contention. Deliver each result separately so a
-        // large folder cannot hold up sizes that have already been calculated.
-        let read = executor.spawn(async move {
-            for (index, path) in folders {
-                if worker_cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
-                if let Ok(bytes) = directory_size(&path, &worker_cancelled)
-                    && sender.send((index, bytes)).is_err()
-                {
-                    break;
-                }
-            }
-        });
+        // Browsing Home or a drive must not recursively read every child tree.
+        let read = cx
+            .background_executor()
+            .spawn(async move { (directory_size(&path, &worker_cancelled), path) });
         let task = cx.spawn(async move |view, cx| {
-            loop {
-                // Redraw at most ten times a second, independently of scan speed.
-                executor.timer(Duration::from_millis(100)).await;
-                let mut sizes = Vec::new();
-                let mut finished = false;
-                loop {
-                    match receiver.try_recv() {
-                        Ok(size) => sizes.push(size),
-                        Err(TryRecvError::Empty) => break,
-                        Err(TryRecvError::Disconnected) => {
-                            finished = true;
-                            break;
-                        }
+            let (result, path) = read.await;
+            if let Ok(bytes) = result {
+                let _ = view.update(cx, |view, cx| {
+                    // Sorting may have changed row indices while the scan ran.
+                    if let Some(entry) = view.entries.iter_mut().find(|entry| entry.path == path) {
+                        entry.bytes = Some(bytes);
+                        cx.notify();
                     }
-                }
-                if !sizes.is_empty()
-                    && view
-                        .update(cx, |view, cx| {
-                            for (index, bytes) in sizes {
-                                view.entries[index].bytes = Some(bytes);
-                            }
-                            cx.notify();
-                        })
-                        .is_err()
-                {
-                    return;
-                }
-                if finished {
-                    break;
-                }
+                });
             }
-            read.await;
         });
         self.directory_sizes = Some(DirectorySizeTask {
             _task: task,
@@ -593,8 +548,8 @@ impl FileManager {
                     && self.selection.primary().is_some()
                     && !self.loading =>
             {
-                self.sync_preview(cx);
                 self.details_open = true;
+                self.sync_preview(cx);
                 self.preview_expanded = !self.preview_expanded;
                 cx.notify();
             }

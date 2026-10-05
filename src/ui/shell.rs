@@ -12,9 +12,6 @@ impl Render for FileManager {
         let media_frame = match &self.preview {
             crate::state::preview::Preview::Media(media) if self.details_open => {
                 let snapshot = media.snapshot();
-                if !snapshot.failed {
-                    window.request_animation_frame();
-                }
                 snapshot.frame
             }
             _ => None,

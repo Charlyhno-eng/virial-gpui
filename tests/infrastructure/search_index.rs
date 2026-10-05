@@ -183,6 +183,9 @@ fn persisted_catalog_reuses_unchanged_snapshots_and_reconciles_stale_paths() {
     let before = restored.handle.0.read().unwrap().directories[&root].clone();
     restored.begin_scan(false);
     finish(&mut restored);
+    assert_eq!(restored.seen.capacity(), 0);
+    assert_eq!(restored.visited.capacity(), 0);
+    assert_eq!(restored.pending.capacity(), 0);
     assert!(Arc::ptr_eq(
         &before,
         &restored.handle.0.read().unwrap().directories[&root]
@@ -311,6 +314,17 @@ fn notification_overflow_requests_a_complete_reconciliation() {
 #[ignore = "run explicitly in release mode to measure indexed search performance"]
 fn indexed_search_performance() {
     assert!(!cfg!(debug_assertions), "Run with --release");
+    let resident_kib = || {
+        fs::read_to_string("/proc/self/status")
+            .ok()
+            .and_then(|status| {
+                status
+                    .lines()
+                    .find(|line| line.starts_with("VmRSS:"))
+                    .and_then(|line| line.split_whitespace().nth(1)?.parse::<usize>().ok())
+            })
+    };
+    let before = resident_kib();
     let root = PathBuf::from("/virial-benchmark");
     let index = inventory(&root);
     // Synthetic catalog isolates query CPU/memory cost from fixture creation and I/O.
@@ -339,6 +353,12 @@ fn indexed_search_performance() {
             .insert(path, snapshot);
     }
     index.handle.0.write().unwrap().finished = true;
+    if let (Some(before), Some(after)) = (before, resident_kib()) {
+        println!(
+            "PERF indexed_1000000_paths resident_delta_kib={}",
+            after.saturating_sub(before)
+        );
+    }
     for text in [
         "report",
         "report-0999",
@@ -369,5 +389,89 @@ fn indexed_search_performance() {
             samples[3] < Duration::from_secs(2),
             "indexed search exceeded smoke budget"
         );
+    }
+}
+
+#[test]
+fn compact_catalog_shares_long_parent_paths_and_retains_original_names() {
+    let path = PathBuf::from(format!("/{}", "parent/".repeat(80)));
+    let snapshot = Directory::new(
+        StoredDirectory {
+            path: path.as_os_str().as_bytes().to_vec(),
+            stamp: Stamp(0, 0, 0, 0, 0, 0),
+            items: (0..1000)
+                .map(|file| StoredItem {
+                    name: format!("Report-{file:04}.txt").into_bytes(),
+                    kind: 0,
+                })
+                .collect(),
+        },
+        &[PathBuf::from("/")],
+    );
+    let allocated = std::mem::size_of_val(snapshot.items.as_ref())
+        + snapshot
+            .items
+            .iter()
+            .map(|item| item.name_key.len())
+            .sum::<usize>()
+        + snapshot.stored.items.capacity() * std::mem::size_of::<StoredItem>()
+        + snapshot
+            .stored
+            .items
+            .iter()
+            .map(|item| item.name.capacity())
+            .sum::<usize>();
+    // Per-file payload must stay independent of a 560-byte parent path.
+    assert!(allocated < 160 * 1024, "catalog payload: {allocated}");
+    assert_eq!(
+        snapshot.item_path(&snapshot.items[0]),
+        path.join("Report-0000.txt")
+    );
+}
+
+#[test]
+fn notifications_invalidate_snapshots_even_when_directory_stamp_matches() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    fs::write(root.join("report-old"), b"").unwrap();
+    let mut index = inventory(root);
+    index.begin_scan(false);
+    finish(&mut index);
+    fs::rename(root.join("report-old"), root.join("report-new")).unwrap();
+    // Simulate a coarse filesystem timestamp hiding an enumeration change.
+    let mut catalog = index.handle.0.write().unwrap();
+    Arc::get_mut(catalog.directories.get_mut(root).unwrap())
+        .unwrap()
+        .stored
+        .stamp = Stamp::read(&fs::metadata(root).unwrap());
+    drop(catalog);
+    let (changed, overflow) = index.watches.changes();
+    assert!(changed.contains(root));
+    index.queue_changes(changed, overflow);
+    finish(&mut index);
+    assert_eq!(query(&index, "report", true).entries[0].name, "report-new");
+}
+
+#[test]
+fn joined_path_order_matches_full_keys_across_directory_boundaries() {
+    let parents = ["", "/", "/a/", "/a/b/", "/a-b/", "/étÉ/", "/report/"];
+    let names = ["", "report", "report-more", "a", "b", "Été", "é", "🔥"];
+    for left_parent in parents {
+        for left_name in names {
+            for right_parent in parents {
+                for right_name in names {
+                    assert_eq!(
+                        joined_key_cmp(
+                            left_parent.as_bytes(),
+                            left_name.as_bytes(),
+                            right_parent.as_bytes(),
+                            right_name.as_bytes(),
+                        ),
+                        format!("{left_parent}{left_name}")
+                            .cmp(&format!("{right_parent}{right_name}"))
+                    );
+                }
+            }
+        }
     }
 }

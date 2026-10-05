@@ -52,8 +52,8 @@ impl Preview {
 
 fn read_preview(entry: &Entry, hidden: bool) -> Preview {
     if entry.browsable() {
-        return crate::infrastructure::storage::read_directory(&entry.path, hidden)
-            .map(|entries| Preview::Folder(entries.len()))
+        return crate::infrastructure::storage::directory_entry_count(&entry.path, hidden)
+            .map(Preview::Folder)
             .unwrap_or(Preview::Unavailable);
     }
     if matches!(entry.kind(), "Audio" | "Video") {
@@ -269,16 +269,26 @@ impl FileManager {
     }
 
     pub(crate) fn sync_preview(&mut self, cx: &mut Context<Self>) {
+        // Do not read, decode or keep temporary files for a hidden preview.
         let entry = self
-            .selection
-            .primary()
-            .and_then(|index| self.entries.get(index))
-            .cloned();
-        let path = entry.as_ref().map(|entry| entry.path.clone());
+            .details_open
+            .then(|| {
+                self.selection
+                    .primary()
+                    .and_then(|index| self.entries.get(index))
+            })
+            .flatten();
+        let path = entry.map(|entry| entry.path.clone());
         if path == self.preview_path {
             return;
         }
+        let entry = entry.cloned();
         self.preview_path = path;
+        self.directory_sizes = None;
+        self.preview_media_updates = None;
+        // A cache scoped to the current preview releases decoded pixels and GPU
+        // textures when switching files, instead of retaining every opened image.
+        self.preview_image_cache = gpui::RetainAllImageCache::new(cx);
         self.preview_line = 0;
         self.preview_focused = false;
         self.preview_task = None;
@@ -290,6 +300,7 @@ impl FileManager {
         let Some(entry) = entry else {
             return;
         };
+        self.load_directory_sizes(cx);
         let hidden = true;
         let read = cx
             .background_executor()
@@ -298,8 +309,51 @@ impl FileManager {
             let preview = read.await;
             let _ = view.update(cx, |view, cx| {
                 view.preview = preview;
+                if matches!(view.preview, Preview::Media(_)) {
+                    view.monitor_preview_media(cx);
+                }
                 cx.notify();
             });
+        }));
+    }
+
+    fn monitor_preview_media(&mut self, cx: &mut Context<Self>) {
+        self.preview_media_updates = Some(cx.spawn(async move |view, cx| {
+            let mut previous = None;
+            let mut delay = std::time::Duration::from_millis(100);
+            loop {
+                cx.background_executor().timer(delay).await;
+                let Ok(Some(snapshot)) = view.update(cx, |view, cx| {
+                    let Preview::Media(media) = &view.preview else {
+                        return None;
+                    };
+                    if !view.details_open {
+                        return None;
+                    }
+                    let snapshot = media.snapshot();
+                    if previous
+                        .as_ref()
+                        .is_none_or(|last| snapshot.changed_since(last))
+                    {
+                        cx.notify();
+                    }
+                    Some((snapshot, media.video))
+                }) else {
+                    break;
+                };
+                let (snapshot, video) = snapshot;
+                delay = std::time::Duration::from_millis(
+                    if video && snapshot.ready && !snapshot.paused {
+                        16
+                    } else {
+                        100
+                    },
+                );
+                if snapshot.failed {
+                    break;
+                }
+                previous = Some(snapshot);
+            }
         }));
     }
 
@@ -311,6 +365,9 @@ impl FileManager {
         self.preview_path = None;
         self.preview_task = None;
         self.preview = Preview::Unavailable;
+        self.directory_sizes = None;
+        self.preview_media_updates = None;
+        self.preview_image_cache = gpui::RetainAllImageCache::new(cx);
         cx.notify();
     }
 }

@@ -4,7 +4,7 @@ use crate::domain::models::Entry;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque},
-    ffi::{CString, OsString},
+    ffi::{CString, OsStr, OsString},
     fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter, Write},
     os::{
@@ -52,19 +52,20 @@ struct StoredDirectory {
     items: Vec<StoredItem>,
 }
 
+// Store only the matching key and an index into the cached raw names. Parent
+// paths are shared by all items; full paths are allocated only for final results.
 struct Item {
-    name: String,
-    name_key: String,
-    path: PathBuf,
-    path_key: String,
+    name_key: Box<str>,
+    stored_index: usize,
     letters: u128,
-    kind: u8,
     hidden: bool,
 }
 
 struct Directory {
     stored: StoredDirectory,
-    items: Vec<Item>,
+    path: PathBuf,
+    path_key: String,
+    items: Box<[Item]>,
 }
 
 // Collisions only admit extra candidates; they never exclude a valid Unicode match.
@@ -82,27 +83,44 @@ impl Directory {
             .unwrap_or(&path)
             .components()
             .any(|part| part.as_os_str().as_bytes().starts_with(b"."));
+        let mut path_key = path.to_string_lossy().to_lowercase();
+        if !path_key.ends_with('/') {
+            path_key.push('/');
+        }
+        let parent_letters = letter_mask(&path_key);
         let mut items: Vec<_> = stored
             .items
             .iter()
-            .map(|item| {
-                let raw_name = OsString::from_vec(item.name.clone());
-                let name = raw_name.to_string_lossy().into_owned();
-                let path = path.join(raw_name);
-                let path_key = path.to_string_lossy().to_lowercase();
+            .enumerate()
+            .map(|(stored_index, item)| {
+                let name = OsStr::from_bytes(&item.name).to_string_lossy();
+                let name_key = name.to_lowercase().into_boxed_str();
                 Item {
-                    name_key: name.to_lowercase(),
+                    letters: parent_letters | letter_mask(&name_key),
                     hidden: hidden_parent || name.starts_with('.'),
-                    name,
-                    letters: letter_mask(&path_key),
-                    path,
-                    path_key,
-                    kind: item.kind,
+                    name_key,
+                    stored_index,
                 }
             })
             .collect();
-        items.sort_unstable_by(|a, b| (&a.name_key, &a.path).cmp(&(&b.name_key, &b.path)));
-        Self { stored, items }
+        items.sort_unstable_by(|a, b| {
+            (&a.name_key, &stored.items[a.stored_index].name)
+                .cmp(&(&b.name_key, &stored.items[b.stored_index].name))
+        });
+        Self {
+            stored,
+            path,
+            path_key,
+            items: items.into_boxed_slice(),
+        }
+    }
+
+    fn raw_item(&self, item: &Item) -> &StoredItem {
+        &self.stored.items[item.stored_index]
+    }
+
+    fn item_path(&self, item: &Item) -> PathBuf {
+        self.path.join(OsStr::from_bytes(&self.raw_item(item).name))
     }
 }
 
@@ -156,25 +174,83 @@ impl SearchIndex {
 }
 
 // Heap entries borrow immutable snapshots: only the final 100 results allocate Entries.
-#[derive(Eq, PartialEq)]
 struct Match<'a> {
     rank: usize,
     item: &'a Item,
+    directory: &'a Directory,
 }
 
-impl PartialEq for Item {
-    fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
+// Compare two parent/name pairs using slice comparisons, so shared path prefixes
+// use memcmp rather than walking chained byte iterators for every candidate.
+fn joined_key_cmp<'a>(
+    mut left: &'a [u8],
+    mut left_name: &'a [u8],
+    mut right: &'a [u8],
+    mut right_name: &'a [u8],
+) -> std::cmp::Ordering {
+    loop {
+        if left.is_empty() {
+            left = left_name;
+            left_name = &[];
+        }
+        if right.is_empty() {
+            right = right_name;
+            right_name = &[];
+        }
+        if left.is_empty() || right.is_empty() {
+            return left.len().cmp(&right.len());
+        }
+        let count = left.len().min(right.len());
+        let order = left[..count].cmp(&right[..count]);
+        if !order.is_eq() {
+            return order;
+        }
+        left = &left[count..];
+        right = &right[count..];
     }
 }
-impl Eq for Item {}
+
+impl PartialEq for Match<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl Eq for Match<'_> {}
 impl Ord for Match<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.rank, &self.item.path_key, &self.item.path).cmp(&(
-            other.rank,
-            &other.item.path_key,
-            &other.item.path,
-        ))
+        // Compare the joined paths without allocating strings for heap candidates.
+        let raw = |candidate: &Self| {
+            candidate
+                .directory
+                .stored
+                .path
+                .iter()
+                .copied()
+                .chain((!candidate.directory.stored.path.ends_with(b"/")).then_some(b'/'))
+                .chain(
+                    candidate
+                        .directory
+                        .raw_item(candidate.item)
+                        .name
+                        .iter()
+                        .copied(),
+                )
+        };
+        self.rank
+            .cmp(&other.rank)
+            .then_with(|| {
+                if std::ptr::eq(self.directory, other.directory) {
+                    self.item.name_key.cmp(&other.item.name_key)
+                } else {
+                    joined_key_cmp(
+                        self.directory.path_key.as_bytes(),
+                        self.item.name_key.as_bytes(),
+                        other.directory.path_key.as_bytes(),
+                        other.item.name_key.as_bytes(),
+                    )
+                }
+            })
+            .then_with(|| raw(self).cmp(raw(other)))
     }
 }
 impl PartialOrd for Match<'_> {
@@ -183,12 +259,25 @@ impl PartialOrd for Match<'_> {
     }
 }
 
-fn retain_match<'a>(heap: &mut BinaryHeap<Match<'a>>, rank: usize, item: &'a Item) {
-    let candidate = Match { rank, item };
+fn retain_match<'a>(
+    heap: &mut BinaryHeap<Match<'a>>,
+    rank: usize,
+    item: &'a Item,
+    directory: &'a Directory,
+) -> bool {
+    let candidate = Match {
+        rank,
+        item,
+        directory,
+    };
     if heap.len() < RESULT_LIMIT {
         heap.push(candidate);
+        true
     } else if heap.peek().is_some_and(|worst| candidate < *worst) {
         *heap.peek_mut().unwrap() = candidate;
+        true
+    } else {
+        false
     }
 }
 
@@ -227,7 +316,7 @@ impl SearchHandle {
                 // finish without scoring every path, even with millions of files.
                 let start = directory
                     .items
-                    .partition_point(|item| item.name_key < *term);
+                    .partition_point(|item| item.name_key.as_ref() < term.as_str());
                 let mut retained = 0;
                 for (index, item) in directory.items[start..]
                     .iter()
@@ -238,7 +327,16 @@ impl SearchHandle {
                         return None;
                     }
                     if hidden || !item.hidden {
-                        retain_match(&mut best, usize::from(item.name_key != *term), item);
+                        if !retain_match(
+                            &mut best,
+                            usize::from(item.name_key.as_ref() != term),
+                            item,
+                            directory,
+                        ) {
+                            // Later names in this parent have the same or worse
+                            // rank and path order, so none can enter the heap.
+                            break;
+                        }
                         retained += 1;
                         // Within one parent, this order is also the ranking order.
                         // No later prefix can enter the global top 100.
@@ -252,6 +350,7 @@ impl SearchHandle {
         if best.len() < RESULT_LIMIT {
             best.clear();
             let required = terms.iter().fold(0, |mask, term| mask | letter_mask(term));
+            let mut path_key = String::new();
             for directory in &directories {
                 for (index, item) in directory.items.iter().enumerate() {
                     if index % 256 == 0 && cancelled.load(Ordering::Relaxed) {
@@ -260,8 +359,11 @@ impl SearchHandle {
                     if (!hidden && item.hidden) || item.letters & required != required {
                         continue;
                     }
-                    if let Some(rank) = score(&item.name_key, &item.path_key, &terms) {
-                        retain_match(&mut best, rank, item);
+                    path_key.clear();
+                    path_key.push_str(&directory.path_key);
+                    path_key.push_str(&item.name_key);
+                    if let Some(rank) = score(&item.name_key, &path_key, &terms) {
+                        retain_match(&mut best, rank, item, directory);
                     }
                 }
             }
@@ -272,12 +374,15 @@ impl SearchHandle {
                 return None;
             }
             let item = result.item;
+            let raw = result.directory.raw_item(item);
+            let path = result.directory.item_path(item);
+            let directory = raw.kind == 1 || (raw.kind == 2 && path.is_dir());
             entries.push(Entry {
-                path: item.path.clone(),
-                name: item.name.clone(),
+                path,
+                name: OsStr::from_bytes(&raw.name).to_string_lossy().into_owned(),
                 bytes: None,
                 // Resolve only selected symlinks, never every file in the catalog.
-                directory: item.kind == 1 || (item.kind == 2 && item.path.is_dir()),
+                directory,
             });
         }
         Some(SearchResults {
@@ -338,6 +443,24 @@ impl Watches {
             }
             false
         });
+    }
+
+    fn wait(&self) {
+        if let Some(fd) = &self.fd {
+            let mut descriptor = libc::pollfd {
+                fd: fd.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            // Sleep until a filesystem notification arrives, with a bounded wait
+            // for shutdown, cache checkpoints and mount reconciliation.
+            // SAFETY: the owned fd and one initialized pollfd live through poll.
+            unsafe {
+                libc::poll(&mut descriptor, 1, 1000);
+            }
+        } else {
+            thread::park_timeout(Duration::from_secs(1));
+        }
     }
 
     fn changes(&mut self) -> (HashSet<PathBuf>, bool) {
@@ -548,42 +671,39 @@ impl Inventory {
                 directory
             }
         };
-        if let Some(previous) = &previous {
+        if let Some(previous) = &previous
+            && !Arc::ptr_eq(previous, &directory)
+        {
             let children: HashSet<_> = directory
+                .stored
                 .items
                 .iter()
                 .filter(|item| item.kind == 1)
-                .map(|item| &item.path)
+                .map(|item| &item.name)
                 .collect();
             for child in previous
+                .stored
                 .items
                 .iter()
-                .filter(|item| item.kind == 1 && !children.contains(&item.path))
+                .filter(|item| item.kind == 1 && !children.contains(&item.name))
             {
-                self.remove_tree(&child.path);
+                self.remove_tree(&path.join(OsStr::from_bytes(&child.name)));
             }
         }
         let known = self.handle.0.read().unwrap();
         let children: Vec<_> = directory
+            .stored
             .items
             .iter()
             .filter(|item| item.kind == 1)
-            .filter(|item| self.full_scan || !known.directories.contains_key(&item.path))
-            .map(|item| item.path.clone())
+            .map(|item| path.join(OsStr::from_bytes(&item.name)))
+            .filter(|path| self.full_scan || !known.directories.contains_key(path))
             .collect();
         drop(known);
-        // Complete the first (home) root before starting lower-priority roots.
-        if self.full_scan {
-            let next_root = self
-                .pending
-                .iter()
-                .position(|path| self.roots.contains(path))
-                .unwrap_or(self.pending.len());
-            for (offset, child) in children.into_iter().enumerate() {
-                self.pending.insert(next_root + offset, child);
-            }
-        } else {
-            self.pending.extend(children);
+        // Prepend children in reverse order to finish Home before other roots.
+        // Avoid inserting in the middle of a large queue on every directory.
+        for child in children.into_iter().rev() {
+            self.pending.push_front(child);
         }
     }
 
@@ -601,6 +721,11 @@ impl Inventory {
         catalog.revision += 1;
         self.full_scan = false;
         self.force_scan = false;
+        // These sets can contain millions of directory paths/inodes. Release
+        // traversal-only allocations once reconciliation has finished.
+        self.seen = HashSet::new();
+        self.visited = HashSet::new();
+        self.pending = VecDeque::new();
     }
 
     fn header(&self) -> (u32, Vec<Vec<u8>>) {
@@ -699,7 +824,7 @@ impl Inventory {
     fn run(&mut self, stopped: &AtomicBool) {
         // Cache failures are recoverable: always reconcile against the real filesystem.
         let _ = self.load(stopped);
-        self.begin_scan(true);
+        self.begin_scan(false);
         let mut reconciled = Instant::now();
         let mut checkpoint = Instant::now();
         let mut events = Instant::now();
@@ -738,9 +863,9 @@ impl Inventory {
             // Reconciliation covers mount changes, watch limits, and filesystems
             // (including network mounts) which do not provide reliable inotify events.
             if reconciled.elapsed() >= Duration::from_secs(60) {
-                self.begin_scan(true);
+                self.begin_scan(false);
             }
-            thread::park_timeout(Duration::from_millis(50));
+            self.watches.wait();
         }
     }
 }

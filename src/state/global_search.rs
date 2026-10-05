@@ -58,6 +58,21 @@ impl FileManager {
             cx.notify();
             return;
         }
+        // Inventory can be large; browsing alone needs neither its thread nor RAM.
+        let index = self
+            .search_index
+            .get_or_insert_with(|| {
+                let cache = std::env::var_os("XDG_CACHE_HOME")
+                    .map(std::path::PathBuf::from)
+                    .filter(|path| path.is_absolute())
+                    .unwrap_or_else(|| self.home.join(".cache"))
+                    .join("virial/search/catalog-v1.jsonl");
+                crate::infrastructure::search::SearchIndex::start(
+                    vec![self.home.clone(), "/".into()],
+                    cache,
+                )
+            })
+            .handle();
         let picker = self.global_search.get_or_insert_with(|| GlobalSearch {
             query: String::new(),
             results: SearchResults::default(),
@@ -78,7 +93,6 @@ impl FileManager {
         picker.pending_open = false;
         picker.scroll = gpui::UniformListScrollHandle::new();
         cx.notify();
-        let index = self.search_index.handle();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();
         let executor = cx.background_executor().clone();
@@ -86,6 +100,8 @@ impl FileManager {
         let (sender, receiver) = mpsc::sync_channel(1);
         let worker_query = query.clone();
         let worker = executor.clone().spawn(async move {
+            // Coalesce keystrokes before scoring a potentially large catalog.
+            executor.timer(Duration::from_millis(120)).await;
             let mut previous = None;
             loop {
                 if worker_cancelled.load(Ordering::Relaxed) {
@@ -102,14 +118,14 @@ impl FileManager {
                         Err(mpsc::TrySendError::Disconnected(_)) => break,
                     }
                 }
-                // Inventory updates stream while typing; a new query starts immediately.
-                executor.timer(Duration::from_millis(50)).await;
+                // Stream inventory changes without rescoring every notification batch.
+                executor.timer(Duration::from_millis(150)).await;
             }
         });
         let executor = cx.background_executor().clone();
         let task = cx.spawn(async move |view, cx| {
             loop {
-                executor.timer(Duration::from_millis(16)).await;
+                executor.timer(Duration::from_millis(50)).await;
                 let mut latest = None;
                 let mut disconnected = false;
                 loop {
