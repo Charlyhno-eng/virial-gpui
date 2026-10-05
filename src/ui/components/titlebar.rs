@@ -91,7 +91,7 @@ impl FileManager {
                             .text_ellipsis()
                             .min_w_0()
                             .child(format!(
-                                "- {}",
+                                "-   {}",
                                 self.location.title(&self.home, self.language)
                             )),
                     )
