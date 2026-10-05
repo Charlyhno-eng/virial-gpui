@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
     ptr,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -135,6 +135,17 @@ struct Api {
 
 impl Api {
     fn load() -> Result<Arc<Self>, ()> {
+        // libmpv keeps global state and helper threads after
+        // mpv_terminate_destroy, so dropping the last library handle would
+        // dlclose() libmpv while another worker may still run inside it,
+        // unmapping code under a live thread (intermittent SIGSEGV when
+        // previews run in parallel). Load the library once per process and
+        // keep it alive until exit.
+        static API: OnceLock<Result<Arc<Api>, ()>> = OnceLock::new();
+        API.get_or_init(Self::open).clone()
+    }
+
+    fn open() -> Result<Arc<Self>, ()> {
         // SAFETY: symbols use the public libmpv C ABI; all copied function pointers
         // are kept alive by _library. No user-provided libraries are loaded.
         unsafe {
