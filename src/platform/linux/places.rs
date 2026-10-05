@@ -27,7 +27,7 @@ pub fn discover(home: &Path) -> Vec<Place> {
         ("Downloads", "download", "DOWNLOAD"),
         ("Pictures", "image", "PICTURES"),
         ("Music", "music", "MUSIC"),
-        ("Videos", "image", "VIDEOS"),
+        ("Videos", "video", "VIDEOS"),
     ] {
         let path = configured_directory(&config, key, home).unwrap_or_else(|| home.join(label));
         if path != home && path.is_dir() {

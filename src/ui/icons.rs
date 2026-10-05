@@ -7,6 +7,18 @@ pub struct IconAssets;
 
 const ASSETS: &[(&str, &[u8])] = &[
     (
+        "icons/image-outline.svg",
+        include_bytes!("../../assets/icons/image-outline.svg"),
+    ),
+    (
+        "icons/music-outline.svg",
+        include_bytes!("../../assets/icons/music-outline.svg"),
+    ),
+    (
+        "icons/video-outline.svg",
+        include_bytes!("../../assets/icons/video-outline.svg"),
+    ),
+    (
         "icons/image-convert.svg",
         include_bytes!("../../assets/icons/image-convert.svg"),
     ),
@@ -220,11 +232,22 @@ impl AssetSource for IconAssets {
 }
 
 pub fn icon(name: &str, size: f32, color: u32) -> Svg {
+    let name = interface_icon_name(name);
     svg()
         .path(format!("icons/{name}.svg"))
         .size(px(size))
         .flex_shrink_0()
         .text_color(theme::color(color))
+}
+
+// Colored file artwork becomes a solid silhouette when rendered as an alpha mask.
+fn interface_icon_name(name: &str) -> &str {
+    match name {
+        "image" => "image-outline",
+        "music" => "music-outline",
+        "video" => "video-outline",
+        _ => name,
+    }
 }
 
 /// File artwork uses the image renderer to preserve SVG colors instead of a tinted mask.
@@ -237,3 +260,7 @@ pub fn file_icon(name: &str, size: f32) -> AnyElement {
         .flex_shrink_0()
         .into_any_element()
 }
+
+#[cfg(test)]
+#[path = "../../tests/ui/icons.rs"]
+mod tests;
