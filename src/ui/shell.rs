@@ -150,6 +150,7 @@ impl Render for FileManager {
             .when(self.preview_expanded && self.details_open, |root| {
                 root.child(components::reveal(
                     div()
+                        .occlude()
                         .absolute()
                         .left_0()
                         .right_0()

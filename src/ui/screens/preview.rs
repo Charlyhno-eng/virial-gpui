@@ -7,8 +7,26 @@ use crate::{
         theme::*,
     },
 };
-use gpui::{App, Context, Div, SharedString, StyledText, Window, div, img, prelude::*, px};
+use gpui::{
+    App, Bounds, Context, Div, Pixels, SharedString, StyledText, Window, div, img, prelude::*, px,
+};
 use std::sync::OnceLock;
+
+fn line_scroll_offset(
+    viewport: Bounds<Pixels>,
+    line: Bounds<Pixels>,
+    offset: Pixels,
+    max_offset: Pixels,
+) -> Pixels {
+    let offset = if line.top() + offset < viewport.top() {
+        viewport.top() - line.top()
+    } else if line.bottom() + offset > viewport.bottom() {
+        viewport.bottom() - line.bottom()
+    } else {
+        offset
+    };
+    offset.clamp(-max_offset, px(0.))
+}
 
 fn code_font(cx: &App) -> SharedString {
     static FONT: OnceLock<SharedString> = OnceLock::new();
@@ -41,6 +59,17 @@ fn code_font(cx: &App) -> SharedString {
 }
 
 impl FileManager {
+    pub(crate) fn scroll_preview_to_line(&self) {
+        let scroll = &self.preview_scroll;
+        if let Some(line) = scroll.bounds_for_item(self.preview_line) {
+            let mut offset = scroll.offset();
+            // Use the rendered viewport and line bounds, and preserve horizontal scrolling.
+            offset.y =
+                line_scroll_offset(scroll.bounds(), line, offset.y, scroll.max_offset().height);
+            scroll.set_offset(offset);
+        }
+    }
+
     pub(crate) fn preview_width(&self, window: &Window) -> f32 {
         let width = f32::from(window.viewport_size().width);
         self.layout
@@ -221,11 +250,16 @@ impl FileManager {
                     })
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
                     .when(
                         matches!(&self.preview, Preview::Text(_) | Preview::Code(_)),
                         |body| body.flex().flex_col(),
                     )
+                    .when(matches!(&self.preview, Preview::Code(_)), |body| {
+                        body.overflow_hidden()
+                    })
+                    .when(!matches!(&self.preview, Preview::Code(_)), |body| {
+                        body.overflow_y_scroll()
+                    })
                     .map(|mut body| {
                         body.style().restrict_scroll_to_axis = Some(true);
                         body
@@ -276,6 +310,7 @@ impl FileManager {
                                             view.preview_line = index;
                                             view.focus.focus(window);
                                             cx.notify();
+                                            cx.stop_propagation();
                                         }),
                                     )
                             });
@@ -342,6 +377,7 @@ impl FileManager {
                                                 view.preview_line = index;
                                                 view.focus.focus(window);
                                                 cx.notify();
+                                                cx.stop_propagation();
                                             }),
                                         )
                                 });
@@ -370,9 +406,11 @@ impl FileManager {
                                 .children(lines)
                                 .on_mouse_down(
                                     gpui::MouseButton::Left,
-                                    cx.listener(|view, _, window, _| {
+                                    cx.listener(|view, _, window, cx| {
                                         view.preview_focused = true;
                                         view.focus.focus(window);
+                                        cx.notify();
+                                        cx.stop_propagation();
                                     }),
                                 )
                                 .into_any_element()
@@ -389,7 +427,9 @@ impl FileManager {
                             .child(self.language.text("No content preview available"))
                             .into_any_element(),
                     })
-                    .child(self.details_panel(false, cx)),
+                    .when(!matches!(&self.preview, Preview::Code(_)), |body| {
+                        body.child(self.details_panel(false, cx))
+                    }),
             )
             .when(!expanded, |panel| {
                 panel.child(
@@ -414,3 +454,7 @@ impl FileManager {
             })
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/preview.rs"]
+mod tests;

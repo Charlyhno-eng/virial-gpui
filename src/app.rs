@@ -535,7 +535,7 @@ impl FileManager {
                 "pagedown" => (self.preview_line + page.max(1)).min(line_count - 1),
                 _ => self.preview_line,
             };
-            self.preview_scroll.scroll_to_item(self.preview_line);
+            self.scroll_preview_to_line();
             cx.notify();
             cx.stop_propagation();
             return;
