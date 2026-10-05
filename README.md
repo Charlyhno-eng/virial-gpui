@@ -41,9 +41,9 @@ Press `Ctrl+P` to search accessible locations as you type. Virial searches from 
 
 ## See Virial in action
 
-![Virial logo](assets/images/virial-gpui-interface0.png)
-![Virial logo](assets/images/virial-gpui-interface1.png)
-![Virial logo](assets/images/virial-gpui-interface2.png)
+![Virial logo](assets/images/1.png)
+![Virial logo](assets/images/2.png)
+![Virial logo](assets/images/3.png)
 
 ---
 
