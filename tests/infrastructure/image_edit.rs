@@ -36,7 +36,14 @@ fn converts_real_images_preserves_alpha_and_original_and_flattens_jpeg_on_white(
             assert!(white.0[..3].iter().all(|value| *value > 240));
             assert_eq!(white[3], 255);
         } else {
-            assert_eq!(result.get_pixel(0, 0).0, [220, 40, 60, 255]);
+            if format == ExportFormat::Png {
+                assert_eq!(result.get_pixel(0, 0).0, [220, 40, 60, 255]);
+            } else {
+                let pixel = result.get_pixel(0, 0);
+                for (actual, expected) in pixel.0[..3].iter().zip([220i16, 40, 60]) {
+                    assert!((i16::from(*actual) - expected).abs() < 20);
+                }
+            }
             assert_eq!(result.get_pixel(7, 7)[3], 0);
         }
     }
@@ -241,4 +248,96 @@ fn exports_are_undoable_on_disk_and_inside_zip_without_changing_originals() {
     assert!(export(&member, "out.webp", edit).is_err());
     assert!(undo::undo(&data).unwrap());
     assert_eq!(fs::read(zip).unwrap(), zip_original);
+}
+
+#[test]
+fn optimized_encoders_reduce_size_without_resizing() {
+    let root = tempfile::tempdir().unwrap();
+    let image = image::RgbaImage::from_fn(256, 256, |x, y| {
+        let noise = ((x * 73 + y * 131 + x * y * 17) % 31) as u8;
+        image::Rgba([x as u8 / 2 + noise, y as u8 / 2 + noise, 100 + noise, 255])
+    });
+    let source = root.path().join("source.png");
+    image.save(&source).unwrap();
+    let baseline_png = fs::metadata(&source).unwrap().len();
+    let baseline_webp = root.path().join("lossless.webp");
+    image.save(&baseline_webp).unwrap();
+    export(
+        &source,
+        "optimized.png",
+        ImageEdit::Convert(ExportFormat::Png),
+    )
+    .unwrap();
+    export(
+        &source,
+        "optimized.webp",
+        ImageEdit::Convert(ExportFormat::Webp),
+    )
+    .unwrap();
+    let png = image::open(root.path().join("optimized.png")).unwrap();
+    assert_eq!(png.color(), image::ColorType::Rgb8);
+    assert_eq!(png.to_rgba8(), image);
+    assert!(
+        fs::metadata(root.path().join("optimized.png"))
+            .unwrap()
+            .len()
+            < baseline_png
+    );
+    assert!(
+        fs::metadata(root.path().join("optimized.webp"))
+            .unwrap()
+            .len()
+            < fs::metadata(baseline_webp).unwrap().len() / 2
+    );
+    assert_eq!(
+        image::open(root.path().join("optimized.webp"))
+            .unwrap()
+            .width(),
+        256
+    );
+}
+
+#[test]
+fn png_preserves_grayscale_and_sixteen_bit_transparency() {
+    let root = tempfile::tempdir().unwrap();
+    let gray = DynamicImage::ImageLuma16(image::ImageBuffer::from_pixel(
+        8,
+        8,
+        image::Luma([12345u16]),
+    ));
+    encode(
+        gray.clone(),
+        &root.path().join("gray.png"),
+        ExportFormat::Png,
+    )
+    .unwrap();
+    let result = image::open(root.path().join("gray.png")).unwrap();
+    assert_eq!(result.color(), image::ColorType::L16);
+    assert_eq!(result.as_bytes(), gray.as_bytes());
+    // This alpha rounds to opaque at 8 bits; it must still be preserved at 16 bits.
+    let rgba = DynamicImage::ImageRgba16(image::ImageBuffer::from_pixel(
+        8,
+        8,
+        image::Rgba([12345u16, 23456, 34567, 65534]),
+    ));
+    encode(
+        rgba.clone(),
+        &root.path().join("alpha.png"),
+        ExportFormat::Png,
+    )
+    .unwrap();
+    let result = image::open(root.path().join("alpha.png")).unwrap();
+    assert_eq!(result.color(), image::ColorType::Rgba16);
+    assert_eq!(result.as_bytes(), rgba.as_bytes());
+}
+
+#[test]
+fn managed_rembg_is_found_without_path_changes_and_falls_back_to_path() {
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(rembg_executable(Some(root.path())), PathBuf::from("rembg"));
+    let installed = root.path().join("virial/rembg-venv/bin/rembg");
+    fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    fs::write(&installed, "#!/bin/sh\n").unwrap();
+    assert_eq!(rembg_executable(Some(root.path())), installed);
+    assert_eq!(rembg_executable(None), PathBuf::from("rembg"));
 }

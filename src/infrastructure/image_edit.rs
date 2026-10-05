@@ -1,12 +1,15 @@
 //! Raster image exports; originals are preserved and outputs never replace files.
 use super::{archive, operations};
-use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
+use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageReader};
 use std::{
     fs::{self, File},
     io::{self, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
+
+#[cfg(test)]
+use image::ImageFormat;
 
 const INPUT_LIMIT: u64 = 20 * 1024 * 1024;
 const PIXEL_LIMIT: u64 = 32 * 1024 * 1024;
@@ -37,6 +40,7 @@ impl ExportFormat {
         }
     }
 
+    #[cfg(test)]
     fn image_format(self) -> ImageFormat {
         match self {
             Self::Png => ImageFormat::Png,
@@ -123,10 +127,20 @@ fn decode(path: &Path, byte_limit: u64) -> io::Result<DynamicImage> {
     Ok(image)
 }
 
+fn has_transparency(image: &DynamicImage) -> bool {
+    match image {
+        DynamicImage::ImageRgba8(buffer) => buffer.pixels().any(|pixel| pixel[3] != 255),
+        DynamicImage::ImageLumaA8(buffer) => buffer.pixels().any(|pixel| pixel[1] != 255),
+        DynamicImage::ImageRgba16(buffer) => buffer.pixels().any(|pixel| pixel[3] != u16::MAX),
+        DynamicImage::ImageLumaA16(buffer) => buffer.pixels().any(|pixel| pixel[1] != u16::MAX),
+        _ => image.color().has_alpha(),
+    }
+}
+
 fn encode(image: DynamicImage, path: &Path, format: ExportFormat) -> io::Result<()> {
     // JPEG has no alpha channel. Composite onto white instead of turning transparent pixels black.
     let image = if format == ExportFormat::Jpeg {
-        let rgba = image.to_rgba8();
+        let rgba = image.into_rgba8();
         let rgb = image::RgbImage::from_fn(rgba.width(), rgba.height(), |x, y| {
             let pixel = rgba.get_pixel(x, y);
             let alpha = u32::from(pixel[3]);
@@ -135,12 +149,49 @@ fn encode(image: DynamicImage, path: &Path, format: ExportFormat) -> io::Result<
             }))
         });
         DynamicImage::ImageRgb8(rgb)
+    } else if has_transparency(&image) {
+        image
+    } else if image.color().has_alpha() {
+        // Opaque images need no alpha channel; retain grayscale and 16-bit PNG data.
+        match image {
+            DynamicImage::ImageLumaA8(_) => DynamicImage::ImageLuma8(image.into_luma8()),
+            DynamicImage::ImageLumaA16(_) => DynamicImage::ImageLuma16(image.into_luma16()),
+            DynamicImage::ImageRgba16(_) => DynamicImage::ImageRgb16(image.into_rgb16()),
+            _ => DynamicImage::ImageRgb8(image.into_rgb8()),
+        }
     } else {
-        DynamicImage::ImageRgba8(image.to_rgba8())
+        image
     };
-    image
-        .save_with_format(path, format.image_format())
-        .map_err(io::Error::other)
+    match format {
+        ExportFormat::Png => {
+            use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+            PngEncoder::new_with_quality(
+                File::create(path)?,
+                CompressionType::Best,
+                FilterType::Adaptive,
+            )
+            .write_image(
+                image.as_bytes(),
+                image.width(),
+                image.height(),
+                image.color().into(),
+            )
+            .map_err(io::Error::other)
+        }
+        ExportFormat::Jpeg => {
+            image::codecs::jpeg::JpegEncoder::new_with_quality(File::create(path)?, 75)
+                .encode_image(&image)
+                .map_err(io::Error::other)
+        }
+        ExportFormat::Webp => {
+            // The image crate only encodes lossless WebP, which can inflate photos.
+            let rgba = image.into_rgba8();
+            let bytes = webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height())
+                .encode_simple(false, 80.0)
+                .map_err(|error| io::Error::other(format!("WebP encoding failed: {error:?}")))?;
+            fs::write(path, &*bytes)
+        }
+    }
 }
 
 fn remove_background(image: DynamicImage, output: &Path, executable: &Path) -> io::Result<()> {
@@ -160,7 +211,7 @@ fn remove_background(image: DynamicImage, output: &Path, executable: &Path) -> i
         .status()
         .map_err(|error| {
             if error.kind() == io::ErrorKind::NotFound {
-                io::Error::new(error.kind(), "Background removal requires rembg on PATH. Install rembg[cpu,cli] as described in README.md")
+                io::Error::new(error.kind(), "Background removal requires rembg[cpu,cli]. Run ./install.sh --with-background-removal as described in README.md")
             } else {
                 error
             }
@@ -183,8 +234,17 @@ fn remove_background(image: DynamicImage, output: &Path, executable: &Path) -> i
     encode(image, output, ExportFormat::Png)
 }
 
+fn rembg_executable(data_home: Option<&Path>) -> PathBuf {
+    let installed = data_home.map(|data| data.join("virial/rembg-venv/bin/rembg"));
+    installed
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| PathBuf::from("rembg"))
+}
+
 pub(crate) fn export(source: &Path, name: &str, edit: ImageEdit) -> io::Result<()> {
-    export_with_rembg(source, name, edit, Path::new("rembg"))
+    let data_home = std::env::var_os("HOME").map(|home| super::recent::data_home(Path::new(&home)));
+    let executable = rembg_executable(data_home.as_deref());
+    export_with_rembg(source, name, edit, &executable)
 }
 
 fn export_with_rembg(

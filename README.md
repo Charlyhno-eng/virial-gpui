@@ -29,18 +29,7 @@ PDF previews show the first page, including PDF files inside ZIP archives, and s
 
 Press `F2` or choose **Rename…** to edit an item's name directly in its row. The file name is selected without its final extension; folder names are selected in full. Press Enter to save, or Escape or click elsewhere to cancel. The extension remains editable.
 
-Image previews include **Convert image…** and **Remove background…** buttons, also available in the expanded view. Convert PNG, JPEG, WebP, GIF, or BMP images to PNG, JPEG, or WebP and choose an output file name. Animated images export their first frame; JPEG composites transparency onto white. SVG processing is not supported. Exports create a new file beside the original (including inside ZIP archives), never overwrite an existing file, and support `Ctrl+Z`. Processing runs in the background and accepts images up to 20 MiB and 32 megapixels. Image exports are disabled in Trash.
-
-Background removal creates a transparent PNG with local [rembg](https://github.com/danielgatis/rembg), which must be installed separately. With a supported Python version (currently 3.11–3.13) and the `python3-venv` package installed, set it up and launch Virial from the same terminal:
-
-```sh
-python3 -m venv ~/.local/share/virial/rembg-venv
-~/.local/share/virial/rembg-venv/bin/python -m pip install 'rembg[cpu,cli]'
-export PATH="$HOME/.local/share/virial/rembg-venv/bin:$PATH"
-cargo run --release
-```
-
-For application-menu launches, include the virtual environment's `bin` directory in your desktop session's `PATH`. The first removal downloads rembg's `u2netp` model and requires internet access; subsequent removals work offline with the cached model. Images are processed on your machine. Missing rembg, model download failures, and invalid images are reported without creating an output file.
+Image previews include **Convert image…** and **Remove background…** buttons, also available in the expanded view. Convert PNG, JPEG, WebP, GIF, or BMP images to PNG, JPEG, or WebP and choose an output file name. Animated images export their first frame; JPEG composites transparency onto white. PNG uses high lossless compression and omits unnecessary alpha channels; JPEG uses quality 75 and WebP uses lossy quality 80 with transparency preserved. File size depends on image content and format: converting a JPEG to lossless PNG can still produce a larger file. SVG processing is not supported. Exports create a new file beside the original (including inside ZIP archives), never overwrite an existing file, and support `Ctrl+Z`. Processing runs in the background and accepts images up to 20 MiB and 32 megapixels. Image exports are disabled in Trash.
 
 Press `Ctrl+Z` in the browser to undo the latest file or workspace change. Virial keeps the last 20 changes across restarts, including copy, move, rename, Trash, creation, compression, and ZIP edits. Undo refuses to discard files changed since the action or overwrite conflicting contents. Saved contents are stored under `$XDG_DATA_HOME/virial/undo` (default: `~/.local/share/virial/undo`), so recording large files or folders needs additional disk space. Undoing Trash restores saved contents; the desktop Trash retains its copy. Let an operation finish before closing the window.
 
@@ -101,3 +90,15 @@ From the project directory, build and install the executable, desktop launcher, 
 ```sh
 ./install.sh
 ```
+
+### Optional background removal
+
+To install Virial with local [rembg](https://github.com/danielgatis/rembg) background removal, use one command from the project directory:
+
+```sh
+./install.sh --with-background-removal
+```
+
+This requires Python 3.11–3.13 with venv support (`python3-venv` on Debian/Ubuntu) and internet access for dependency installation. Python is used only by rembg; image conversion runs directly in Rust and needs no Python. The installer sets up rembg in `$XDG_DATA_HOME/virial/rembg-venv` (default: `~/.local/share/virial/rembg-venv`). Virial finds it automatically, including from the application menu or `cargo run --release`, with no `PATH` changes. An existing rembg on `PATH` is also supported when no managed installation exists.
+
+Background removal creates a transparent PNG. The first removal downloads the `u2netp` model; subsequent removals work offline with the cached model. Images are processed on your machine. Missing dependencies, model download failures, and invalid images are reported without creating an output file.
