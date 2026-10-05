@@ -5998,6 +5998,7 @@ name = "virial-gpui"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures-lite 2.6.1",
  "gpui",
  "image",
  "libc",

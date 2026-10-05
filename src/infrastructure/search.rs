@@ -21,6 +21,24 @@ pub(crate) struct SearchResults {
     pub finished: bool,
 }
 
+fn subsequence<T: PartialEq>(
+    mut letters: impl Iterator<Item = T>,
+    path: impl Iterator<Item = T>,
+) -> bool {
+    let Some(mut next) = letters.next() else {
+        return true;
+    };
+    for ch in path {
+        if ch == next {
+            match letters.next() {
+                Some(letter) => next = letter,
+                None => return true,
+            }
+        }
+    }
+    false
+}
+
 fn score(name: &str, path: &str, terms: &[String]) -> Option<usize> {
     let mut total = 0;
     for term in terms {
@@ -34,14 +52,14 @@ fn score(name: &str, path: &str, terms: &[String]) -> Option<usize> {
             3
         } else {
             // Like a jump picker, tolerate missing letters while retaining order.
-            let mut letters = term.chars();
-            let mut next = letters.next();
-            for ch in path.chars() {
-                if next == Some(ch) {
-                    next = letters.next();
-                }
-            }
-            if next.is_some() {
+            // ASCII bytes cannot occur inside a UTF-8 multibyte character.
+            // Common queries can skip decoding the path; Unicode keeps char matching.
+            let matches = if term.is_ascii() {
+                subsequence(term.bytes(), path.bytes())
+            } else {
+                subsequence(term.chars(), path.chars())
+            };
+            if !matches {
                 return None;
             }
             4

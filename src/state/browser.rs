@@ -26,18 +26,8 @@ pub(crate) fn sort_entries(entries: &mut [Entry], selection: &mut Selection, des
         .anchor
         .and_then(|index| entries.get(index))
         .map(|entry| entry.path.clone());
-    entries.sort_by_cached_key(|entry| {
-        (
-            !entry.directory,
-            entry.name.to_lowercase(),
-            entry.path.clone(),
-        )
-    });
-    if descending {
-        let folders = entries.partition_point(|entry| entry.directory);
-        entries[..folders].reverse();
-        entries[folders..].reverse();
-    }
+    sort_by_name(entries);
+    apply_name_direction(entries, descending);
     selection.indices = entries
         .iter()
         .enumerate()
@@ -50,6 +40,24 @@ pub(crate) fn sort_entries(entries: &mut [Entry], selection: &mut Selection, des
     selection.anchor = entries
         .iter()
         .position(|entry| Some(&entry.path) == anchor.as_ref());
+}
+
+pub(crate) fn sort_by_name(entries: &mut [Entry]) {
+    entries.sort_by_cached_key(|entry| {
+        (
+            !entry.directory,
+            entry.name.to_lowercase(),
+            entry.path.clone(),
+        )
+    });
+}
+
+pub(crate) fn apply_name_direction(entries: &mut [Entry], descending: bool) {
+    if descending {
+        let folders = entries.partition_point(|entry| entry.directory);
+        entries[..folders].reverse();
+        entries[folders..].reverse();
+    }
 }
 
 impl FileManager {

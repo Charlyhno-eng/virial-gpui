@@ -185,17 +185,28 @@ impl FileManager {
         let hidden = true;
         let requested = location.clone();
         let data = self.data_home.clone();
+        let descending = self.name_descending;
         let read = cx.background_executor().spawn(async move {
             match requested {
                 Location::Directory(path) => read_directory(&path, hidden),
-                Location::Recent => crate::infrastructure::recent::read(&data, hidden),
+                Location::Recent => {
+                    crate::infrastructure::recent::read(&data, hidden).map(|mut entries| {
+                        crate::state::browser::sort_by_name(&mut entries);
+                        entries
+                    })
+                }
                 Location::Trash => crate::infrastructure::trash::read(&data),
                 Location::Workspaces => {
                     return crate::infrastructure::workspaces::summaries(&data, hidden)
                         .map(|summaries| (Vec::new(), summaries));
                 }
             }
-            .map(|entries| (entries, Vec::new()))
+            .map(|mut entries| {
+                // Directory, ZIP and Trash readers already sort by name.
+                // Apply the direction on the worker before restoring selection.
+                crate::state::browser::apply_name_direction(&mut entries, descending);
+                (entries, Vec::new())
+            })
         });
         // Replacing this task cancels the UI update from an outdated request.
         let executor = cx.background_executor().clone();
@@ -207,6 +218,9 @@ impl FileManager {
                 view.loading = false;
                 match result {
                     Ok((mut entries, workspaces)) => {
+                        if descending != view.name_descending {
+                            crate::state::browser::apply_name_direction(&mut entries, true);
+                        }
                         entries.retain(|entry| {
                             crate::state::browser::matches_extension(entry, &view.extension_filter)
                         });
@@ -252,11 +266,6 @@ impl FileManager {
                         view.entries = entries;
                         view.preview_path = None;
                         view.preview_task = None;
-                        crate::state::browser::sort_entries(
-                            &mut view.entries,
-                            &mut view.selection,
-                            view.name_descending,
-                        );
                     }
                     Err(error) => {
                         view.error = Some(format!(

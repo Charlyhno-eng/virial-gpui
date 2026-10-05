@@ -41,7 +41,7 @@ impl Stamp {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 struct StoredItem {
-    name: Vec<u8>,
+    name: Box<[u8]>,
     kind: u8, // 0: file, 1: directory, 2: symlink
 }
 
@@ -49,16 +49,29 @@ struct StoredItem {
 struct StoredDirectory {
     path: Vec<u8>,
     stamp: Stamp,
-    items: Vec<StoredItem>,
+    items: Box<[StoredItem]>,
 }
 
 // Store only the matching key and an index into the cached raw names. Parent
 // paths are shared by all items; full paths are allocated only for final results.
 struct Item {
     name_key: Box<str>,
+    // Vec indices cannot use the highest bit: Rust allocations fit in isize.
+    // Share that bit with the hidden flag, and avoid u128's 16-byte alignment.
     stored_index: usize,
-    letters: u128,
-    hidden: bool,
+    letters: [u64; 2],
+}
+
+impl Item {
+    const HIDDEN_BIT: usize = 1 << (usize::BITS - 1);
+
+    fn raw_index(&self) -> usize {
+        self.stored_index & !Self::HIDDEN_BIT
+    }
+
+    fn hidden(&self) -> bool {
+        self.stored_index & Self::HIDDEN_BIT != 0
+    }
 }
 
 struct Directory {
@@ -95,17 +108,18 @@ impl Directory {
             .map(|(stored_index, item)| {
                 let name = OsStr::from_bytes(&item.name).to_string_lossy();
                 let name_key = name.to_lowercase().into_boxed_str();
+                let letters = parent_letters | letter_mask(&name_key);
+                let hidden = hidden_parent || name.starts_with('.');
                 Item {
-                    letters: parent_letters | letter_mask(&name_key),
-                    hidden: hidden_parent || name.starts_with('.'),
+                    letters: [letters as u64, (letters >> 64) as u64],
                     name_key,
-                    stored_index,
+                    stored_index: stored_index | if hidden { Item::HIDDEN_BIT } else { 0 },
                 }
             })
             .collect();
         items.sort_unstable_by(|a, b| {
-            (&a.name_key, &stored.items[a.stored_index].name)
-                .cmp(&(&b.name_key, &stored.items[b.stored_index].name))
+            (&a.name_key, &stored.items[a.raw_index()].name)
+                .cmp(&(&b.name_key, &stored.items[b.raw_index()].name))
         });
         Self {
             stored,
@@ -116,7 +130,7 @@ impl Directory {
     }
 
     fn raw_item(&self, item: &Item) -> &StoredItem {
-        &self.stored.items[item.stored_index]
+        &self.stored.items[item.raw_index()]
     }
 
     fn item_path(&self, item: &Item) -> PathBuf {
@@ -326,7 +340,7 @@ impl SearchHandle {
                     if index % 256 == 0 && cancelled.load(Ordering::Relaxed) {
                         return None;
                     }
-                    if hidden || !item.hidden {
+                    if hidden || !item.hidden() {
                         if !retain_match(
                             &mut best,
                             usize::from(item.name_key.as_ref() != term),
@@ -350,13 +364,16 @@ impl SearchHandle {
         if best.len() < RESULT_LIMIT {
             best.clear();
             let required = terms.iter().fold(0, |mask, term| mask | letter_mask(term));
+            let required = [required as u64, (required >> 64) as u64];
             let mut path_key = String::new();
             for directory in &directories {
                 for (index, item) in directory.items.iter().enumerate() {
                     if index % 256 == 0 && cancelled.load(Ordering::Relaxed) {
                         return None;
                     }
-                    if (!hidden && item.hidden) || item.letters & required != required {
+                    let missing_letters =
+                        (required[0] & !item.letters[0]) | (required[1] & !item.letters[1]);
+                    if (!hidden && item.hidden()) || missing_letters != 0 {
                         continue;
                     }
                     path_key.clear();
@@ -639,7 +656,7 @@ impl Inventory {
                     continue;
                 };
                 stored.push(StoredItem {
-                    name: item.file_name().into_vec(),
+                    name: item.file_name().into_vec().into_boxed_slice(),
                     kind: if kind.is_dir() {
                         1
                     } else if kind.is_symlink() {
@@ -651,7 +668,7 @@ impl Inventory {
             }
             stored.sort_unstable_by(|a, b| a.name.cmp(&b.name));
             if let Some(previous) = previous.as_ref().filter(|previous| {
-                previous.stored.stamp == stamp && previous.stored.items == stored
+                previous.stored.stamp == stamp && previous.stored.items.as_ref() == stored
             }) {
                 previous.clone()
             } else {
@@ -659,7 +676,7 @@ impl Inventory {
                     StoredDirectory {
                         path: path.as_os_str().as_bytes().to_vec(),
                         stamp,
-                        items: stored,
+                        items: stored.into_boxed_slice(),
                     },
                     &self.roots,
                 ));

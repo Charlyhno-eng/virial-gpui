@@ -2,6 +2,24 @@ use super::*;
 use std::os::unix::fs::symlink;
 
 #[test]
+fn fuzzy_scoring_preserves_ascii_and_unicode_character_order() {
+    for (path, term, expected) in [
+        ("/école/report", "rprt", Some(4)),
+        ("/école/report", "éprt", Some(4)),
+        ("/école/report", "éé", None),
+        ("/école/report", "rté", None),
+        ("/àé", "a", None),
+        ("/école/report", "report", Some(3)),
+    ] {
+        assert_eq!(
+            score("notes", path, &[term.into()]),
+            expected,
+            "{path}: {term}"
+        );
+    }
+}
+
+#[test]
 fn publishes_partial_project_names_before_deeper_matches_and_lower_priority_roots() {
     let fixture = tempfile::tempdir().unwrap();
     let home = fixture.path().join("home");

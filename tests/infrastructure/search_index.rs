@@ -332,7 +332,9 @@ fn indexed_search_performance() {
         let path = root.join(format!("folder-{directory:04}"));
         let items = (0..1000)
             .map(|file| StoredItem {
-                name: format!("report-{file:04}.txt").into_bytes(),
+                name: format!("report-{file:04}.txt")
+                    .into_bytes()
+                    .into_boxed_slice(),
                 kind: 0,
             })
             .collect();
@@ -401,7 +403,9 @@ fn compact_catalog_shares_long_parent_paths_and_retains_original_names() {
             stamp: Stamp(0, 0, 0, 0, 0, 0),
             items: (0..1000)
                 .map(|file| StoredItem {
-                    name: format!("Report-{file:04}.txt").into_bytes(),
+                    name: format!("Report-{file:04}.txt")
+                        .into_bytes()
+                        .into_boxed_slice(),
                     kind: 0,
                 })
                 .collect(),
@@ -414,18 +418,34 @@ fn compact_catalog_shares_long_parent_paths_and_retains_original_names() {
             .iter()
             .map(|item| item.name_key.len())
             .sum::<usize>()
-        + snapshot.stored.items.capacity() * std::mem::size_of::<StoredItem>()
+        + std::mem::size_of_val(snapshot.stored.items.as_ref())
         + snapshot
             .stored
             .items
             .iter()
-            .map(|item| item.name.capacity())
+            .map(|item| item.name.len())
             .sum::<usize>();
     // Per-file payload must stay independent of a 560-byte parent path.
-    assert!(allocated < 160 * 1024, "catalog payload: {allocated}");
+    assert!(allocated < 100 * 1024, "catalog payload: {allocated}");
     assert_eq!(
         snapshot.item_path(&snapshot.items[0]),
         path.join("Report-0000.txt")
+    );
+}
+
+#[test]
+fn compact_catalog_keeps_existing_cache_format_and_non_utf8_names() {
+    // This is the Vec-based cache format written before compact storage.
+    let old = r#"{"path":[47,116,101,115,116],"stamp":[0,0,0,0,0,0],"items":[{"name":[255,46,116,120,116],"kind":0}]}"#;
+    let stored: StoredDirectory = serde_json::from_str(old).unwrap();
+    assert_eq!(serde_json::to_string(&stored).unwrap(), old);
+    let directory = Directory::new(stored, &[PathBuf::from("/")]);
+    assert_eq!(
+        directory
+            .item_path(&directory.items[0])
+            .as_os_str()
+            .as_bytes(),
+        b"/test/\xff.txt"
     );
 }
 

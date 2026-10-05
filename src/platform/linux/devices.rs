@@ -1,4 +1,5 @@
 //! Removable volumes and safe device operations through the UDisks2 D-Bus API.
+use futures_lite::{StreamExt, future};
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
@@ -18,6 +19,7 @@ const BLOCK: &str = "org.freedesktop.UDisks2.Block";
 const DRIVE: &str = "org.freedesktop.UDisks2.Drive";
 const FILESYSTEM: &str = "org.freedesktop.UDisks2.Filesystem";
 const PARTITION: &str = "org.freedesktop.UDisks2.Partition";
+const ROOT: &str = "/org/freedesktop/UDisks2";
 type Properties = HashMap<String, OwnedValue>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +61,153 @@ fn objects(connection: &Connection) -> io::Result<ManagedObjects> {
 
 pub(crate) fn discover() -> io::Result<Vec<Volume>> {
     Ok(volumes(&objects(&connection()?)?))
+}
+
+// Subscribe before the first snapshot so hotplug events during discovery are
+// retained. One connection sleeps on signals instead of reconnecting every 2 s.
+pub(crate) struct Monitor {
+    connection: zbus::Connection,
+    changes: zbus::MessageStream,
+    owners: zbus::MessageStream,
+}
+
+impl Monitor {
+    pub(crate) async fn new() -> io::Result<Self> {
+        let connection = zbus::connection::Builder::system()
+            .map_err(io::Error::other)?
+            .method_timeout(Duration::from_secs(60))
+            .build()
+            .await
+            .map_err(io::Error::other)?;
+        Self::subscribe(connection).await
+    }
+
+    async fn subscribe(connection: zbus::Connection) -> io::Result<Self> {
+        let changes = zbus::MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .sender(SERVICE)
+            .and_then(|rule| rule.path_namespace(ROOT))
+            .map_err(io::Error::other)?
+            .build();
+        let owners = zbus::MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .sender("org.freedesktop.DBus")
+            .and_then(|rule| rule.interface("org.freedesktop.DBus"))
+            .and_then(|rule| rule.member("NameOwnerChanged"))
+            .and_then(|rule| rule.add_arg(SERVICE))
+            .map_err(io::Error::other)?
+            .build();
+        Ok(Self {
+            changes: zbus::MessageStream::for_match_rule(changes, &connection, None)
+                .await
+                .map_err(io::Error::other)?,
+            owners: zbus::MessageStream::for_match_rule(owners, &connection, Some(8))
+                .await
+                .map_err(io::Error::other)?,
+            connection,
+        })
+    }
+
+    pub(crate) async fn discover(&mut self) -> io::Result<Vec<Volume>> {
+        let proxy = zbus::Proxy::new(
+            &self.connection,
+            SERVICE,
+            ROOT,
+            "org.freedesktop.DBus.ObjectManager",
+        )
+        .await
+        .map_err(io::Error::other)?;
+        loop {
+            let mut changed = false;
+            // Drain signals during the call: a hotplug burst must not fill the
+            // bounded signal queue and block delivery of the method reply.
+            let snapshot = async {
+                proxy
+                    .call::<_, _, ManagedObjects>("GetManagedObjects", &())
+                    .await
+                    .map_err(io::Error::other)
+            };
+            let changes = async {
+                loop {
+                    wait_for_change(&mut self.changes, &mut self.owners).await?;
+                    changed = true;
+                }
+            };
+            let objects = future::race(snapshot, changes).await?;
+            if !changed {
+                return Ok(volumes(&objects));
+            }
+            // A signal may have arrived after the server took its snapshot.
+        }
+    }
+
+    pub(crate) async fn changed(&mut self) -> io::Result<()> {
+        wait_for_change(&mut self.changes, &mut self.owners).await
+    }
+}
+
+async fn wait_for_change(
+    changes: &mut zbus::MessageStream,
+    owners: &mut zbus::MessageStream,
+) -> io::Result<()> {
+    loop {
+        let message = future::race(changes.next(), owners.next())
+            .await
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Device monitor closed"))?
+            .map_err(io::Error::other)?;
+        if affects_volumes(&message) {
+            return Ok(());
+        }
+    }
+}
+
+fn affects_volumes(message: &zbus::Message) -> bool {
+    let header = message.header();
+    match (
+        header.interface().map(|name| name.as_str()),
+        header.member().map(|name| name.as_str()),
+    ) {
+        (Some("org.freedesktop.DBus"), Some("NameOwnerChanged"))
+        | (
+            Some("org.freedesktop.DBus.ObjectManager"),
+            Some("InterfacesAdded" | "InterfacesRemoved"),
+        ) => true,
+        (Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")) => {
+            let Ok((interface, changed, invalidated)) =
+                message
+                    .body()
+                    .deserialize::<(String, Properties, Vec<String>)>()
+            else {
+                return true;
+            };
+            // UDisks also publishes temperature/SMART statistics. Those do not
+            // affect the sidebar and must not wake filesystem discovery.
+            let relevant: &[&str] = match interface.as_str() {
+                BLOCK => &[
+                    "Device",
+                    "Drive",
+                    "IdLabel",
+                    "Size",
+                    "HintIgnore",
+                    "HintSystem",
+                ],
+                DRIVE => &[
+                    "Removable",
+                    "MediaRemovable",
+                    "ConnectionBus",
+                    "Model",
+                    "CanPowerOff",
+                ],
+                FILESYSTEM => &["MountPoints"],
+                PARTITION => &["Table"],
+                _ => return false,
+            };
+            relevant.iter().any(|name| {
+                changed.contains_key(*name) || invalidated.iter().any(|item| item == name)
+            })
+        }
+        _ => false,
+    }
 }
 
 fn text<'a>(properties: &'a Properties, name: &str) -> Option<&'a str> {

@@ -14,6 +14,7 @@ libloading = "0.8"
 roxmltree = "0.20"
 url = "2.5"
 zbus = "5.19"
+futures-lite = "2.6"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 unicode-segmentation = "1.13"
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }

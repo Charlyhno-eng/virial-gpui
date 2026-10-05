@@ -145,6 +145,231 @@ fn safe_removal_unmounts_all_mounted_siblings_before_power_off() {
     assert!(removal_plan(&found[1], &found, Action::Unmount).is_empty());
 }
 
+fn properties_signal(
+    interface: &str,
+    changed: Properties,
+    invalidated: Vec<String>,
+) -> zbus::Message {
+    zbus::Message::signal(
+        "/org/freedesktop/UDisks2/block_devices/sda1",
+        "org.freedesktop.DBus.Properties",
+        "PropertiesChanged",
+    )
+    .unwrap()
+    .build(&(interface, changed, invalidated))
+    .unwrap()
+}
+
+#[test]
+fn device_notifications_include_invalidations_and_ignore_unrelated_statistics() {
+    for (interface, names) in [
+        (
+            BLOCK,
+            vec![
+                "Device",
+                "Drive",
+                "IdLabel",
+                "Size",
+                "HintIgnore",
+                "HintSystem",
+            ],
+        ),
+        (
+            DRIVE,
+            vec![
+                "Removable",
+                "MediaRemovable",
+                "ConnectionBus",
+                "Model",
+                "CanPowerOff",
+            ],
+        ),
+        (FILESYSTEM, vec!["MountPoints"]),
+        (PARTITION, vec!["Table"]),
+    ] {
+        for name in names {
+            assert!(affects_volumes(&properties_signal(
+                interface,
+                HashMap::from([(name.into(), value(true))]),
+                Vec::new(),
+            )));
+            assert!(affects_volumes(&properties_signal(
+                interface,
+                HashMap::new(),
+                vec![name.into()],
+            )));
+        }
+    }
+    assert!(!affects_volumes(&properties_signal(
+        "org.freedesktop.UDisks2.Drive.Ata",
+        HashMap::from([("SmartTemperature".into(), value(300u64))]),
+        Vec::new(),
+    )));
+    assert!(!affects_volumes(&properties_signal(
+        BLOCK,
+        HashMap::from([("UnusedProperty".into(), value(true))]),
+        Vec::new(),
+    )));
+    assert!(!affects_volumes(&properties_signal(
+        FILESYSTEM,
+        HashMap::new(),
+        Vec::new()
+    )));
+}
+
+struct TestObjects {
+    objects: std::sync::Arc<std::sync::Mutex<ManagedObjects>>,
+    requests: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[zbus::interface(name = "org.freedesktop.DBus.ObjectManager")]
+impl TestObjects {
+    fn get_managed_objects(&self) -> ManagedObjects {
+        self.requests
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.objects.lock().unwrap().clone()
+    }
+}
+
+struct TestBus(std::process::Child);
+
+impl Drop for TestBus {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+#[test]
+fn device_monitor_sleeps_until_changes_and_survives_service_restart() {
+    use std::{
+        io::BufRead,
+        process::{Command, Stdio},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        },
+    };
+
+    // An isolated bus exercises real signal routing without touching any devices.
+    let child = match Command::new("dbus-daemon")
+        .args(["--session", "--nofork", "--print-address=1"])
+        .stdout(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            eprintln!("Skipping isolated device monitor check: dbus-daemon unavailable");
+            return;
+        }
+        Err(error) => panic!("Start isolated bus: {error}"),
+    };
+    let mut bus = TestBus(child);
+    let mut address = String::new();
+    std::io::BufReader::new(bus.0.stdout.take().unwrap())
+        .read_line(&mut address)
+        .unwrap();
+    let (done, completion) = mpsc::channel();
+    std::thread::spawn(move || {
+        future::block_on(async {
+            let objects = Arc::new(Mutex::new(fixture()));
+            let requests = Arc::new(AtomicUsize::new(0));
+            let server = zbus::connection::Builder::address(address.trim())
+                .unwrap()
+                .name(SERVICE)
+                .unwrap()
+                .serve_at(
+                    ROOT,
+                    TestObjects {
+                        objects: objects.clone(),
+                        requests: requests.clone(),
+                    },
+                )
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+            let client = zbus::connection::Builder::address(address.trim())
+                .unwrap()
+                .method_timeout(Duration::from_secs(2))
+                .build()
+                .await
+                .unwrap();
+            let mut monitor = Monitor::subscribe(client.clone()).await.unwrap();
+            assert_eq!(monitor.discover().await.unwrap(), volumes(&fixture()));
+            let initial_requests = requests.load(Ordering::Relaxed);
+            assert!(future::poll_once(monitor.changed()).await.is_none());
+            assert_eq!(requests.load(Ordering::Relaxed), initial_requests);
+
+            // Queue more signals than the monitor's bounded queue can hold, then
+            // discover. Snapshot calls must drain the burst rather than deadlock.
+            let object = "/org/freedesktop/UDisks2/block_devices/sda1";
+            let mounts = vec![b"/media/user/new\0".to_vec()];
+            objects
+                .lock()
+                .unwrap()
+                .get_mut(&ObjectPath::try_from(object).unwrap())
+                .unwrap()
+                .get_mut(FILESYSTEM)
+                .unwrap()
+                .insert("MountPoints".into(), value(mounts.clone()));
+            for _ in 0..100 {
+                server
+                    .emit_signal(
+                        None::<&str>,
+                        object,
+                        "org.freedesktop.DBus.Properties",
+                        "PropertiesChanged",
+                        &(
+                            FILESYSTEM,
+                            HashMap::from([("MountPoints", value(mounts.clone()))]),
+                            Vec::<String>::new(),
+                        ),
+                    )
+                    .await
+                    .unwrap();
+            }
+            monitor.changed().await.unwrap();
+            assert_eq!(
+                monitor.discover().await.unwrap()[0].mountpoints,
+                vec![PathBuf::from("/media/user/new")]
+            );
+
+            objects
+                .lock()
+                .unwrap()
+                .remove(&ObjectPath::try_from(object).unwrap());
+            server
+                .emit_signal(
+                    None::<&str>,
+                    ROOT,
+                    "org.freedesktop.DBus.ObjectManager",
+                    "InterfacesRemoved",
+                    &(ObjectPath::try_from(object).unwrap(), vec![FILESYSTEM]),
+                )
+                .await
+                .unwrap();
+            monitor.changed().await.unwrap();
+            assert_eq!(monitor.discover().await.unwrap().len(), 2);
+
+            server.release_name(SERVICE).await.unwrap();
+            monitor.changed().await.unwrap();
+            assert!(monitor.discover().await.is_err());
+            server.request_name(SERVICE).await.unwrap();
+            monitor.changed().await.unwrap();
+            assert_eq!(monitor.discover().await.unwrap().len(), 2);
+
+            client.close().await.unwrap();
+            assert!(monitor.changed().await.is_err());
+        });
+        done.send(()).unwrap();
+    });
+    completion
+        .recv_timeout(Duration::from_secs(15))
+        .expect("Device monitor stalled or failed");
+}
+
 #[test]
 #[ignore = "Requires a desktop UDisks2 service; read-only check of connected devices"]
 fn connected_devices_can_be_discovered_and_browsed() {

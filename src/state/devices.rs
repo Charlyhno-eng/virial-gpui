@@ -9,40 +9,65 @@ impl FileManager {
     pub(crate) fn monitor_devices(&mut self, cx: &mut Context<Self>) {
         let executor = cx.background_executor().clone();
         self.device_monitor = Some(cx.spawn(async move |view, cx| {
+            let mut monitor = None;
             loop {
                 let Ok(generation) = view.update(cx, |view, _| view.device_generation) else {
                     break;
                 };
-                let result = executor.spawn(async { devices::discover() }).await;
-                if view
-                    .update(cx, |view, cx| {
-                        if view.busy || view.device_generation != generation {
-                            return;
-                        }
-                        match result {
-                            Ok(devices) => {
-                                if view.device_error.take().is_some() {
-                                    cx.notify();
-                                }
-                                view.update_devices(devices, cx);
+                let (next_monitor, result) = executor
+                    .spawn(async move {
+                        let result = async {
+                            if monitor.is_none() {
+                                monitor = Some(devices::Monitor::new().await?);
                             }
-                            Err(error) => {
-                                let message = format!(
-                                    "{}: {error}",
-                                    view.language.text("Cannot read devices")
-                                );
-                                if view.device_error.as_ref() != Some(&message) {
-                                    view.device_error = Some(message);
-                                    cx.notify();
-                                }
-                            }
+                            monitor.as_mut().unwrap().discover().await
                         }
+                        .await;
+                        (monitor, result)
                     })
-                    .is_err()
-                {
+                    .await;
+                monitor = next_monitor;
+                let failed = result.is_err();
+                let retry = view.update(cx, |view, cx| {
+                    if view.busy || view.device_generation != generation {
+                        // A signal consumed during an operation must be
+                        // reconciled once the operation has finished.
+                        return true;
+                    }
+                    match result {
+                        Ok(devices) => {
+                            if view.device_error.take().is_some() {
+                                cx.notify();
+                            }
+                            view.update_devices(devices, cx);
+                        }
+                        Err(error) => {
+                            let message =
+                                format!("{}: {error}", view.language.text("Cannot read devices"));
+                            if view.device_error.as_ref() != Some(&message) {
+                                view.device_error = Some(message);
+                                cx.notify();
+                            }
+                        }
+                    }
+                    false
+                });
+                let Ok(retry) = retry else {
                     break;
+                };
+                if failed {
+                    monitor = None;
                 }
-                executor.timer(Duration::from_secs(2)).await;
+                if failed || retry {
+                    executor.timer(Duration::from_secs(2)).await;
+                } else {
+                    monitor = executor
+                        .spawn(async move {
+                            let mut monitor = monitor.unwrap();
+                            monitor.changed().await.ok().map(|()| monitor)
+                        })
+                        .await;
+                }
             }
         }));
     }
