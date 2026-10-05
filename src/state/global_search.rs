@@ -76,7 +76,7 @@ impl FileManager {
         picker.pending_open = false;
         picker.scroll = gpui::UniformListScrollHandle::new();
         cx.notify();
-        let roots = vec![std::path::PathBuf::from("/"), self.home.clone()];
+        let roots = vec![self.home.clone(), std::path::PathBuf::from("/")];
         let hidden = true;
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();

@@ -1,7 +1,7 @@
 //! Cancellable global path search. No external index or command is required.
 use crate::domain::models::Entry;
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     fs,
     os::unix::fs::MetadataExt,
     path::PathBuf,
@@ -58,12 +58,19 @@ pub(crate) fn search(
     if terms.is_empty() || cancelled.load(Ordering::Relaxed) {
         return;
     }
-    let mut pending = roots;
+    // Finish each root in priority order, visiting siblings before deeper trees.
+    // A large cache or dependency tree must not delay nearby project folders.
+    let mut roots = roots.into_iter();
+    let mut pending = VecDeque::new();
     let mut visited = HashSet::new();
     let mut matches: Vec<(usize, String, Entry)> = Vec::new();
     let mut skipped = 0;
     let mut last_update = Instant::now();
-    while let Some(directory) = pending.pop() {
+    let mut published_match = false;
+    loop {
+        let Some(directory) = pending.pop_front().or_else(|| roots.next()) else {
+            break;
+        };
         if cancelled.load(Ordering::Relaxed) {
             return;
         }
@@ -109,26 +116,37 @@ pub(crate) fn search(
             };
             let path = item.path();
             if kind.is_dir() {
-                pending.push(path.clone());
+                pending.push_back(path.clone());
             }
             let path_key = path.to_string_lossy().to_lowercase();
             if let Some(rank) = score(&name.to_lowercase(), &path_key, &terms) {
                 // Do not descend through symlinks, but allow opening a linked folder.
                 let directory = kind.is_dir() || (kind.is_symlink() && path.is_dir());
-                matches.push((
-                    rank,
-                    path_key,
-                    Entry {
-                        path,
-                        name,
-                        directory,
-                        bytes: None,
-                    },
-                ));
-                matches.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
-                matches.truncate(RESULT_LIMIT);
+                let position = matches
+                    .binary_search_by(|candidate| {
+                        (candidate.0, &candidate.1).cmp(&(rank, &path_key))
+                    })
+                    .unwrap_or_else(|position| position);
+                if position < RESULT_LIMIT {
+                    matches.insert(
+                        position,
+                        (
+                            rank,
+                            path_key,
+                            Entry {
+                                path,
+                                name,
+                                directory,
+                                bytes: None,
+                            },
+                        ),
+                    );
+                    matches.truncate(RESULT_LIMIT);
+                }
             }
-            if last_update.elapsed() >= Duration::from_millis(100) {
+            if (!published_match && !matches.is_empty())
+                || last_update.elapsed() >= Duration::from_millis(100)
+            {
                 if !publish(SearchResults {
                     entries: matches.iter().map(|(_, _, entry)| entry.clone()).collect(),
                     skipped,
@@ -136,6 +154,7 @@ pub(crate) fn search(
                 }) {
                     return;
                 }
+                published_match |= !matches.is_empty();
                 last_update = Instant::now();
             }
         }

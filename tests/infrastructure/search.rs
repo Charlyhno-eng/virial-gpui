@@ -2,6 +2,60 @@ use super::*;
 use std::os::unix::fs::symlink;
 
 #[test]
+fn publishes_partial_project_names_before_deeper_matches_and_lower_priority_roots() {
+    let fixture = tempfile::tempdir().unwrap();
+    let home = fixture.path().join("home");
+    let other = fixture.path().join("other");
+    fs::create_dir_all(home.join("cache/dependencies/deep")).unwrap();
+    fs::create_dir_all(home.join("projects/jev-codex-pilot")).unwrap();
+    fs::create_dir_all(&other).unwrap();
+    fs::write(home.join("cache/dependencies/deep/jev-codex"), b"").unwrap();
+    fs::write(other.join("jev-codex"), b"").unwrap();
+
+    let mut batches = 0;
+    search(
+        vec![home.clone(), other],
+        "JEV-CODEX",
+        true,
+        &AtomicBool::new(false),
+        |batch| {
+            batches += 1;
+            assert!(!batch.finished);
+            assert_eq!(batch.entries.len(), 1);
+            assert_eq!(batch.entries[0].path, home.join("projects/jev-codex-pilot"));
+            false
+        },
+    );
+    assert_eq!(batches, 1);
+}
+
+#[test]
+fn partial_project_name_stays_above_path_matches_when_results_are_limited() {
+    let fixture = tempfile::tempdir().unwrap();
+    let project = fixture.path().join("jev-codex-pilot");
+    fs::create_dir(&project).unwrap();
+    for index in 0..150 {
+        fs::write(project.join(format!("file-{index:03}")), b"").unwrap();
+    }
+    fs::write(fixture.path().join("jev-codex"), b"").unwrap();
+    let mut results = SearchResults::default();
+    search(
+        vec![fixture.path().to_path_buf()],
+        "jev-codex",
+        true,
+        &AtomicBool::new(false),
+        |batch| {
+            results = batch;
+            true
+        },
+    );
+    assert!(results.finished);
+    assert_eq!(results.entries.len(), RESULT_LIMIT);
+    assert_eq!(results.entries[0].name, "jev-codex");
+    assert_eq!(results.entries[1].path, project);
+}
+
+#[test]
 fn ranks_names_and_matches_case_insensitive_path_terms_and_fuzzy_letters() {
     let terms = vec!["report".into()];
     assert!(

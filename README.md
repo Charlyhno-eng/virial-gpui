@@ -50,7 +50,7 @@ Code file icons use official logos for Python, TypeScript, React (`.jsx` and `.t
 
 Use the extension field in the toolbar to filter files in the current folder or recent files. Enter `pdf` or `.pdf`; matching is case-insensitive and uses the final extension (`gz` for `archive.tar.gz`). Folders stay visible for navigation. The filter stays active when navigating; clear the field to show all files again.
 
-Press `Ctrl+P` to open the global path picker. It searches accessible locations as you type and ranks fuzzy matches in file names and paths, making it a zoxide-like way to jump quickly to a folder or file. Virial performs this search itself, so it does not require zoxide or a prebuilt search index; arrow keys move through results and Enter opens the selection.
+Press `Ctrl+P` to open the global path picker. It searches accessible locations as you type, starting with your home folder and visiting nearby folders before deeper trees. Results appear as they are found; partial names such as `jev-codex` match `jev-codex-pilot`, with exact names and name prefixes ranked ahead of path and fuzzy matches. Virial performs this search itself, so it does not require zoxide or a prebuilt search index; arrow keys move through results and Enter opens the selection.
 
 ---
 
