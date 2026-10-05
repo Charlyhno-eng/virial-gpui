@@ -75,6 +75,7 @@ pub struct FileManager {
     pub(crate) layout: crate::infrastructure::layout::Layout,
     pub(crate) preview_resize: Option<(gpui::Pixels, f32)>,
     pub(crate) preview_path: Option<PathBuf>,
+    pub(crate) preview_modified: Option<String>,
     pub(crate) preview: super::preview::Preview,
     pub(crate) preview_line: usize,
     pub(crate) preview_scroll: ScrollHandle,

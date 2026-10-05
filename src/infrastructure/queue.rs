@@ -224,20 +224,35 @@ fn forget_unlocked(data: &Path, job: &Job) -> io::Result<()> {
     }
 }
 
-pub fn counts(source: &Path) -> io::Result<(u64, u64)> {
-    let metadata = fs::symlink_metadata(source)?;
-    let mut files = 1;
-    let mut bytes = if metadata.is_file() {
-        metadata.len()
-    } else {
-        0
-    };
-    if metadata.is_dir() {
-        for child in fs::read_dir(source)? {
-            let (children, size) = counts(&child?.path())?;
-            files += children;
-            bytes += size;
+fn counts_controlled(source: &Path, progress: Option<&Progress>) -> io::Result<(u64, u64)> {
+    let mut directories = Vec::new();
+    let mut next = Some(source.to_path_buf());
+    let mut seen = HashSet::new();
+    let (mut files, mut bytes) = (0u64, 0u64);
+    while let Some(path) = next.take() {
+        if let Some(progress) = progress {
+            progress.checkpoint()?;
         }
+        let metadata = fs::symlink_metadata(&path)?;
+        files = files.checked_add(1).ok_or_else(invalid)?;
+        if metadata.is_file() {
+            bytes = bytes.checked_add(metadata.len()).ok_or_else(invalid)?;
+        }
+        if metadata.is_dir() {
+            if !seen.insert((metadata.dev(), metadata.ino())) {
+                return Err(io::Error::other("Folder tree contains a cycle"));
+            }
+            directories.push(fs::read_dir(path)?);
+        }
+        next = loop {
+            match directories.last_mut().and_then(Iterator::next) {
+                Some(item) => break Some(item?.path()),
+                None if !directories.is_empty() => {
+                    directories.pop();
+                }
+                None => break None,
+            }
+        };
     }
     Ok((files, bytes))
 }
@@ -294,14 +309,6 @@ fn prepare(data: &Path, job: &Job, progress: &Progress) -> io::Result<Vec<Item>>
                 "Cannot transfer operation journals or undo history",
             ));
         }
-        let hash = undo::fingerprint_controlled(&source, progress)?;
-        if hash == "-" {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "Source no longer exists",
-            ));
-        }
-        let (files, bytes) = counts(&source)?;
         let mut destination = directory
             .as_ref()
             .map(|directory| directory.join(source.file_name().unwrap()));
@@ -317,9 +324,21 @@ fn prepare(data: &Path, job: &Job, progress: &Progress) -> io::Result<Vec<Item>>
             {
                 return Err(io::Error::other("Cannot transfer a folder into itself"));
             }
+        }
+        let hash = undo::fingerprint_controlled(&source, progress)?;
+        if hash == "-" {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "Source no longer exists",
+            ));
+        }
+        let (files, bytes) = counts_controlled(&source, Some(progress))?;
+        if let Some(target) = destination.as_mut() {
             if targets.contains(target) || fs::symlink_metadata(&*target).is_ok() {
                 let existing = undo::fingerprint_controlled(target, progress)?;
-                let destination_bytes = counts(target).map(|(_, bytes)| bytes).unwrap_or(0);
+                let destination_bytes = counts_controlled(target, Some(progress))
+                    .map(|(_, bytes)| bytes)
+                    .unwrap_or(0);
                 match progress.conflict(Conflict {
                     source: source.clone(),
                     destination: target.clone(),
@@ -466,10 +485,7 @@ fn parallel(
 fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<()> {
     progress.checkpoint()?;
     let metadata = fs::symlink_metadata(source)?;
-    let mut input = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(source)?;
+    let mut input = operations::open_regular_file(source)?;
     let mut output = match OpenOptions::new()
         .read(true)
         .write(true)
@@ -482,7 +498,7 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
             match OpenOptions::new()
                 .read(true)
                 .write(true)
-                .custom_flags(libc::O_NOFOLLOW)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
                 .open(target)
             {
                 Ok(file) => file,
@@ -492,7 +508,7 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
                 {
                     OpenOptions::new()
                         .read(true)
-                        .custom_flags(libc::O_NOFOLLOW)
+                        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
                         .open(target)?
                 }
                 Err(error) => return Err(error),
@@ -550,6 +566,9 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
         copied += amount;
         progress.advance(amount);
         progress.transferred(amount, 0);
+    }
+    if input.metadata()?.len() != metadata.len() || output.metadata()?.len() != metadata.len() {
+        return Err(io::Error::other("Source changed during transfer"));
     }
     output.set_permissions(metadata.permissions())?;
     output.sync_all()?;

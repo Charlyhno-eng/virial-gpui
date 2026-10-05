@@ -284,6 +284,7 @@ impl FileManager {
         }
         let entry = entry.cloned();
         self.preview_path = path;
+        self.preview_modified = None;
         self.directory_sizes = None;
         self.preview_media_updates = None;
         // A cache scoped to the current preview releases decoded pixels and GPU
@@ -302,13 +303,22 @@ impl FileManager {
         };
         self.load_directory_sizes(cx);
         let hidden = true;
-        let read = cx
-            .background_executor()
-            .spawn(async move { read_preview(&entry, hidden) });
+        let read = cx.background_executor().spawn(async move {
+            let modified = std::fs::metadata(&entry.path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .map(|modified| {
+                    chrono::DateTime::<chrono::Utc>::from(modified)
+                        .format("%Y-%m-%d %H:%M UTC")
+                        .to_string()
+                });
+            (read_preview(&entry, hidden), modified)
+        });
         self.preview_task = Some(cx.spawn(async move |view, cx| {
-            let preview = read.await;
+            let (preview, modified) = read.await;
             let _ = view.update(cx, |view, cx| {
                 view.preview = preview;
+                view.preview_modified = modified;
                 if matches!(view.preview, Preview::Media(_)) {
                     view.monitor_preview_media(cx);
                 }
@@ -363,6 +373,7 @@ impl FileManager {
         self.details_open = false;
         self.selection.clear();
         self.preview_path = None;
+        self.preview_modified = None;
         self.preview_task = None;
         self.preview = Preview::Unavailable;
         self.directory_sizes = None;

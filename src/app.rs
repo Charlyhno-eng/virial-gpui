@@ -91,6 +91,7 @@ impl FileManager {
             layout: crate::infrastructure::layout::Layout::load(),
             preview_resize: None,
             preview_path: None,
+            preview_modified: None,
             preview: crate::state::preview::Preview::Unavailable,
             preview_line: 0,
             preview_scroll: gpui::ScrollHandle::new(),
@@ -171,6 +172,7 @@ impl FileManager {
         self.preview_media_updates = None;
         self.preview_image_cache = gpui::RetainAllImageCache::new(cx);
         self.preview_path = None;
+        self.preview_modified = None;
         self.preview_expanded = false;
         self.details_open = false;
         self.directory_sizes = None;

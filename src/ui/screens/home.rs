@@ -17,18 +17,7 @@ impl FileManager {
             })
             .flatten();
         let has_selection = selected.is_some();
-        let modified = selected
-            .as_ref()
-            .map(|entry| entry.path.as_path())
-            .or_else(|| self.location.directory())
-            .and_then(|path| std::fs::metadata(path).ok())
-            .and_then(|metadata| metadata.modified().ok())
-            .map(|modified| {
-                chrono::DateTime::<chrono::Utc>::from(modified)
-                    .format("%Y-%m-%d %H:%M UTC")
-                    .to_string()
-            })
-            .unwrap_or_else(|| "—".to_string());
+        let modified = self.preview_modified.clone().unwrap_or_else(|| "—".into());
         let (name, path, kind, size, symbol) = if let Some(entry) = selected {
             let kind = entry.kind();
             let symbol = entry.icon();

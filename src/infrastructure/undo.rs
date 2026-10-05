@@ -12,7 +12,7 @@ use std::{
         fd::AsRawFd,
         unix::{
             ffi::OsStrExt,
-            fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+            fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
         },
     },
     path::{Path, PathBuf},
@@ -183,24 +183,39 @@ fn fingerprint_impl(
         } else if metadata.is_file() {
             hash.update(b"file");
             hash.update(metadata.len().to_le_bytes());
-            let mut file = File::open(path)?;
+            let mut file = operations::open_regular_file(path)?;
+            let opened = file.metadata()?;
+            if opened.dev() != metadata.dev()
+                || opened.ino() != metadata.ino()
+                || opened.len() != metadata.len()
+            {
+                return Err(io::Error::other("Source changed while reading"));
+            }
             // Allocate once for the whole tree, rather than clearing a large
             // stack buffer for every file (including thousands of tiny files).
             if buffer.is_empty() {
                 buffer.resize(256 * 1024, 0);
             }
-            loop {
+            // Read only the observed length: a constantly growing source must
+            // report a change instead of keeping a transfer in preparation forever.
+            let mut remaining = metadata.len();
+            while remaining > 0 {
                 if let Some(progress) = progress {
                     progress.checkpoint()?;
                 }
-                let read = file.read(buffer)?;
+                let limit = remaining.min(buffer.len() as u64) as usize;
+                let read = file.read(&mut buffer[..limit])?;
                 if read == 0 {
-                    break;
+                    return Err(io::Error::other("Source changed while reading"));
                 }
+                remaining -= read as u64;
                 hash.update(&buffer[..read]);
                 if report && let Some(progress) = progress {
                     progress.advance(read as u64);
                 }
+            }
+            if file.read(&mut [0u8; 1])? != 0 || file.metadata()?.len() != metadata.len() {
+                return Err(io::Error::other("Source changed while reading"));
             }
         } else {
             return Err(io::Error::new(

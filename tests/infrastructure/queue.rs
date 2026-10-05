@@ -79,6 +79,67 @@ fn persists_enqueue_order_and_cancels_waiting_jobs() {
 }
 
 #[test]
+fn same_folder_move_skips_reading_the_unchanged_tree() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let data = root.path().join("data");
+    fs::create_dir(&source).unwrap();
+    let fifo = source.join("fifo");
+    let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let job = transfer_job(&data, vec![source.clone()], root.path(), true);
+    execute(&data, job, &Progress::default()).unwrap();
+    assert!(source.is_dir());
+    assert!(fs::symlink_metadata(fifo).is_ok());
+    assert!(recover(&data).unwrap().is_empty());
+}
+
+#[test]
+fn self_transfer_is_rejected_before_reading_the_tree() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let target = source.join("target");
+    fs::create_dir_all(&target).unwrap();
+    let fifo = source.join("fifo");
+    let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let data = root.path().join("data");
+    let job = transfer_job(&data, vec![source.clone()], &target, true);
+    let error = execute(&data, job, &Progress::default()).unwrap_err();
+    assert!(error.to_string().contains("itself"));
+    assert!(source.is_dir());
+    assert!(!target.join("source").exists());
+}
+
+#[test]
+fn counting_tree_honors_pause_and_cancellation() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("folder")).unwrap();
+    fs::write(root.path().join("folder/file"), b"contents").unwrap();
+    symlink("folder", root.path().join("link")).unwrap();
+    assert_eq!(counts_controlled(root.path(), None).unwrap(), (4, 8));
+    let progress = Progress::default();
+    progress.toggle_pause();
+    let worker_progress = progress.clone();
+    let source = root.path().to_path_buf();
+    let (tx, rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        tx.send(counts_controlled(&source, Some(&worker_progress)))
+            .unwrap();
+    });
+    assert!(rx.recv_timeout(Duration::from_millis(30)).is_err());
+    progress.cancel();
+    assert_eq!(
+        rx.recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::Interrupted
+    );
+    worker.join().unwrap();
+}
+
+#[test]
 fn copies_tree_links_empty_and_non_utf8_names_as_one_undo_batch() {
     let root = tempfile::tempdir().unwrap();
     let data = root.path().join("data");

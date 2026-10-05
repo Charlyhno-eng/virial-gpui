@@ -280,10 +280,65 @@ fn kernel_copy_chunks_preserve_boundaries_and_progress() {
         let progress = Progress::default();
         // Bypass the optional reflink so this exercises multiple kernel-copy
         // chunks (or std's fallback on filesystems that cannot offload copies).
-        copy_chunks(&mut input, &mut output, Some(&progress)).unwrap();
+        copy_chunks(&mut input, &mut output, length as u64, Some(&progress)).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), contents);
         assert_eq!(progress.snapshot().completed, length as u64);
     }
+}
+
+#[test]
+fn copy_rejects_changed_lengths_and_bounds_written_bytes() {
+    for (contents, expected, written) in [
+        (b"grown".as_slice(), 2, b"gr".as_slice()),
+        (b"short".as_slice(), 10, b"short".as_slice()),
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        fs::write(&source, contents).unwrap();
+        let mut input = File::open(&source).unwrap();
+        let mut output = File::create(&target).unwrap();
+        assert!(copy_contents(&mut input, &mut output, expected, None).is_err());
+        assert_eq!(fs::read(&target).unwrap(), written);
+        assert_eq!(fs::read(&source).unwrap(), contents);
+    }
+}
+
+#[test]
+fn regular_file_open_rejects_fifo_without_waiting_for_a_writer() {
+    use std::{sync::mpsc, time::Duration};
+    let root = tempfile::tempdir().unwrap();
+    let fifo = root.path().join("fifo");
+    let name = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let (tx, rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        tx.send(open_regular_file(&fifo).map(|_| ())).unwrap();
+    });
+    let error = rx
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+    worker.join().unwrap();
+}
+
+#[test]
+fn regular_file_open_does_not_follow_replaced_symlinks() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let link = root.path().join("link");
+    fs::write(&source, b"contents").unwrap();
+    symlink(&source, &link).unwrap();
+    assert!(open_regular_file(&link).is_err());
+    assert_eq!(
+        open_regular_file(&source)
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .len(),
+        8
+    );
 }
 
 #[test]

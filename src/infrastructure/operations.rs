@@ -4,7 +4,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read},
     os::fd::AsRawFd,
-    os::unix::{ffi::OsStrExt, fs::symlink},
+    os::unix::{
+        ffi::OsStrExt,
+        fs::{OpenOptionsExt, symlink},
+    },
     path::{Component, Path, PathBuf},
     process::Command,
 };
@@ -74,6 +77,22 @@ pub(super) fn rename(source: &Path, destination: &Path) -> io::Result<()> {
     }
 }
 
+// A source can be replaced between enumeration and opening. O_NONBLOCK prevents
+// a replacement FIFO from hanging a worker, and O_NOFOLLOW retains link safety.
+pub(super) fn open_regular_file(path: &Path) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Source is not a regular file",
+        ));
+    }
+    Ok(file)
+}
+
 pub(super) fn copy(source: &Path, destination: &Path) -> io::Result<()> {
     copy_with_progress(source, destination, None)
 }
@@ -124,7 +143,7 @@ pub(super) fn copy_with_progress(
         .create_new(true)
         .open(destination)?;
     let result = (|| {
-        let mut input = File::open(source)?;
+        let mut input = open_regular_file(source)?;
         copy_contents(&mut input, &mut output, metadata.len(), progress)?;
         if let Some(progress) = progress {
             progress.advance(1);
@@ -145,20 +164,24 @@ const COPY_CHUNK: u64 = 4 * 1024 * 1024;
 fn copy_chunks(
     input: &mut File,
     output: &mut File,
+    size: u64,
     progress: Option<&super::progress::Progress>,
 ) -> io::Result<()> {
-    loop {
+    let mut remaining = size;
+    while remaining > 0 {
         if let Some(progress) = progress {
             progress.checkpoint()?;
         }
-        let copied = io::copy(&mut input.take(COPY_CHUNK), output)?;
+        let copied = io::copy(&mut input.take(remaining.min(COPY_CHUNK)), output)?;
+        if copied == 0 {
+            return Err(io::Error::other("Source changed during transfer"));
+        }
+        remaining -= copied;
         if let Some(progress) = progress {
             progress.advance(copied);
         }
-        if copied < COPY_CHUNK {
-            return Ok(());
-        }
     }
+    Ok(())
 }
 
 fn copy_contents(
@@ -176,8 +199,11 @@ fn copy_contents(
             let result =
                 unsafe { libc::ioctl(output.as_raw_fd(), libc::FICLONE, input.as_raw_fd()) };
             if result == 0 {
+                if output.metadata()?.len() != size || input.metadata()?.len() != size {
+                    return Err(io::Error::other("Source changed during transfer"));
+                }
                 if let Some(progress) = progress {
-                    progress.advance(output.metadata()?.len());
+                    progress.advance(size);
                 }
                 return Ok(());
             }
@@ -200,11 +226,11 @@ fn copy_contents(
             }
         }
     }
-    if progress.is_some() {
-        copy_chunks(input, output, progress)
-    } else {
-        io::copy(input, output).map(|_| ())
+    copy_chunks(input, output, size, progress)?;
+    if input.metadata()?.len() != size {
+        return Err(io::Error::other("Source changed during transfer"));
     }
+    Ok(())
 }
 
 pub(super) fn remove(source: &Path) -> io::Result<()> {
