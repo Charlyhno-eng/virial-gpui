@@ -167,6 +167,7 @@ impl FileManager {
             match requested {
                 Location::Directory(path) => read_directory(&path, hidden),
                 Location::Recent => crate::infrastructure::recent::read(&data, hidden),
+                Location::Trash => crate::infrastructure::trash::read(&data),
                 Location::Workspaces => {
                     return crate::infrastructure::workspaces::summaries(&data, hidden)
                         .map(|summaries| (Vec::new(), summaries));
@@ -353,6 +354,9 @@ impl FileManager {
     }
 
     pub(crate) fn open(&mut self, entry: Entry, cx: &mut Context<Self>) {
+        if self.location == Location::Trash {
+            return;
+        }
         if entry.browsable() {
             self.navigate(entry.path, cx);
             return;

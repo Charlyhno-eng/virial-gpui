@@ -37,6 +37,13 @@ impl Language {
             return english;
         }
         match english {
+            "Trash is empty" => "La corbeille est vide",
+            "Deleted items appear here" => "Les éléments supprimés apparaissent ici",
+            "Trash" => "Corbeille",
+            "Restore failed" => "Échec de la restauration",
+            "Restore items to their original location" => {
+                "Restaurer les éléments à leur emplacement d’origine"
+            }
             "Nothing to undo" => "Aucune action à annuler",
             "Undo failed" => "Échec de l’annulation",
             "Wait for the current operation to finish before closing" => {

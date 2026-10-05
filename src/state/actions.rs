@@ -48,6 +48,7 @@ pub enum Dialog {
 }
 #[derive(Clone, Copy)]
 pub enum Action {
+    Restore,
     Open,
     OpenWith,
     Copy,
@@ -67,6 +68,7 @@ pub enum Action {
 impl Action {
     pub fn label(self) -> &'static str {
         match self {
+            Self::Restore => "Restore",
             Self::Open => "Open",
             Self::OpenWith => "Open with…",
             Self::Copy => "Copy",
@@ -120,6 +122,14 @@ impl FileManager {
         self.menu = None;
         if self.busy {
             cx.notify();
+            return;
+        }
+        if self.location == crate::domain::location::Location::Trash {
+            match action {
+                Action::Restore => self.restore_trash(cx),
+                Action::Refresh => self.refresh(cx),
+                _ => {}
+            }
             return;
         }
         let directory = entry
@@ -497,6 +507,35 @@ impl FileManager {
         .detach();
         cx.notify();
     }
+    pub(crate) fn restore_trash(&mut self, cx: &mut Context<Self>) {
+        let paths = self.selected_paths();
+        if self.busy
+            || paths.is_empty()
+            || self.location != crate::domain::location::Location::Trash
+        {
+            return;
+        }
+        self.busy = true;
+        self.error = None;
+        let data = self.data_home.clone();
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::infrastructure::trash::restore(&data, &paths) });
+        cx.spawn(async move |view, cx| {
+            let result = task.await;
+            let _ = view.update(cx, |view, cx| {
+                view.busy = false;
+                view.refresh(cx);
+                view.error = result
+                    .err()
+                    .map(|error| format!("{}: {error}", view.language.text("Restore failed")));
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
     pub(crate) fn action_key(
         &mut self,
         event: &KeyDownEvent,

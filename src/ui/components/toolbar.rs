@@ -111,6 +111,21 @@ impl FileManager {
                     )
                 },
             )
+            .when(
+                self.location == crate::domain::location::Location::Trash,
+                |bar| {
+                    bar.child(
+                        toolbar_button(
+                            "restore-trash",
+                            "back",
+                            self.language.text("Restore"),
+                            !self.busy && !self.selection.indices.is_empty(),
+                            true,
+                        )
+                        .on_click(cx.listener(|view, _, _, cx| view.restore_trash(cx))),
+                    )
+                },
+            )
             .child(
                 div()
                     .id("search-field")

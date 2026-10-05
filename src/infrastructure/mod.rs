@@ -6,3 +6,5 @@ pub(crate) mod search;
 pub(crate) mod storage;
 pub(crate) mod undo;
 pub(crate) mod workspaces;
+
+pub(crate) mod trash;

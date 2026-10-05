@@ -59,6 +59,7 @@ impl FileManager {
                             }),
                     )
                     .child(self.place(101, "Recent", "recent", Location::Recent, cx))
+                    .child(self.place(102, "Trash", "trash", Location::Trash, cx))
                     .child(section_label(self.language.text("DEVICES")))
                     .child(self.place(100, "File System", "drive", PathBuf::from("/").into(), cx))
                     .children(

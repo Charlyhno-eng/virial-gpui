@@ -237,6 +237,8 @@ impl FileManager {
                         "Folder unavailable",
                         "Choose another location or try refreshing",
                     )
+                } else if self.location == crate::domain::location::Location::Trash {
+                    ("Trash is empty", "Deleted items appear here")
                 } else if self.location == crate::domain::location::Location::Recent {
                     (
                         "No recent files",
@@ -286,7 +288,8 @@ impl FileManager {
                                 };
                                 let selected = view.selection.indices.contains(&index);
                                 let payload = view.drag_payload(index, &paths);
-                                let directory = entry.browsable().then(|| entry.path.clone());
+                                let trash = view.location == crate::domain::location::Location::Trash;
+                                let directory = (entry.browsable() && !trash).then(|| entry.path.clone());
                                 let rename_input = view.rename.as_ref()
                                     .filter(|rename| rename.source == entry.path)
                                     .map(|rename| rename.input.clone());
@@ -407,9 +410,9 @@ impl FileManager {
                                         },
                                     ))
                                     .when(!renaming && !view.busy && !view.loading && view.marquee.is_none(), |row| {
-                                        row.on_drag(payload, |drag, _, _, cx| {
+                                        row.when(!trash, |row| row.on_drag(payload, |drag, _, _, cx| {
                                             cx.new(|_| drag.clone())
-                                        })
+                                        }))
                                         .on_click(cx.listener(
                                             move |view, event: &gpui::ClickEvent, _, cx| {
                                                 if !event.standard_click() { return; }

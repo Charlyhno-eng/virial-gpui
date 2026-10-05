@@ -190,7 +190,12 @@ impl FileManager {
             .as_ref()
             .is_some_and(|entry| crate::infrastructure::archive::is_member(&entry.path));
         let mut actions = Vec::new();
-        if let Some(entry) = &entry {
+        let trash = self.location == crate::domain::location::Location::Trash;
+        if trash {
+            if entry.is_some() {
+                actions.push(Action::Restore);
+            }
+        } else if let Some(entry) = &entry {
             actions.push(Action::Open);
             if self.selection.indices.len() == 1 {
                 if !entry.directory {
@@ -210,20 +215,22 @@ impl FileManager {
         } else if self.location.directory().is_some() {
             actions.extend([Action::NewFolder, Action::NewFile]);
         }
-        if self.clipboard.is_some()
+        if !trash
+            && self.clipboard.is_some()
             && (entry.as_ref().is_some_and(|entry| entry.browsable())
                 || self.location.directory().is_some())
         {
             actions.push(Action::Paste);
         }
-        if entry
-            .as_ref()
-            .is_some_and(|entry| entry.directory && !archive_entry)
-            || (entry.is_none()
-                && self
-                    .location
-                    .directory()
-                    .is_some_and(|path| crate::infrastructure::archive::split(path).is_none()))
+        if !trash
+            && (entry
+                .as_ref()
+                .is_some_and(|entry| entry.directory && !archive_entry)
+                || (entry.is_none()
+                    && self
+                        .location
+                        .directory()
+                        .is_some_and(|path| crate::infrastructure::archive::split(path).is_none())))
         {
             actions.push(Action::AddWorkspace);
         }
