@@ -411,7 +411,10 @@ impl FileManager {
                                     ))
                                     .when(!renaming && !view.busy && !view.loading && view.marquee.is_none(), |row| {
                                         let manager = cx.entity();
-                                        row.when(!trash, |row| row.on_drag(payload, move |drag, _, _, cx| {
+                                        row.when(!trash, |row| row.on_drag(payload, move |drag, _, window, cx| {
+                                            if let Some(uris) = crate::platform::linux::file_drag::uri_list(&drag.paths) {
+                                                window.start_file_drag(uris);
+                                            }
                                             manager.update(cx, |view, cx| {
                                                 view.details_open = false;
                                                 view.preview_expanded = false;
@@ -443,8 +446,10 @@ impl FileManager {
                                 } else { row };
                                 div().w_full().h(px(row_height)).flex()
                                     .child(div().w(px(14.)).h_full().flex_shrink_0())
+                                    // Selection changes on mouse-down must preserve the
+                                    // row's pending drag gesture across the next render.
                                     .child(row.with_animation(
-                                        ("selection-light", selected as usize),
+                                        "selection-light",
                                         Animation::new(Duration::from_millis(150)).with_easing(gpui::ease_out_quint()),
                                         move |row, delta| {
                                             if selected { row.bg(translucent(ACCENT_BLUE, 0.04 + 0.04 * delta)) } else { row }
