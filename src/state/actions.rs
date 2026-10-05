@@ -163,13 +163,11 @@ impl FileManager {
                     return;
                 }
                 Action::CopyPath => {
-                    cx.write_to_clipboard(ClipboardItem::new_string(
-                        self.selected_paths()
-                            .iter()
-                            .map(|path| path.display().to_string())
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                    ));
+                    if let Some(entry) = entry.as_ref() {
+                        cx.write_to_clipboard(ClipboardItem::new_string(
+                            entry.path.display().to_string(),
+                        ));
+                    }
                     return;
                 }
                 Action::Rename | Action::OpenWith | Action::Compress | Action::Properties
