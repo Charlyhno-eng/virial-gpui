@@ -296,6 +296,7 @@ impl FileManager {
                                         });
                                     div()
                                         .flex()
+                                        .flex_shrink_0()
                                         .w_full()
                                         .h(px(18.))
                                         .when(
