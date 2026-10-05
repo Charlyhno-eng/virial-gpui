@@ -25,15 +25,24 @@ jobs:
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev poppler-utils libmpv2 ffmpeg
+          sudo apt-get install -y build-essential pkg-config python3 dpkg-dev binutils desktop-file-utils libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev poppler-utils libmpv2 ffmpeg
       - name: Install Rust stable
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
       - name: Run tests
         run: cargo test --locked
-      - name: Build application
-        run: cargo build --release --locked
+      - name: Build Debian package
+        run: |
+          desktop-file-validate packaging/virial-gpui.desktop
+          ./build-deb.sh
+          dpkg-deb --info target/debian/*.deb
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v6
+        with:
+          name: virial-gpui-deb-ubuntu-24.04-amd64
+          path: target/debian/*.deb
+          if-no-files-found: error
       - name: Measure filesystem performance
         shell: bash
         run: |

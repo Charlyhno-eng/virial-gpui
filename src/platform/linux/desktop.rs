@@ -9,14 +9,28 @@ pub(crate) const APP_ID: &str = "virial-gpui";
 const LOGO: &[u8] = include_bytes!("../../../assets/images/virial-gpui-logo.png");
 
 pub(crate) fn register() -> io::Result<()> {
+    let binary = env::current_exe()?;
+    if system_registered(&binary, Path::new("/usr")) {
+        return Ok(());
+    }
     let data = data_home(
         env::var_os("XDG_DATA_HOME").map(PathBuf::from),
         env::var_os("HOME").map(PathBuf::from),
     )?;
-    if install(&data, &env::current_exe()?)? {
+    if install(&data, &binary)? {
         refresh_desktop_cache(&data);
     }
     Ok(())
+}
+
+fn system_registered(binary: &Path, prefix: &Path) -> bool {
+    binary == prefix.join("bin").join(APP_ID)
+        && prefix
+            .join(format!("share/applications/{APP_ID}.desktop"))
+            .is_file()
+        && prefix
+            .join(format!("share/icons/hicolor/512x512/apps/{APP_ID}.png"))
+            .is_file()
 }
 
 fn data_home(xdg: Option<PathBuf>, home: Option<PathBuf>) -> io::Result<PathBuf> {

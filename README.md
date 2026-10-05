@@ -41,7 +41,9 @@ From the project directory, run directly with `cargo run --release`, or build an
 ./install.sh
 ```
 
-On first launch, Virial registers its launcher and icon under `$XDG_DATA_HOME` (default `~/.local/share`). Register a downloaded executable with `./virial-gpui --install-desktop`.
+Standalone binaries register their launcher and icon on first launch under `$XDG_DATA_HOME` (default `~/.local/share`). Register a downloaded executable with `./virial-gpui --install-desktop`.
+
+Build a `.deb` (Debian/Ubuntu; requires `python3`, `dpkg-dev`, `binutils`): `./build-deb.sh`. Output: `target/debian`. Matching `v<version>` tags publish Ubuntu 24.04 amd64 packages to [GitHub Releases](https://github.com/Charlyhno-eng/virial-gpui/releases).
 
 ### Tests and performance
 

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Virial
+Comment=Linux file manager
+Exec=/usr/bin/virial-gpui
+Icon=virial-gpui
+StartupWMClass=virial-gpui
+Terminal=false
+Categories=System;FileTools;FileManager;

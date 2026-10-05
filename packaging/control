@@ -1,0 +1,10 @@
+Source: virial-gpui
+Section: utils
+Priority: optional
+Maintainer: Charlyhno <Charlyhno-eng@users.noreply.github.com>
+Homepage: https://github.com/Charlyhno-eng/virial-gpui
+
+Package: virial-gpui
+Architecture: any
+Description: Linux file manager built with GPUI
+ Browse and organize local files, mounted drives, and workspaces.

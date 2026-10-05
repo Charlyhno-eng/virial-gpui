@@ -24,6 +24,27 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn uses_the_packaged_launcher_only_for_its_matching_binary() {
+    let fixture = Fixture::new();
+    let prefix = fixture.0.join("usr");
+    let binary = prefix.join("bin/virial-gpui");
+    let data = prefix.join("share");
+    assert!(!system_registered(&binary, &prefix));
+    install(&data, &binary).unwrap();
+    assert!(system_registered(&binary, &prefix));
+    assert!(!system_registered(
+        &fixture.0.join("Downloads/virial-gpui"),
+        &prefix
+    ));
+    assert!(!system_registered(&prefix.join("bin/another-app"), &prefix));
+    fs::remove_file(data.join("applications/virial-gpui.desktop")).unwrap();
+    assert!(!system_registered(&binary, &prefix));
+    install(&data, &binary).unwrap();
+    fs::remove_file(data.join("icons/hicolor/512x512/apps/virial-gpui.png")).unwrap();
+    assert!(!system_registered(&binary, &prefix));
+}
+
+#[test]
 fn registers_standalone_logo_and_matching_desktop_identity() {
     let fixture = Fixture::new();
     let data = fixture.0.join("user data");
