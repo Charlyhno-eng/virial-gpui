@@ -194,3 +194,72 @@ fn transfers_check_canonical_ancestry_and_allow_moves_to_the_existing_parent() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn progress_reports_chunks_nested_items_and_preserves_links() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(source.join("empty-folder")).unwrap();
+    fs::write(source.join("empty"), []).unwrap();
+    let contents = vec![42; 3 * 1024 * 1024 + 17];
+    fs::write(source.join("large"), &contents).unwrap();
+    symlink("missing", source.join("link")).unwrap();
+    let total = super::super::progress::weight(&source).unwrap();
+    assert_eq!(total, contents.len() as u64 + 5);
+    let progress = super::super::progress::Progress::default();
+    progress.begin(super::super::progress::Phase::Copying, Some(total));
+    let target = root.path().join("target");
+    copy_with_progress(&source, &target, Some(&progress)).unwrap();
+    assert_eq!(progress.snapshot().completed, total);
+    assert_eq!(fs::read(target.join("large")).unwrap(), contents);
+    assert_eq!(
+        fs::read_link(target.join("link")).unwrap(),
+        Path::new("missing")
+    );
+}
+
+#[test]
+fn progress_copy_cleans_partial_directory_and_never_overwrites() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir(&source).unwrap();
+    let fifo = CString::new(source.join("fifo").as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+    let target = root.path().join("target");
+    let progress = super::super::progress::Progress::default();
+    assert!(copy_with_progress(&source, &target, Some(&progress)).is_err());
+    assert!(!target.exists());
+    fs::write(&target, "existing").unwrap();
+    assert!(copy_with_progress(&source, &target, Some(&progress)).is_err());
+    assert_eq!(fs::read(&target).unwrap(), b"existing");
+}
+
+#[test]
+fn move_progress_includes_undo_and_remains_undoable() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    let target = root.path().join("target");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&target).unwrap();
+    fs::write(source.join("file"), "contents").unwrap();
+    let progress = super::super::progress::Progress::default();
+    super::super::undo::execute_with_progress(
+        &root.path().join("data"),
+        Operation::Transfer {
+            sources: vec![source.clone()],
+            directory: target.clone(),
+            cut: true,
+        },
+        Some(&progress),
+    )
+    .unwrap();
+    let state = progress.snapshot();
+    assert_eq!(state.phase, super::super::progress::Phase::Finishing);
+    assert_eq!(Some(state.completed), state.total);
+    assert!(!source.exists());
+    assert_eq!(fs::read(target.join("source/file")).unwrap(), b"contents");
+    assert!(super::super::undo::undo(&root.path().join("data")).unwrap());
+    assert_eq!(fs::read(source.join("file")).unwrap(), b"contents");
+    assert!(!target.join("source").exists());
+}

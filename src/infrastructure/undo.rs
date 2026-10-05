@@ -117,7 +117,18 @@ fn affected(operation: &Operation) -> io::Result<Vec<PathBuf>> {
 /// Hash contents, names, link targets and permissions, without following symlinks.
 /// Timestamps and inodes are excluded so restoring a snapshot permits earlier undos.
 fn fingerprint(path: &Path) -> io::Result<String> {
-    fn visit(path: &Path, hash: &mut Sha256) -> io::Result<()> {
+    fingerprint_with_progress(path, None)
+}
+
+fn fingerprint_with_progress(
+    path: &Path,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<String> {
+    fn visit(
+        path: &Path,
+        hash: &mut Sha256,
+        progress: Option<&super::progress::Progress>,
+    ) -> io::Result<()> {
         let metadata = fs::symlink_metadata(path)?;
         hash.update(metadata.permissions().mode().to_le_bytes());
         if metadata.is_symlink() {
@@ -136,7 +147,7 @@ fn fingerprint(path: &Path) -> io::Result<String> {
                 let bytes = name.as_bytes();
                 hash.update((bytes.len() as u64).to_le_bytes());
                 hash.update(bytes);
-                visit(&child.path(), hash)?;
+                visit(&child.path(), hash, progress)?;
             }
         } else if metadata.is_file() {
             hash.update(b"file");
@@ -149,12 +160,18 @@ fn fingerprint(path: &Path) -> io::Result<String> {
                     break;
                 }
                 hash.update(&buffer[..read]);
+                if let Some(progress) = progress {
+                    progress.advance(read as u64);
+                }
             }
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "Special files cannot be recorded for undo",
             ));
+        }
+        if let Some(progress) = progress {
+            progress.advance(1);
         }
         Ok(())
     }
@@ -165,7 +182,7 @@ fn fingerprint(path: &Path) -> io::Result<String> {
         }
     }
     let mut hash = Sha256::new();
-    visit(path, &mut hash)?;
+    visit(path, &mut hash, progress)?;
     Ok(format!("{:x}", hash.finalize()))
 }
 
@@ -276,6 +293,14 @@ fn sync_snapshot(path: &Path) -> io::Result<()> {
 }
 
 fn snapshot(source: &Path, destination: &Path) -> io::Result<()> {
+    snapshot_with_progress(source, destination, None)
+}
+
+fn snapshot_with_progress(
+    source: &Path,
+    destination: &Path,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<()> {
     fn timestamps(source: &Path, destination: &Path) -> io::Result<()> {
         let metadata = fs::symlink_metadata(source)?;
         if metadata.is_symlink() {
@@ -289,7 +314,11 @@ fn snapshot(source: &Path, destination: &Path) -> io::Result<()> {
         }
         File::open(destination)?.set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
     }
-    operations::copy(source, destination)?;
+    if progress.is_some() {
+        operations::copy_with_progress(source, destination, progress)?;
+    } else {
+        operations::copy(source, destination)?;
+    }
     timestamps(source, destination)?;
     sync_snapshot(destination)
 }
@@ -329,6 +358,15 @@ pub(crate) fn record<T>(
     paths: Vec<PathBuf>,
     action: impl FnOnce() -> io::Result<T>,
 ) -> io::Result<T> {
+    record_with_progress(data, paths, None, action)
+}
+
+fn record_with_progress<T>(
+    data: &Path,
+    paths: Vec<PathBuf>,
+    progress: Option<&super::progress::Progress>,
+    action: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
     let _guard = LOCK
         .lock()
         .map_err(|_| io::Error::other("Undo lock unavailable"))?;
@@ -343,6 +381,18 @@ pub(crate) fn record<T>(
     let staging = tempfile::Builder::new()
         .prefix(".pending-")
         .tempdir_in(&history)?;
+    if let Some(progress) = progress {
+        let total = paths
+            .iter()
+            .map(|path| super::progress::weight(path))
+            .collect::<io::Result<Vec<_>>>()?
+            .iter()
+            .sum::<u64>();
+        progress.begin(
+            super::progress::Phase::SavingUndo,
+            Some(total.saturating_mul(4)),
+        );
+    }
     let mut records = Vec::new();
     for (index, path) in paths.into_iter().enumerate() {
         if path.starts_with(&history) || history.starts_with(&path) {
@@ -350,11 +400,13 @@ pub(crate) fn record<T>(
                 "Cannot modify the undo history or a folder containing it",
             ));
         }
-        let before = fingerprint(&path)?;
+        let before = fingerprint_with_progress(&path, progress)?;
         if before != "-" {
             let backup = staging.path().join(index.to_string());
-            snapshot(&path, &backup)?;
-            if fingerprint(&backup)? != before || fingerprint(&path)? != before {
+            snapshot_with_progress(&path, &backup, progress)?;
+            if fingerprint_with_progress(&backup, progress)? != before
+                || fingerprint_with_progress(&path, progress)? != before
+            {
                 return Err(io::Error::other(
                     "File changed while recording undo history; retry",
                 ));
@@ -371,8 +423,18 @@ pub(crate) fn record<T>(
     fs::rename(staging.path(), &directory)?;
     File::open(&history)?.sync_all()?;
     let result = action();
+    if let Some(progress) = progress {
+        progress.begin(super::progress::Phase::Finishing, None);
+        let total = records
+            .iter()
+            .map(|record| super::progress::weight(&record.path))
+            .collect::<io::Result<Vec<_>>>()?
+            .iter()
+            .sum();
+        progress.begin(super::progress::Phase::Finishing, Some(total));
+    }
     for record in &mut records {
-        record.after = fingerprint(&record.path)?;
+        record.after = fingerprint_with_progress(&record.path, progress)?;
     }
     save(&directory, &records, true)?;
     if records.iter().all(|record| record.before == record.after) {
@@ -387,11 +449,25 @@ pub(crate) fn record<T>(
 }
 
 pub fn execute(data: &Path, operation: Operation) -> io::Result<Option<archive::Materialized>> {
+    execute_with_progress(data, operation, None)
+}
+
+pub fn execute_with_progress(
+    data: &Path,
+    operation: Operation,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<Option<archive::Materialized>> {
     if matches!(operation, Operation::Launch { .. }) {
         return operations::execute(operation);
     }
     let paths = affected(&operation)?;
-    record(data, paths, || operations::execute(operation))
+    if progress.is_some() {
+        record_with_progress(data, paths, progress, || {
+            operations::execute_with_progress(operation, progress)
+        })
+    } else {
+        record(data, paths, || operations::execute(operation))
+    }
 }
 
 struct StagedSnapshot(PathBuf);

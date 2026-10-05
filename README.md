@@ -7,7 +7,7 @@ Virial is a Linux file manager for browsing local folders, mounted drives, and r
 
 Virial adapts its interface language to the system language. English is used when the system language is not supported.
 
-Drag files or folders onto a folder in the list, a sidebar location, or a breadcrumb to move them there. The preview closes and the sidebar reappears while dragging. Dragging a selected item moves the entire selection; hold Ctrl to copy instead. Existing destination names are never overwritten, and moves support `Ctrl+Z`.
+Drag files or folders onto a folder in the list, a sidebar location, or a breadcrumb to move them there. The preview closes and the sidebar reappears while dragging. Dragging a selected item moves the entire selection; hold Ctrl to copy instead. Existing destination names are never overwritten, and moves support `Ctrl+Z`. During transfers, a progress panel shows undo preparation, copying or moving, and finalization. Local transfers show a percentage for each phase, including progress within large files; preparation and ZIP transfers show an activity indicator when the total is not available.
 
 Drag local files or folders out of Virial onto another application to open, attach, or import them. External drops copy files and keep the originals on X11 and Wayland. ZIP members support dragging within Virial only.
 

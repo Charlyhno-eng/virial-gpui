@@ -60,6 +60,7 @@ impl FileManager {
             rename: None,
             clipboard: None,
             busy: false,
+            transfer_progress: None,
             extension_filter: String::new(),
             extension_input: cx.new(|cx| {
                 let mut input =

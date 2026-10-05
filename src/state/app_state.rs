@@ -53,6 +53,7 @@ pub struct FileManager {
     pub(crate) dialog: Option<crate::state::actions::Dialog>,
     pub(crate) clipboard: Option<(Vec<PathBuf>, bool)>,
     pub(crate) busy: bool,
+    pub(crate) transfer_progress: Option<crate::infrastructure::progress::Progress>,
     pub(crate) extension_filter: String,
     pub(crate) extension_input: gpui::Entity<crate::ui::components::input::NameInput>,
     pub(crate) search_input: gpui::Entity<crate::ui::components::input::NameInput>,

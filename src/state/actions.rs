@@ -480,6 +480,30 @@ impl FileManager {
         }
         self.busy = true;
         self.error = None;
+        let progress = matches!(&operation, Operation::Transfer { .. })
+            .then(crate::infrastructure::progress::Progress::default);
+        self.transfer_progress = progress.clone();
+        if progress.is_some() {
+            let executor = cx.background_executor().clone();
+            cx.spawn(async move |view, cx| {
+                loop {
+                    executor.timer(std::time::Duration::from_millis(100)).await;
+                    let active = view
+                        .update(cx, |view, cx| {
+                            if view.transfer_progress.is_none() {
+                                return false;
+                            }
+                            cx.notify();
+                            true
+                        })
+                        .unwrap_or(false);
+                    if !active {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
         let origin = self.location.clone();
         let cut_sources = match &operation {
             Operation::Transfer {
@@ -493,7 +517,12 @@ impl FileManager {
         };
         let data = self.data_home.clone();
         let task = cx.background_executor().spawn(async move {
-            match crate::infrastructure::undo::execute(&data, operation) {
+            let result = if let Some(progress) = progress.as_ref() {
+                crate::infrastructure::undo::execute_with_progress(&data, operation, Some(progress))
+            } else {
+                crate::infrastructure::undo::execute(&data, operation)
+            };
+            match result {
                 Ok(extracted) => {
                     let result = recent_path
                         .map(|path| crate::infrastructure::recent::record(&data, &path))
@@ -508,6 +537,7 @@ impl FileManager {
             let (result, extracted) = task.await;
             let _ = view.update(cx, |view, cx| {
                 view.busy = false;
+                view.transfer_progress = None;
                 if let Some(extracted) = extracted {
                     view.opened_archive_files.push(extracted);
                 }

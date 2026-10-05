@@ -2,7 +2,7 @@
 use std::{
     ffi::CString,
     fs::{self, OpenOptions},
-    io,
+    io::{self, Read, Write},
     os::unix::{ffi::OsStrExt, fs::symlink},
     path::{Component, Path, PathBuf},
     process::Command,
@@ -74,21 +74,38 @@ pub(super) fn rename(source: &Path, destination: &Path) -> io::Result<()> {
 }
 
 pub(super) fn copy(source: &Path, destination: &Path) -> io::Result<()> {
+    copy_with_progress(source, destination, None)
+}
+
+pub(super) fn copy_with_progress(
+    source: &Path,
+    destination: &Path,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<()> {
     let metadata = fs::symlink_metadata(source)?;
     if metadata.is_symlink() {
-        return symlink(fs::read_link(source)?, destination);
+        symlink(fs::read_link(source)?, destination)?;
+        if let Some(progress) = progress {
+            progress.advance(1);
+        }
+        return Ok(());
     }
     if metadata.is_dir() {
         fs::create_dir(destination)?;
         let result = (|| {
             for item in fs::read_dir(source)? {
                 let item = item?;
-                copy(&item.path(), &destination.join(item.file_name()))?;
+                copy_with_progress(&item.path(), &destination.join(item.file_name()), progress)?;
             }
             fs::set_permissions(destination, metadata.permissions())
         })();
         if result.is_err() {
             let _ = fs::remove_dir_all(destination);
+        }
+        if result.is_ok() {
+            if let Some(progress) = progress {
+                progress.advance(1);
+            }
         }
         return result;
     }
@@ -103,7 +120,21 @@ pub(super) fn copy(source: &Path, destination: &Path) -> io::Result<()> {
         .create_new(true)
         .open(destination)?;
     let result = (|| {
-        io::copy(&mut fs::File::open(source)?, &mut output)?;
+        if let Some(progress) = progress {
+            let mut input = fs::File::open(source)?;
+            let mut buffer = vec![0; 1024 * 1024];
+            loop {
+                let read = input.read(&mut buffer)?;
+                if read == 0 {
+                    break;
+                }
+                output.write_all(&buffer[..read])?;
+                progress.advance(read as u64);
+            }
+            progress.advance(1);
+        } else {
+            io::copy(&mut fs::File::open(source)?, &mut output)?;
+        }
         output.set_permissions(metadata.permissions())
     })();
     if result.is_err() {
@@ -134,6 +165,25 @@ fn command(command: &mut Command) -> io::Result<()> {
 }
 
 pub(super) fn transfer(sources: Vec<PathBuf>, directory: PathBuf, cut: bool) -> io::Result<()> {
+    transfer_with_progress(sources, directory, cut, None)
+}
+
+fn transfer_with_progress(
+    sources: Vec<PathBuf>,
+    directory: PathBuf,
+    cut: bool,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<()> {
+    if let Some(progress) = progress {
+        progress.begin(
+            if cut {
+                super::progress::Phase::Moving
+            } else {
+                super::progress::Phase::Copying
+            },
+            None,
+        );
+    }
     let directory = directory.canonicalize()?;
     if !directory.is_dir() {
         return Err(io::Error::new(
@@ -207,15 +257,40 @@ pub(super) fn transfer(sources: Vec<PathBuf>, directory: PathBuf, cut: bool) -> 
     }
     // Validate every destination before starting; atomic no-replace operations
     // still protect against files created after this preflight.
-    for (source, destination) in transfers {
+    let weights = transfers
+        .iter()
+        .map(|(source, _)| {
+            if progress.is_some() {
+                super::progress::weight(source)
+            } else {
+                Ok(0)
+            }
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    if let Some(progress) = progress {
+        progress.begin(
+            if cut {
+                super::progress::Phase::Moving
+            } else {
+                super::progress::Phase::Copying
+            },
+            Some(weights.iter().sum()),
+        );
+    }
+    for ((source, destination), weight) in transfers.into_iter().zip(weights) {
         if cut {
             match rename(&source, &destination) {
-                Ok(()) => continue,
+                Ok(()) => {
+                    if let Some(progress) = progress {
+                        progress.advance(weight);
+                    }
+                    continue;
+                }
                 Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {}
                 Err(error) => return Err(error),
             }
         }
-        copy(&source, &destination)?;
+        copy_with_progress(&source, &destination, progress)?;
         if cut {
             remove(&source)?;
         }
@@ -224,6 +299,13 @@ pub(super) fn transfer(sources: Vec<PathBuf>, directory: PathBuf, cut: bool) -> 
 }
 
 pub fn execute(operation: Operation) -> io::Result<Option<super::archive::Materialized>> {
+    execute_with_progress(operation, None)
+}
+
+pub(super) fn execute_with_progress(
+    operation: Operation,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<Option<super::archive::Materialized>> {
     match &operation {
         Operation::Rename { source, name } if super::archive::is_member(source) => {
             return super::archive::rename(source, name).map(|_| None);
@@ -235,6 +317,16 @@ pub fn execute(operation: Operation) -> io::Result<Option<super::archive::Materi
         } if super::archive::split(directory).is_some()
             || sources.iter().any(|path| super::archive::is_member(path)) =>
         {
+            if let Some(progress) = progress {
+                progress.begin(
+                    if *cut {
+                        super::progress::Phase::Moving
+                    } else {
+                        super::progress::Phase::Copying
+                    },
+                    None,
+                );
+            }
             return super::archive::transfer(sources.clone(), directory.clone(), *cut)
                 .map(|_| None);
         }
@@ -286,7 +378,13 @@ pub fn execute(operation: Operation) -> io::Result<Option<super::archive::Materi
             sources,
             directory,
             cut,
-        } => transfer(sources, directory, cut),
+        } => {
+            if progress.is_some() {
+                transfer_with_progress(sources, directory, cut, progress)
+            } else {
+                transfer(sources, directory, cut)
+            }
+        }
         Operation::Trash(paths) => command(Command::new("gio").arg("trash").arg("--").args(paths)),
         Operation::Launch { desktop, file } => {
             let extracted = if super::archive::is_member(&file) {
