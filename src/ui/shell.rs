@@ -9,6 +9,28 @@ impl Render for FileManager {
             self.focus.focus(window);
         }
         self.sync_preview(cx);
+        // Keep the current width when reversing a transition mid-animation.
+        let now = std::time::Instant::now();
+        if let Some((start, from, to)) = self.sidebar_transition {
+            let progress = (now.duration_since(start).as_secs_f32() / 0.15).min(1.);
+            let eased = 1. - (1. - progress).powi(3);
+            self.sidebar_width = from + (to - from) * eased;
+            if progress >= 1. {
+                self.sidebar_transition = None;
+            }
+        }
+        let preview_visible =
+            self.details_open && self.location != crate::domain::location::Location::Workspaces;
+        let target_width = if preview_visible { 0. } else { SIDEBAR_WIDTH };
+        let current_target = self
+            .sidebar_transition
+            .map_or(self.sidebar_width, |(_, _, to)| to);
+        if current_target != target_width {
+            self.sidebar_transition = Some((now, self.sidebar_width, target_width));
+        }
+        if self.sidebar_transition.is_some() {
+            window.request_animation_frame();
+        }
         if !cx.has_active_drag() {
             self.external_drop = None;
             self.drop_hover = None;
@@ -65,7 +87,16 @@ impl Render for FileManager {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.sidebar(cx))
+                    .when(self.sidebar_width > 0., |layout| {
+                        layout.child(
+                            div()
+                                .w(px(self.sidebar_width))
+                                .h_full()
+                                .flex_shrink_0()
+                                .overflow_hidden()
+                                .child(self.sidebar(cx)),
+                        )
+                    })
                     .child(
                         div()
                             .flex()

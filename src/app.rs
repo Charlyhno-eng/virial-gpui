@@ -77,6 +77,8 @@ impl FileManager {
             global_search: None,
             search_return_focus: false,
             details_open: false,
+            sidebar_width: crate::ui::theme::SIDEBAR_WIDTH,
+            sidebar_transition: None,
             preview_expanded: false,
             layout: crate::infrastructure::layout::Layout::load(),
             preview_resize: None,

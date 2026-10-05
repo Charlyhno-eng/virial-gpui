@@ -59,6 +59,8 @@ pub struct FileManager {
     pub(crate) global_search: Option<super::global_search::GlobalSearch>,
     pub(crate) search_return_focus: bool,
     pub(crate) details_open: bool,
+    pub(crate) sidebar_width: f32,
+    pub(crate) sidebar_transition: Option<(std::time::Instant, f32, f32)>,
     pub(crate) preview_expanded: bool,
     pub(crate) layout: crate::infrastructure::layout::Layout,
     pub(crate) preview_resize: Option<(gpui::Pixels, f32)>,
