@@ -79,6 +79,8 @@ impl Language {
             "Search in" => "Rechercher dans",
             "Type" => "Type",
             "Size" => "Taille",
+            "Format" => "Format",
+            "Dimensions" => "Dimensions",
             "Contents" => "Contenu",
             "Location" => "Emplacement",
             "DETAILS" => "DÉTAILS",

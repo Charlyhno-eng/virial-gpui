@@ -97,7 +97,10 @@ impl FileManager {
                     .gap_1()
                     .flex_shrink_0()
                     .when(
-                        matches!(&self.preview, Preview::Image(_) | Preview::ArchiveImage(_)),
+                        matches!(
+                            &self.preview,
+                            Preview::Image(..) | Preview::ArchiveImage(..)
+                        ),
                         |toolbar| {
                             let enabled = !self.busy
                                 && self.location != crate::domain::location::Location::Trash;
@@ -185,7 +188,10 @@ impl FileManager {
                     ),
             )
             .when(
-                matches!(&self.preview, Preview::Image(_) | Preview::ArchiveImage(_)),
+                matches!(
+                    &self.preview,
+                    Preview::Image(..) | Preview::ArchiveImage(..)
+                ),
                 |panel| {
                     panel
                         .when(self.busy, |panel| {
@@ -225,14 +231,14 @@ impl FileManager {
                         body
                     })
                     .child(match &self.preview {
-                        Preview::Image(path)
+                        Preview::Image(path, _)
                         | Preview::Pdf(crate::infrastructure::archive::Materialized {
                             path, ..
                         })
-                        | Preview::ArchiveImage(crate::infrastructure::archive::Materialized {
-                            path,
-                            ..
-                        }) => div()
+                        | Preview::ArchiveImage(
+                            crate::infrastructure::archive::Materialized { path, .. },
+                            _,
+                        ) => div()
                             .p_3()
                             .child(
                                 img(path.clone())

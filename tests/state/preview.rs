@@ -51,7 +51,7 @@ fn zip_previews_count_folders_highlight_code_and_keep_images_alive() {
     assert!(
         matches!(read_preview(&code, true), Preview::Code(code) if !code.highlights.is_empty())
     );
-    let Preview::ArchiveImage(image) = read_preview(find("image.svg"), true) else {
+    let Preview::ArchiveImage(image, _) = read_preview(find("image.svg"), true) else {
         panic!("expected ZIP image preview");
     };
     assert!(image.path.exists());
@@ -183,4 +183,41 @@ fn pdf_previews_render_local_and_zip_pages_and_clean_up() {
         .set_len(20 * 1024 * 1024 + 1)
         .unwrap();
     assert!(pdf_preview(&path).is_err());
+}
+
+#[test]
+fn image_previews_read_header_metadata_locally_and_in_zip() {
+    use std::io::Write;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("image.png");
+    image::RgbaImage::new(37, 23).save(&path).unwrap();
+    let archive = root.path().join("images.zip");
+    let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+    writer
+        .start_file("image.png", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    writer.write_all(&std::fs::read(&path).unwrap()).unwrap();
+    writer.finish().unwrap();
+    for path in [path.clone(), archive.join("image.png")] {
+        let entry = Entry {
+            path,
+            name: "image.png".into(),
+            directory: false,
+            bytes: None,
+        };
+        let preview = read_preview(&entry, false);
+        let metadata = preview.image_metadata().expect("image metadata");
+        assert_eq!(metadata.format, "Png");
+        assert_eq!((metadata.width, metadata.height), (37, 23));
+    }
+    std::fs::write(&path, b"invalid image").unwrap();
+    let entry = Entry {
+        path,
+        name: "image.png".into(),
+        directory: false,
+        bytes: None,
+    };
+    let preview = read_preview(&entry, false);
+    assert!(matches!(preview, Preview::Image(..)));
+    assert!(preview.image_metadata().is_none());
 }

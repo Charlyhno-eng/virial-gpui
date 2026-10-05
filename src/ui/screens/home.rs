@@ -94,6 +94,32 @@ impl FileManager {
                     .child(self.language.text("Size"))
                     .child(div().text_color(color(MUTED)).child(size)),
             )
+            .when_some(
+                (!current_folder)
+                    .then(|| self.preview.image_metadata())
+                    .flatten(),
+                |panel, metadata| {
+                    panel.children(
+                        [
+                            ("Format", metadata.format.clone()),
+                            (
+                                "Dimensions",
+                                format!("{} × {} px", metadata.width, metadata.height),
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(label, value)| {
+                            div()
+                                .flex()
+                                .justify_between()
+                                .gap_3()
+                                .text_size(px(11.))
+                                .child(self.language.text(label))
+                                .child(div().text_color(color(MUTED)).child(value))
+                        }),
+                    )
+                },
+            )
             .when(
                 current_folder || matches!(self.preview, crate::state::preview::Preview::Folder(_)),
                 |panel| {

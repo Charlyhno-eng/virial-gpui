@@ -8,12 +8,45 @@ use std::{fs::File, io::Read, path::PathBuf};
 pub(crate) enum Preview {
     Loading,
     Folder(usize),
-    Image(PathBuf),
-    ArchiveImage(crate::infrastructure::archive::Materialized),
+    Image(PathBuf, Option<ImageMetadata>),
+    ArchiveImage(
+        crate::infrastructure::archive::Materialized,
+        Option<ImageMetadata>,
+    ),
     Pdf(crate::infrastructure::archive::Materialized),
     Text(String),
     Code(CodePreview),
     Unavailable,
+}
+
+/// Header-only metadata: no pixel buffer is decoded for the details panel.
+pub(crate) struct ImageMetadata {
+    pub format: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+fn image_metadata(path: &std::path::Path) -> Option<ImageMetadata> {
+    let reader = image::ImageReader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?;
+    let format = format!("{:?}", reader.format()?);
+    let (width, height) = reader.into_dimensions().ok()?;
+    Some(ImageMetadata {
+        format,
+        width,
+        height,
+    })
+}
+
+impl Preview {
+    pub(crate) fn image_metadata(&self) -> Option<&ImageMetadata> {
+        match self {
+            Self::Image(_, metadata) | Self::ArchiveImage(_, metadata) => metadata.as_ref(),
+            _ => None,
+        }
+    }
 }
 
 fn read_preview(entry: &Entry, hidden: bool) -> Preview {
@@ -34,7 +67,10 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
     if crate::infrastructure::archive::is_member(&entry.path) {
         if entry.kind() == "Image" {
             return crate::infrastructure::archive::materialize(&entry.path, 20 * 1024 * 1024)
-                .map(Preview::ArchiveImage)
+                .map(|image| {
+                    let metadata = image_metadata(&image.path);
+                    Preview::ArchiveImage(image, metadata)
+                })
                 .unwrap_or(Preview::Unavailable);
         }
         return crate::infrastructure::archive::read_prefix(&entry.path, 64 * 1024)
@@ -56,7 +92,7 @@ fn read_preview(entry: &Entry, hidden: bool) -> Preview {
     }
     if entry.kind() == "Image" {
         return if metadata.len() <= 20 * 1024 * 1024 {
-            Preview::Image(entry.path.clone())
+            Preview::Image(entry.path.clone(), image_metadata(&entry.path))
         } else {
             Preview::Unavailable
         };
@@ -168,7 +204,10 @@ impl FileManager {
         if self.busy
             || self.dialog.is_some()
             || self.location == crate::domain::location::Location::Trash
-            || !matches!(&self.preview, Preview::Image(_) | Preview::ArchiveImage(_))
+            || !matches!(
+                &self.preview,
+                Preview::Image(..) | Preview::ArchiveImage(..)
+            )
         {
             return;
         }
