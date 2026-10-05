@@ -67,6 +67,25 @@ impl FileManager {
                     .p_2()
                     .gap_1()
                     .flex_shrink_0()
+                    .when(
+                        expanded && matches!(&self.preview, Preview::Code(_)),
+                        |toolbar| {
+                            toolbar.child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .px_2()
+                                    .text_color(color(MUTED))
+                                    .text_ellipsis()
+                                    .child(
+                                        self.preview_path
+                                            .as_ref()
+                                            .map(|path| path.display().to_string())
+                                            .unwrap_or_default(),
+                                    ),
+                            )
+                        },
+                    )
                     .child(
                         navigation_button(
                             "expand-preview",
