@@ -15,9 +15,7 @@ Virial is a Linux file manager for local folders, mounted drives, and recent fil
 
 ## See Virial in action
 
-![Virial screenshot](assets/images/1.png)
-![Virial screenshot](assets/images/2.png)
-![Virial screenshot](assets/images/3.png)
+![Virial screenshot](assets/images/virial-gpui-demo.gif)
 
 ## Quickstart
 
