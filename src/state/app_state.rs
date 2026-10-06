@@ -85,8 +85,12 @@ pub struct FileManager {
     pub(crate) preview_media_updates: Option<Task<()>>,
     pub(crate) preview_image_cache: gpui::Entity<gpui::RetainAllImageCache>,
     pub(crate) opened_archive_files: Vec<crate::infrastructure::archive::Materialized>,
+    /// Local copies of remote files handed to xdg-open, wiped on exit.
+    pub(crate) remote_cache_files: Vec<PathBuf>,
     pub(crate) name_descending: bool,
     pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
+    /// Remote browsing: sessions, saved hosts, status-bar activity.
+    pub(crate) ssh: crate::state::ssh::SshManager,
 }
 
 impl FileManager {

@@ -8,4 +8,5 @@ pub(crate) mod mouse;
 pub(crate) mod operations;
 pub(crate) mod preview;
 pub(crate) mod selection;
+pub(crate) mod ssh;
 pub(crate) mod workspaces;
