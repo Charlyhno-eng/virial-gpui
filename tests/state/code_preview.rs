@@ -80,6 +80,23 @@ fn recognizes_common_languages_filenames_and_shebangs() {
 }
 
 #[test]
+fn recognizes_onig_only_and_aliased_grammars() {
+    // PowerShell and JSX grammars ship only in the onig syntax set.
+    for name in ["run.ps1", "module.psm1", "manifest.psd1", "component.jsx"] {
+        assert!(CodePreview::new(Path::new(name), "").is_some(), "{name}");
+    }
+    let code = CodePreview::new(
+        Path::new("deploy.ps1"),
+        "$name = 'server'\nWrite-Output $name\n",
+    )
+    .unwrap();
+    assert_ne!(color_at(&code, "server"), rgb(CODE_TEXT).into());
+    // Podman containers use Dockerfile's grammar.
+    let code = CodePreview::new(Path::new("Containerfile"), "FROM alpine\n").unwrap();
+    assert_eq!(code.text.as_ref(), "FROM alpine\n");
+}
+
+#[test]
 fn unknown_and_plain_text_files_keep_the_plain_preview() {
     assert!(CodePreview::new(Path::new("notes.txt"), "hello\nworld").is_none());
     assert!(CodePreview::new(Path::new("notes.unknown"), "hello\nworld").is_none());
