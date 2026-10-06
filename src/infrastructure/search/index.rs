@@ -980,6 +980,6 @@ impl Inventory {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../../tests/infrastructure/search_index.rs"]
 mod tests;

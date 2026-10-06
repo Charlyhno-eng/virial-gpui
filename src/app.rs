@@ -198,11 +198,11 @@ impl FileManager {
         let ssh_store = self.ssh.store.clone();
         let ssh_runtime = self.ssh.runtime.handle().clone();
         let read = cx.background_executor().spawn(async move {
-            match requested {
+            let listed: std::io::Result<Vec<Entry>> = match requested {
                 Location::Directory(path) => read_directory(&path, hidden),
                 Location::Remote { host, path } => {
-                    // Browsing a connected host: the SFTP listing replaces the
-                    // local directory read; failures surface as entry errors.
+                    // Browsing a connected host: the SFTP listing replaces
+                    // the local directory read; failures surface as errors.
                     ssh_store
                         .browse(&host, &path, Some(ssh_runtime))
                         .await
@@ -210,7 +210,7 @@ impl FileManager {
                             crate::state::browser::sort_by_name(&mut entries);
                             entries
                         })
-                        .map_err(io::Error::other)
+                        .map_err(|error| std::io::Error::other(error))
                 }
                 Location::Recent => {
                     crate::infrastructure::recent::read(&data, hidden).map(|mut entries| {
@@ -223,8 +223,8 @@ impl FileManager {
                     return crate::infrastructure::workspaces::summaries(&data, hidden)
                         .map(|summaries| (Vec::new(), summaries));
                 }
-            }
-            .map(|mut entries| {
+            };
+            listed.map(|mut entries: Vec<Entry>| {
                 // Directory, ZIP and Trash readers already sort by name.
                 // Apply the direction on the worker before restoring selection.
                 crate::state::browser::apply_name_direction(&mut entries, descending);

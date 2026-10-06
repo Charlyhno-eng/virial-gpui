@@ -43,3 +43,40 @@ async fn disconnect_all_drains_every_session() {
     store.disconnect_all().await;
     assert!(store.connected_ids().await.is_empty());
 }
+
+#[tokio::test]
+async fn browse_without_session_reports_a_clear_error() {
+    let store = std::sync::Arc::new(SshStore::new());
+    let host = config("browse-missing");
+    let result = store
+        .browse(&host.id, std::path::Path::new("/"), None)
+        .await;
+    assert_eq!(result.unwrap_err(), "SSH session is not connected");
+}
+
+#[test]
+fn browse_on_runtime_without_session_also_fails_cleanly() {
+    // The runtime path spawns the work; a missing session must still produce
+    // the same user-facing error, not a panic across the runtime boundary.
+    // The nested runtime lives on its own thread: dropping a tokio runtime
+    // inside another runtime's async context is not allowed.
+    let store = std::sync::Arc::new(SshStore::new());
+    let host = config("browse-runtime");
+    let id = host.id.clone();
+    let result = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let handle = runtime.handle().clone();
+        runtime.block_on(async move {
+            store
+                .browse(&id, std::path::Path::new("/"), Some(handle))
+                .await
+        })
+    })
+    .join()
+    .expect("test thread must not panic");
+    assert_eq!(result.unwrap_err(), "SSH session is not connected");
+}

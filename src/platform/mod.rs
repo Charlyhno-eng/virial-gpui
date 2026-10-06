@@ -1,4 +1,4 @@
-﻿//! Platform backends selected at compile time. Linux keeps the original
+//! Platform backends selected at compile time. Linux keeps the original
 //! implementations; other targets use the portable fallbacks next to them.
 //! Call sites use the re-exported names (`platform::places`, ...), never a
 //! backend module directly.
@@ -17,3 +17,11 @@ pub(crate) mod devices;
 pub(crate) mod file_drag;
 #[cfg(not(target_os = "linux"))]
 pub(crate) mod places;
+
+#[cfg(test)]
+#[path = "../../tests/platform/storage.rs"]
+mod portable_storage_tests;
+
+#[cfg(test)]
+#[path = "../../tests/platform/portable.rs"]
+mod portable_platform_tests;

@@ -383,6 +383,6 @@ impl FileManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/state/preview.rs"]
 mod tests;

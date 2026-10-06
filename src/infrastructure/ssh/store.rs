@@ -20,6 +20,16 @@ pub(crate) enum ConnectOutcome {
     Connected(Arc<Session>),
 }
 
+impl std::fmt::Debug for ConnectOutcome {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AlreadyConnected => formatter.write_str("AlreadyConnected"),
+            // Session internals are opaque; the variant alone is meaningful.
+            Self::Connected(_) => formatter.write_str("Connected(..)"),
+        }
+    }
+}
+
 /// Shared registry backed by a tokio mutex (all calls are async anyway).
 #[derive(Default)]
 pub(crate) struct SshStore {
@@ -113,6 +123,13 @@ impl SshStore {
             session.disconnect().await;
         }
     }
+
+    // TODO(ssh-pr2): emit SessionEvent::StateChanged on connect/disconnect so
+    // the status bar reacts to a dropped connection without user polling.
+    // TODO(ssh-pr2): track per-session failure counts and surface the last
+    // error string through SessionState::Failed for the badge tooltip.
+    // TODO(ssh-pr3): upload/download entry points returning a progress handle
+    // compatible with infrastructure::progress for the transfer panel.
 }
 
 #[cfg(test)]

@@ -661,6 +661,6 @@ pub fn create(directory: &Path, name: &str, folder: bool) -> io::Result<()> {
     transfer(vec![path], directory.to_path_buf(), false)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/archive.rs"]
 mod tests;

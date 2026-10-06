@@ -21,3 +21,14 @@ pub(crate) fn initial_path() -> PathBuf {
     };
     path.canonicalize().unwrap_or(path)
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initial_path_returns_an_absolute_path() {
+        // The portable fallback chain (argument, HOME, USERPROFILE,
+        // HOMEDRIVE+HOMEPATH, /) must always yield an absolute path.
+        assert!(initial_path().is_absolute());
+    }
+}

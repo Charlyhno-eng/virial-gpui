@@ -626,5 +626,9 @@ fn launch(desktop: &Path, file: &Path) -> io::Result<Option<super::archive::Mate
     Ok(extracted)
 }
 #[cfg(test)]
+#[path = "../../tests/infrastructure/operations_portable.rs"]
+mod portable_tests;
+
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/operations.rs"]
 mod tests;

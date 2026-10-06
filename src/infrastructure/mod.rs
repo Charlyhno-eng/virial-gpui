@@ -1,3 +1,4 @@
+use std::{fs, fs::File, io};
 pub(crate) mod archive;
 pub(crate) mod image_edit;
 pub(crate) mod layout;
@@ -37,6 +38,44 @@ pub(crate) mod trash_stub {
 #[cfg(not(unix))]
 pub(crate) use trash_stub as trash;
 
+#[cfg(all(test, windows))]
+#[path = "../../tests/infrastructure/queue_windows.rs"]
+mod queue_windows_tests;
+
+#[cfg(test)]
+#[path = "../../tests/infrastructure/trash_portable.rs"]
+mod trash_portable_tests;
+
 #[cfg(test)]
 #[path = "../../tests/infrastructure/performance.rs"]
 mod performance;
+
+/// Flush a directory entry so renames inside it survive a crash. Windows
+/// cannot open directories as files; there the best-effort no-op is correct
+/// because NTFS metadata journaling already covers rename persistence.
+pub(crate) fn sync_directory(directory: &std::path::Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(directory)?.sync_all()
+    }
+    #[cfg(windows)]
+    {
+        let _ = directory;
+        Ok(())
+    }
+}
+/// Flush file data to storage. Windows requires a writable handle for
+/// FlushFileBuffers; opening for reading there would fail with Access Denied.
+pub(crate) fn sync_file(file: &std::path::Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(file)?.sync_all()
+    }
+    #[cfg(windows)]
+    {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(file)?
+            .sync_all()
+    }
+}

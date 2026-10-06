@@ -92,3 +92,48 @@ fn connected_tracks_the_active_host() {
     manager.activity = SshActivity::Connecting(id.to_string());
     assert!(!manager.connected(&id));
 }
+
+#[test]
+fn parse_target_keeps_dotted_hyphenated_and_underscored_hostnames() {
+    let named = SshManager::parse_target("deploy@build.internal:2200").unwrap();
+    assert_eq!(named.host, "build.internal");
+    assert_eq!(named.port, 2200);
+    assert_eq!(named.username, "deploy");
+    // Sub-domains, hyphens and underscores survive the split.
+    let hyphen = SshManager::parse_target("ci@build-eu.example.org").unwrap();
+    assert_eq!(hyphen.host, "build-eu.example.org");
+    assert_eq!(hyphen.port, 22);
+    let underscore = SshManager::parse_target("deploy@build_eu.internal").unwrap();
+    assert_eq!(underscore.host, "build_eu.internal");
+}
+
+#[test]
+fn parse_target_rejects_empty_port_suffix() {
+    assert!(SshManager::parse_target("user@host:").is_err());
+}
+
+#[test]
+fn connected_matches_only_the_exact_id() {
+    let mut manager = SshManager {
+        store: Arc::new(SshStore::new()),
+        runtime: Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap(),
+        ),
+        hosts: Vec::new(),
+        activity: SshActivity::Idle,
+        error: None,
+        pending: None,
+        menu_open: false,
+        dialog_input: None,
+        dialog_credential: None,
+    };
+    let kali = HostId::new("kali", 22, "demon");
+    let other = HostId::new("nas", 22, "demon");
+    manager.activity = SshActivity::Connected(kali.clone());
+    assert!(manager.connected(&kali));
+    assert!(!manager.connected(&other), "a different host is not connected");
+}

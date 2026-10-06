@@ -404,6 +404,6 @@ fn render_frames(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/media.rs"]
 mod tests;

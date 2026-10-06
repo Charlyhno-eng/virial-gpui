@@ -290,7 +290,7 @@ fn save(directory: &Path, records: &[Record], ready: bool) -> io::Result<()> {
     file.as_file().sync_all()?;
     file.persist(directory.join("manifest"))
         .map_err(|error| error.error)?;
-    File::open(directory)?.sync_all()
+    super::sync_directory(directory)
 }
 
 fn load(directory: &Path) -> io::Result<Vec<Record>> {
@@ -416,7 +416,7 @@ fn sync_snapshot(path: &Path, progress: Option<&super::progress::Progress>) -> i
             if let Some(progress) = progress {
                 progress.checkpoint()?;
             }
-            File::open(file)?.sync_all()?;
+            super::sync_file(file)?;
         }
     } else {
         std::thread::scope(|scope| -> io::Result<()> {
@@ -428,7 +428,7 @@ fn sync_snapshot(path: &Path, progress: Option<&super::progress::Progress>) -> i
                             if let Some(progress) = progress {
                                 progress.checkpoint()?;
                             }
-                            File::open(file)?.sync_all()?;
+                            super::sync_file(file)?;
                         }
                         Ok(())
                     })
@@ -446,7 +446,7 @@ fn sync_snapshot(path: &Path, progress: Option<&super::progress::Progress>) -> i
         if let Some(progress) = progress {
             progress.checkpoint()?;
         }
-        File::open(directory)?.sync_all()?;
+        super::sync_directory(&directory)?;
     }
     Ok(())
 }
@@ -471,7 +471,12 @@ fn snapshot_with_progress(
                 timestamps(&entry.path(), &destination.join(entry.file_name()))?;
             }
         }
-        File::open(destination)?.set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
+        // Windows requires a writable handle to change file times; a read-only
+        // File::open would fail with Access Denied there.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(destination)?
+            .set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
     }
     if progress.is_some() {
         operations::copy_with_progress(source, destination, progress)?;
@@ -479,7 +484,8 @@ fn snapshot_with_progress(
         operations::copy(source, destination)?;
     }
     timestamps(source, destination)?;
-    sync_snapshot(destination, progress)
+    let synced = sync_snapshot(destination, progress);
+    synced
 }
 
 // Snapshots may include read-only folders. Make only our private copies writable
@@ -514,7 +520,7 @@ fn discard_entry(directory: &Path) -> io::Result<()> {
         .tempdir_in(parent)?;
     // Remove the entry from the stack atomically before deleting its backups.
     fs::rename(directory, discarded.path().join("entry"))?;
-    File::open(parent)?.sync_all()?;
+    super::sync_directory(parent)?;
     discard(discarded.path())
 }
 
@@ -587,7 +593,7 @@ fn record_with_progress<T>(
     save(staging.path(), &records, false)?;
     let directory = history.join(number.to_string());
     fs::rename(staging.path(), &directory)?;
-    File::open(&history)?.sync_all()?;
+    super::sync_directory(&history)?;
     let result = action();
     if let Some(progress) = progress {
         progress.begin(super::progress::Phase::Finishing, None);
@@ -695,9 +701,9 @@ pub(crate) fn durable(
             if before != "-" {
                 let backup = staging.path().join(index.to_string());
                 snapshot_with_progress(&path, &backup, Some(progress))?;
-                if fingerprint_with_progress(&backup, Some(progress))? != before
-                    || fingerprint_with_progress(&path, Some(progress))? != before
-                {
+                let backup_now = fingerprint_with_progress(&backup, Some(progress))?;
+                let source_now = fingerprint_with_progress(&path, Some(progress))?;
+                if backup_now != before || source_now != before {
                     return Err(io::Error::other(
                         "File changed while recording undo history; retry",
                     ));
@@ -716,8 +722,12 @@ pub(crate) fn durable(
             file.sync_all()?;
         }
         let directory = history.join(number.to_string());
-        fs::rename(staging.path(), &directory)?;
-        File::open(&history)?.sync_all()?;
+        if let Err(error) = fs::rename(staging.path(), &directory) {
+                return Err(error);
+        }
+        if let Err(error) = super::sync_directory(&history) {
+                return Err(error);
+        }
         (directory, records)
     };
     let result = action();
@@ -898,7 +908,7 @@ fn restore(path: &Path, backup: &Path, before: &str, after: &str) -> io::Result<
         }
         return Err(error);
     }
-    File::open(parent)?.sync_all()?;
+    super::sync_directory(parent)?;
     if after != "-" {
         discard(&parked)?;
     }
@@ -939,8 +949,8 @@ fn restore_moves(records: &[Record]) -> io::Result<()> {
             .as_ref()
             .is_ok_and(|state| *state == source.before)
         {
-            File::open(source.path.parent().ok_or_else(invalid)?)?.sync_all()?;
-            File::open(target.path.parent().ok_or_else(invalid)?)?.sync_all()?;
+            super::sync_directory(source.path.parent().ok_or_else(invalid)?)?;
+            super::sync_directory(target.path.parent().ok_or_else(invalid)?)?;
         } else {
             if operations::rename(&source.path, &target.path).is_err() {
                 return Err(io::Error::other(format!(
@@ -1012,6 +1022,6 @@ fn undo_impl(data: &Path, expected: Option<&str>) -> io::Result<bool> {
     Ok(true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/undo.rs"]
 mod tests;

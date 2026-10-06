@@ -88,7 +88,13 @@ fn save(data: &Path, job: &Job) -> io::Result<()> {
     serde_json::to_writer(&mut file, job)?;
     file.as_file().sync_all()?;
     file.persist(destination).map_err(|error| error.error)?;
-    File::open(root(data)?)?.sync_all()
+    // Sync the operations directory so the journal survives a crash. Windows
+    // cannot open directories as files, so only Unix flushes the parent here.
+    #[cfg(unix)]
+    super::sync_directory(&root(data)?)?;
+    #[cfg(windows)]
+    let _ = root(data)?;
+    Ok(())
 }
 
 pub fn supported(operation: &Operation) -> bool {
@@ -230,7 +236,7 @@ fn forget_unlocked(data: &Path, job: &Job) -> io::Result<()> {
     match fs::remove_file(&file) {
         Ok(()) => {
             let _ = fs::remove_file(file.with_extension("lock"));
-            File::open(root(data)?)?.sync_all()
+            super::sync_directory(&root(data)?)
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -699,7 +705,7 @@ fn stage_copy(source: &Path, target: &Path, progress: &Progress) -> io::Result<(
     for (directory, permissions) in directories.into_iter().rev() {
         progress.checkpoint()?;
         fs::set_permissions(&directory, permissions)?;
-        File::open(directory)?.sync_all()?;
+        super::sync_directory(&directory)?;
         progress.advance(1);
         progress.transferred(0, 1);
     }
@@ -707,7 +713,7 @@ fn stage_copy(source: &Path, target: &Path, progress: &Progress) -> io::Result<(
 }
 
 fn sync_parent(path: &Path) -> io::Result<()> {
-    File::open(path.parent().ok_or_else(invalid)?)?.sync_all()
+    super::sync_directory(path.parent().ok_or_else(invalid)?)
 }
 
 fn transfer(item: &Item, cut: bool, verify: bool, progress: &Progress) -> io::Result<()> {
@@ -1034,6 +1040,6 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/queue.rs"]
 mod tests;

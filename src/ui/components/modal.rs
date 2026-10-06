@@ -434,7 +434,6 @@ impl FileManager {
                 RemoteMenuAction::Disconnect,
             ));
         }
-        let height = entries.len() as f32 * 26. + 9.;
         let panel = div()
             .id("remote-menu")
             .occlude()

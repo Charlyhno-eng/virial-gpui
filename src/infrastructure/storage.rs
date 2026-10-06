@@ -107,8 +107,10 @@ pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
         let metadata = fs::symlink_metadata(&path)?;
         #[cfg(unix)]
         let identity = (metadata.dev(), metadata.ino());
+        // Windows: directories all report len 0, so a size-based identity
+        // would collide; canonicalize yields a unique per-directory key.
         #[cfg(windows)]
-        let identity = (metadata.len(), 0u64);
+        let identity = fs::canonicalize(&path)?;
         if !metadata.is_dir() || !visited.insert(identity) {
             continue;
         }
@@ -133,7 +135,15 @@ pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
 #[cfg(windows)]
 pub fn available_space(path: &Path) -> io::Result<u64> {
     use std::os::windows::ffi::OsStrExt as _;
-    let mut wide: Vec<u16> = path
+    // GetDiskFreeSpaceExW only accepts a directory; resolve files to theirs.
+    let directory = if path.is_file() {
+        path.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+    let mut wide: Vec<u16> = directory
         .as_os_str()
         .encode_wide()
         .chain(std::iter::once(0))
@@ -180,6 +190,6 @@ pub fn available_space(path: &Path) -> io::Result<u64> {
     Ok(bytes.min(u64::MAX as u128) as u64)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/storage.rs"]
 mod tests;

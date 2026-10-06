@@ -211,6 +211,12 @@ impl SshManager {
             store.disconnect_all().await;
         });
     }
+
+    // TODO(ssh-pr2): replace the fixed menu with a quick-pick list featuring
+    // incremental search over favorites, like the VS Code remote picker.
+    // TODO(ssh-pr2): persist the last connected host to reopen it on launch.
+    // TODO(ssh-pr3): keyboard-interactive authentication flow (2FA) feeding
+    // dialog responses back into russh's auth prompts.
 }
 
 #[cfg(test)]

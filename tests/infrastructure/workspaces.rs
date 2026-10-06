@@ -151,7 +151,10 @@ fn canonicalizes_symlink_roots_and_does_not_duplicate_their_contents() {
     fs::create_dir(&root).unwrap();
     fs::write(root.join("a.rs"), "code").unwrap();
     let alias = data.0.join("alias");
+    #[cfg(unix)]
     std::os::unix::fs::symlink(&root, &alias).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(&root, &alias).unwrap();
     data.add("Project", Some(root));
     data.add("Project", Some(alias));
     let summary = summaries(&data.0, false).unwrap().remove(0);
