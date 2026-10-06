@@ -6,7 +6,6 @@ use std::{
 };
 use std::{
     collections::HashSet,
-    ffi::CString,
     fs, io,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
