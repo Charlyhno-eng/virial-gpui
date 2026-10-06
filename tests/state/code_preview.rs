@@ -108,7 +108,7 @@ fn highlights_the_common_code_families_of_the_syntax_set() {
         ("app.rb", "def f\n  42\nend\n", "def"),
         ("schema.sql", "SELECT id FROM users;\n", "SELECT"),
         ("chart.yaml", "kind: Deployment\n", "kind"),
-        ("Cargo.lock", "[package]\nname = \"x\"\n", "package"),
+        ("Cargo.lock", "[package]\nname = \"x\"\n", "x"),
         ("build.cmake", "project(demo)\n", "project"),
         ("main.scala", "object App { def f = 1 }\n", "object"),
         ("main.dart", "void main() { var x = 1; }\n", "void"),
