@@ -25,6 +25,12 @@ impl FileManager {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<Div> {
+        if self.ssh.menu_open {
+            return self.remote_menu(cx);
+        }
+        if self.ssh.dialog_input.is_some() {
+            return Some(self.ssh_dialog(cx));
+        }
         if let Some(dialog) = &self.dialog {
             let heading = match dialog {
                 Dialog::ImageExport { edit, .. } => match edit {
@@ -227,7 +233,21 @@ impl FileManager {
             .is_some_and(|entry| crate::infrastructure::archive::is_member(&entry.path));
         let mut actions = Vec::new();
         let trash = self.location == crate::domain::location::Location::Trash;
-        if trash {
+        let remote = self.location.remote().cloned();
+        if remote.is_some() {
+            // Remote locations expose a reduced action set: open/rename/delete
+            // map to SFTP operations; no clipboard, trash or archive support.
+            if entry.is_some() {
+                actions.push(Action::Open);
+                if self.selection.indices.len() == 1 {
+                    actions.push(Action::Rename);
+                    actions.push(Action::Trash);
+                }
+            } else {
+                actions.push(Action::NewFolder);
+            }
+            actions.push(Action::Refresh);
+        } else if trash {
             if entry.is_some() {
                 actions.push(Action::Restore);
             }
@@ -355,5 +375,181 @@ impl Action {
             Self::Refresh => "refresh",
             Self::NewWorkspace => "folder-plus",
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Remote (SSH) menu and connect dialog, opened from the status-bar indicator.
+// ---------------------------------------------------------------------------
+
+pub(crate) struct StatusTooltip(pub(crate) String);
+
+impl gpui::Render for StatusTooltip {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded_sm()
+            .bg(color(SURFACE))
+            .border_1()
+            .border_color(color(BORDER))
+            .text_color(color(TEXT))
+            .text_size(px(11.))
+            .child(self.0.clone())
+    }
+}
+
+enum RemoteMenuAction {
+    Connect(crate::infrastructure::ssh::HostId),
+    OpenDialog,
+    Disconnect,
+}
+
+impl RemoteMenuAction {
+    fn is_disconnect(&self) -> bool {
+        matches!(self, Self::Disconnect)
+    }
+}
+
+impl FileManager {
+    /// The small menu anchored bottom-left under the remote indicator, in the
+    /// spirit of the VS Code remote indicator menu.
+    fn remote_menu(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let mut entries: Vec<(String, RemoteMenuAction)> = Vec::new();
+        for host in &self.ssh.hosts {
+            let label = if self.ssh.connected(&host.id) {
+                format!("{} ·", host.display())
+            } else {
+                host.display()
+            };
+            entries.push((label, RemoteMenuAction::Connect(host.id.clone())));
+        }
+        entries.push((
+            self.language.text("Connect to Host…").into(),
+            RemoteMenuAction::OpenDialog,
+        ));
+        if self.location.remote().is_some() {
+            entries.push((
+                self.language.text("Close Remote Connection").into(),
+                RemoteMenuAction::Disconnect,
+            ));
+        }
+        let height = entries.len() as f32 * 26. + 9.;
+        let panel = div()
+            .id("remote-menu")
+            .occlude()
+            .absolute()
+            .left(px(6.))
+            .bottom(px(crate::ui::components::status_bar::STATUS_BAR_HEIGHT + 4.))
+            .w(px(260.))
+            .p_1()
+            .rounded_md()
+            .bg(color(SURFACE))
+            .border_1()
+            .border_color(color(BORDER))
+            .shadow_md()
+            .children(entries.into_iter().enumerate().map(|(index, (label, action))| {
+                div()
+                    .id(("remote-menu-action", index))
+                    .h(px(26.))
+                    .px_3()
+                    .flex()
+                    .items_center()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .text_size(px(10.5))
+                    .text_color(color(if action.is_disconnect() { ERROR } else { TEXT }))
+                    .hover(|style| style.bg(color(HOVER)))
+                    .child(label)
+                    .on_click(cx.listener(move |view, _, window, cx| match &action {
+                        RemoteMenuAction::Connect(id) => {
+                            view.connect_saved_host(id.clone(), window, cx)
+                        }
+                        RemoteMenuAction::OpenDialog => view.open_ssh_dialog(window, cx),
+                        RemoteMenuAction::Disconnect => view.disconnect_remote(cx),
+                    }))
+            }));
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .child(
+                    div()
+                        .id("remote-menu-dismiss")
+                        .occlude()
+                        .absolute()
+                        .inset_0()
+                        .on_mouse_down(MouseButton::Left, cx.listener(|view, _, _, cx| {
+                            view.close_remote_menu(cx);
+                        })),
+                )
+                .child(reveal(panel, "remote-menu-reveal")),
+        )
+    }
+
+    /// The SSH connect dialog: target + optional credential, in-memory only.
+    fn ssh_dialog(&self, cx: &mut Context<Self>) -> Div {
+        let mut content = div()
+            .id("ssh-dialog-panel")
+            .occlude()
+            .w(px(420.))
+            .max_w_full()
+            .p_4()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .rounded_lg()
+            .bg(color(SURFACE))
+            .border_1()
+            .border_color(color(BORDER))
+            .shadow_lg()
+            .child(
+                div()
+                    .text_size(px(16.))
+                    .child(self.language.text("Connect to Host")),
+            )
+            .child(
+                div()
+                    .text_size(px(11.))
+                    .text_color(color(MUTED))
+                    .child(self.language.text("Format: user@host[:port] — keys and the SSH agent are tried automatically")),
+            );
+        if let Some(input) = &self.ssh.dialog_input {
+            content = content.child(input.clone());
+        }
+        if let Some(error) = &self.ssh.error {
+            content = content.child(div().text_color(color(ERROR)).child(error.clone()));
+        }
+        let connecting = matches!(
+            self.ssh.activity,
+            crate::state::ssh::SshActivity::Connecting(_)
+        );
+        content = content.child(
+            div()
+                .flex()
+                .justify_end()
+                .gap_2()
+                .child(button("cancel-ssh", self.language.text("Cancel")).on_click(
+                    cx.listener(|view, _, window, cx| view.close_ssh_dialog(window, cx)),
+                ))
+                .child(
+                    button(
+                        "confirm-ssh",
+                        self.language.text(if connecting { "Connecting…" } else { "Connect" }),
+                    )
+                    .on_click(cx.listener(|view, _, window, cx| {
+                        view.confirm_ssh_dialog(window, cx)
+                    })),
+                ),
+        );
+        div()
+            .occlude()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::rgba(0x00000080))
+            .child(reveal(content, "ssh-dialog-reveal"))
     }
 }

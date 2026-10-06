@@ -29,6 +29,14 @@ pub enum NameAction {
         directory: PathBuf,
         folder: bool,
     },
+    /// Create a directory on the connected SSH host.
+    RemoteNewFolder {
+        directory: PathBuf,
+    },
+    /// Rename a path on the connected SSH host.
+    RemoteRename {
+        source: PathBuf,
+    },
 }
 pub enum Dialog {
     ImageExport {
@@ -137,6 +145,47 @@ impl FileManager {
             match action {
                 Action::Restore => self.restore_trash(cx),
                 Action::Refresh => self.refresh(cx),
+                _ => {}
+            }
+            return;
+        }
+        // Remote locations route mutating actions to SFTP operations.
+        if let Some(directory) = self
+            .location
+            .remote()
+            .cloned()
+            .and_then(|_| match &self.location {
+                crate::domain::location::Location::Remote { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+        {
+            match action {
+                Action::Refresh => self.refresh(cx),
+                Action::NewFolder => {
+                    let input =
+                        cx.new(|cx| NameInput::new(self.language.text("New folder").to_string(), window, cx));
+                    self.dialog = Some(Dialog::Name {
+                        action: NameAction::RemoteNewFolder { directory },
+                        input,
+                    });
+                    cx.notify();
+                }
+                Action::Trash => {
+                    for selected in self.selected_entries() {
+                        self.run_remote_operation(RemoteOperation::Delete(selected), cx);
+                    }
+                }
+                Action::Rename => {
+                    if let Some(entry) = entry {
+                        let input =
+                            cx.new(|cx| NameInput::for_rename(&entry.name, entry.directory, window, cx));
+                        self.dialog = Some(Dialog::Name {
+                            action: NameAction::RemoteRename { source: entry.path.clone() },
+                            input,
+                        });
+                    }
+                    cx.notify();
+                }
                 _ => {}
             }
             return;
@@ -451,8 +500,10 @@ impl FileManager {
                 let directory = match action {
                     NameAction::Workspace { .. } => unreachable!(),
                     NameAction::New { directory, .. } => Some(directory.as_path()),
+                    NameAction::RemoteNewFolder { directory } => Some(directory.as_path()),
+                    NameAction::RemoteRename { .. } => None,
                 };
-                if directory.is_none_or(|directory| {
+                if directory.is_some_and(|directory| {
                     crate::infrastructure::operations::named_path(directory, &name).is_err()
                 }) {
                     self.error = Some(self.language.text("Invalid file name").into());
@@ -466,6 +517,23 @@ impl FileManager {
                         name,
                         folder,
                     }),
+                    NameAction::RemoteNewFolder { .. } => {
+                        self.close_dialog(window, cx);
+                        self.run_remote_operation(RemoteOperation::CreateDirectory { name }, cx);
+                        return;
+                    }
+                    NameAction::RemoteRename { source } => {
+                        let target = source
+                            .parent()
+                            .map(|parent| parent.join(&name))
+                            .unwrap_or_else(|| PathBuf::from(&name));
+                        self.close_dialog(window, cx);
+                        self.run_remote_operation(
+                            RemoteOperation::Rename { from: source, to: target },
+                            cx,
+                        );
+                        return;
+                    }
                 }
             }
             Some(Dialog::Trash(entries)) => Some(Operation::Trash(
@@ -672,5 +740,164 @@ impl FileManager {
         })
         .detach();
         cx.notify();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Remote (SSH) actions: status-bar indicator menu, connect dialog, SFTP ops.
+// ---------------------------------------------------------------------------
+
+/// Mutating SFTP operations available from the context menu on a remote.
+#[derive(Clone, Debug)]
+pub(crate) enum RemoteOperation {
+    CreateDirectory { name: String },
+    Rename { from: PathBuf, to: PathBuf },
+    Delete(Entry),
+}
+
+impl FileManager {
+    pub(crate) fn open_remote_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus.focus(window);
+        self.ssh.menu_open = !self.ssh.menu_open;
+        cx.notify();
+    }
+
+    pub(crate) fn close_remote_menu(&mut self, cx: &mut Context<Self>) {
+        if self.ssh.menu_open {
+            self.ssh.menu_open = false;
+            cx.notify();
+        }
+    }
+
+    /// Open the connect dialog: one field for `user@host[:port]`; keys and the
+    /// agent are tried before a typed credential.
+    pub(crate) fn open_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ssh.menu_open = false;
+        self.ssh.error = None;
+        let mut input =
+            crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
+        input.placeholder = self.language.text("user@host[:port]").into();
+        self.ssh.dialog_input = Some(cx.new(|_| input));
+        self.focus.focus(window);
+        cx.notify();
+    }
+
+    pub(crate) fn close_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ssh.dialog_input = None;
+        self.ssh.dialog_credential = None;
+        self.focus.focus(window);
+        cx.notify();
+    }
+
+    /// Confirm the connect dialog: parse the target, keep the typed credential
+    /// in memory only, and launch the connection.
+    pub(crate) fn confirm_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.ssh.dialog_input.clone() else {
+            return;
+        };
+        let target = input.read(cx).text.clone();
+        let credential = self.ssh.dialog_credential.take();
+        match crate::state::ssh::SshManager::parse_target(&target) {
+            Ok(host) => {
+                self.ssh.dialog_input = None;
+                let data_home = self.data_home.clone();
+                self.ssh.spawn_connect(host, credential, data_home, cx);
+            }
+            Err(message) => {
+                self.ssh.error = Some(message);
+                self.focus.focus(window);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Connect to a saved favorite from the remote menu.
+    pub(crate) fn connect_saved_host(
+        &mut self,
+        id: crate::infrastructure::ssh::HostId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_remote_menu(cx);
+        let Some(host) = self.ssh.hosts.iter().find(|saved| saved.id == id).cloned() else {
+            return;
+        };
+        // Interactive favorites ask for their credential through the dialog.
+        if matches!(host.auth_hint, crate::infrastructure::ssh::AuthHint::Interactive) {
+            self.open_ssh_dialog(window, cx);
+            if let Some(input) = &self.ssh.dialog_input {
+                input.update(cx, |field, _| field.text = host.id.to_string());
+            }
+            return;
+        }
+        let data_home = self.data_home.clone();
+        self.ssh.spawn_connect(host, None, data_home, cx);
+    }
+
+    /// Disconnect the active remote (status-bar menu action).
+    pub(crate) fn disconnect_remote(&mut self, cx: &mut Context<Self>) {
+        self.close_remote_menu(cx);
+        if let crate::domain::location::Location::Remote { host, .. } = &self.location {
+            let id = host.clone();
+            self.ssh.spawn_disconnect(id, cx);
+        }
+    }
+
+    /// Run one mutating SFTP operation on the connected host, then refresh.
+    /// Kept out of the local operation queue: a remote job type lands with
+    /// the upload/download work.
+    pub(crate) fn run_remote_operation(
+        &mut self,
+        operation: RemoteOperation,
+        cx: &mut Context<Self>,
+    ) {
+        let crate::domain::location::Location::Remote { host, path } = &self.location
+        else {
+            return;
+        };
+        let host = host.clone();
+        let directory = path.clone();
+        let store = self.ssh.store.clone();
+        let runtime = self.ssh.runtime.clone();
+        self.busy = true;
+        self.error = None;
+        cx.notify();
+        let job = cx.background_executor().spawn(async move {
+            // russh futures must be polled inside a tokio runtime.
+            runtime
+                .spawn(async move {
+                    let Some(session) = store.session(&host).await else {
+                        return Err("SSH session is not connected".to_string());
+                    };
+                    match operation {
+                        RemoteOperation::CreateDirectory { name } => {
+                            session.create_dir(&directory.join(&name)).await
+                        }
+                        RemoteOperation::Rename { from, to } => session.rename(&from, &to).await,
+                        RemoteOperation::Delete(entry) => {
+                            if entry.directory {
+                                session.remove_dir(&entry.path).await
+                            } else {
+                                session.remove_file(&entry.path).await
+                            }
+                        }
+                    }
+                })
+                .await
+                .unwrap_or_else(|join| Err(format!("SSH task failed: {join}")))
+        });
+        cx.spawn(async move |view, cx| {
+            let result = job.await;
+            let _ = view.update(cx, |view, cx| {
+                view.busy = false;
+                if let Err(error) = result {
+                    view.error = Some(error);
+                } else {
+                    view.refresh(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }

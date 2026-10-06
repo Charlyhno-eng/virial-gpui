@@ -216,6 +216,10 @@ const ASSETS: &[(&str, &[u8])] = &[
         "icons/markdown.svg",
         include_bytes!("../../assets/icons/markdown.svg"),
     ),
+    (
+        "icons/remote.svg",
+        include_bytes!("../../assets/icons/remote.svg"),
+    ),
 ];
 
 impl AssetSource for IconAssets {

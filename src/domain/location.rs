@@ -4,6 +4,11 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Location {
     Directory(PathBuf),
+    /// A directory on a connected SSH host. `path` stays remote-absolute.
+    Remote {
+        host: crate::infrastructure::ssh::HostId,
+        path: PathBuf,
+    },
     Recent,
     Trash,
     Workspaces,
@@ -26,6 +31,13 @@ impl Location {
             _ => None,
         }
     }
+    /// The remote host when browsing a connected server.
+    pub fn remote(&self) -> Option<&crate::infrastructure::ssh::HostId> {
+        match self {
+            Self::Remote { host, .. } => Some(host),
+            _ => None,
+        }
+    }
     pub fn title(&self, home: &Path, language: Language) -> String {
         match self {
             Self::Workspaces => language.text("Workspaces").into(),
@@ -36,12 +48,17 @@ impl Location {
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| language.text("File System").into()),
+            Self::Remote { path, .. } => path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| language.text("Remote").into()),
         }
     }
     pub fn description(&self, language: Language) -> String {
         match self {
             Self::Workspaces => language.text("Workspaces").into(),
             Self::Directory(path) => path.display().to_string(),
+            Self::Remote { host, path } => format!("{host}:{path}"),
             Self::Recent => language.text("Recently opened files").into(),
             Self::Trash => language
                 .text("Restore items to their original location")
@@ -51,6 +68,7 @@ impl Location {
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Directory(_) => "folder",
+            Self::Remote { .. } => "remote",
             Self::Workspaces => "view",
             Self::Recent => "recent",
             Self::Trash => "trash",
@@ -59,6 +77,7 @@ impl Location {
     pub fn id(&self) -> gpui::ElementId {
         match self {
             Self::Directory(path) => std::sync::Arc::<Path>::from(path.clone()).into(),
+            Self::Remote { path, .. } => std::sync::Arc::<Path>::from(path.clone()).into(),
             Self::Workspaces => "workspaces".into(),
             Self::Recent => "recent-files".into(),
             Self::Trash => "trash-files".into(),

@@ -101,8 +101,10 @@ impl FileManager {
             preview_image_cache: gpui::RetainAllImageCache::new(cx),
             preview_media_updates: None,
             opened_archive_files: Vec::new(),
+            remote_cache_files: Vec::new(),
             name_descending: false,
             titlebar_drag: None,
+            ssh: crate::state::ssh::SshManager::new(&data_home),
         };
         view.layout.capture(window);
         cx.observe_window_bounds(window, |view, window, _| {
@@ -130,6 +132,11 @@ impl FileManager {
         cx.on_release(|view, _| view.layout.save()).detach();
         cx.on_app_quit(|view, _| {
             view.layout.save();
+            // Tear the SSH sessions down and drop the remote-file cache.
+            view.ssh.shutdown();
+            for cached in view.remote_cache_files.drain(..) {
+                let _ = std::fs::remove_file(cached);
+            }
             async {}
         })
         .detach();
@@ -186,9 +193,23 @@ impl FileManager {
         let requested = location.clone();
         let data = self.data_home.clone();
         let descending = self.name_descending;
+        let ssh_store = self.ssh.store.clone();
+        let ssh_runtime = self.ssh.runtime.handle().clone();
         let read = cx.background_executor().spawn(async move {
             match requested {
                 Location::Directory(path) => read_directory(&path, hidden),
+                Location::Remote { host, path } => {
+                    // Browsing a connected host: the SFTP listing replaces the
+                    // local directory read; failures surface as entry errors.
+                    ssh_store
+                        .browse(&host, &path, Some(ssh_runtime))
+                        .await
+                        .map(|mut entries| {
+                            crate::state::browser::sort_by_name(&mut entries);
+                            entries
+                        })
+                        .map_err(io::Error::other)
+                }
                 Location::Recent => {
                     crate::infrastructure::recent::read(&data, hidden).map(|mut entries| {
                         crate::state::browser::sort_by_name(&mut entries);
@@ -376,6 +397,14 @@ impl FileManager {
             return;
         }
         if entry.browsable() {
+            // A remote directory opens by navigating; a remote file needs a
+            // local materialized copy first.
+            if let Location::Remote { host, .. } = &self.location {
+                if !entry.directory {
+                    self.open_remote_file(host.clone(), entry, cx);
+                }
+                return;
+            }
             self.navigate(entry.path, cx);
             return;
         }
@@ -602,3 +631,83 @@ impl FileManager {
         cx.stop_propagation();
     }
 }
+
+    /// Open a file living on a connected SSH host: download it into a local
+    /// cache directory, then hand the local copy to xdg-open. The cache is
+    /// wiped on application exit.
+    pub(crate) fn open_remote_file(
+        &mut self,
+        host: crate::infrastructure::ssh::HostId,
+        entry: Entry,
+        cx: &mut Context<Self>,
+    ) {
+        self.error = None;
+        cx.notify();
+        let store = self.ssh.store.clone();
+        let runtime = self.ssh.runtime.clone();
+        let language = self.language;
+        let data = self.data_home.clone();
+        let open = cx.background_executor().spawn(async move {
+            // russh futures must be polled inside a tokio runtime.
+            let downloaded = runtime
+                .spawn(async move {
+                    let Some(session) = store.session(&host).await else {
+                        return Err(language.text("SSH session is not connected").to_string());
+                    };
+                    let bytes = session.read_file(&entry.path).await?;
+                    let cache = data.join("virial/remote-cache");
+                    std::fs::create_dir_all(&cache)
+                        .map_err(|error| format!("{}: {error}", language.text("Cannot open")))?;
+                    let name = entry
+                        .name
+                        .chars()
+                        .filter(|ch| !ch.is_control() && *ch != '/')
+                        .collect::<String>();
+                    let local = cache.join(format!(
+                        "{}-{}",
+                        std::process::id(),
+                        if name.is_empty() { "file" } else { &name }
+                    ));
+                    std::fs::write(&local, &bytes)
+                        .map_err(|error| format!("{}: {error}", language.text("Cannot open")))?;
+                    Ok::<_, String>(local)
+                })
+                .await
+                .unwrap_or_else(|join| Err(format!("SSH task failed: {join}")))?;
+            let result = Command::new("xdg-open")
+                .arg(&downloaded)
+                .output()
+                .map_err(|error| {
+                    format!("{} {}: {error}", language.text("Cannot open"), entry.name)
+                })
+                .and_then(|output| {
+                    if output.status.success() {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "{} {}: {}",
+                            language.text("Cannot open"),
+                            entry.name,
+                            String::from_utf8_lossy(&output.stderr).trim()
+                        ))
+                    }
+                });
+            Ok::<_, String>((result, downloaded))
+        });
+        cx.spawn(async move |view, cx| {
+            let result = open.await;
+            let _ = view.update(cx, |view, cx| {
+                match result {
+                    Ok((result, local)) => {
+                        view.remote_cache_files.push(local);
+                        if let Err(error) = result {
+                            view.error = Some(error);
+                        }
+                    }
+                    Err(error) => view.error = Some(error),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }

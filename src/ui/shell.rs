@@ -162,6 +162,8 @@ impl Render for FileManager {
                             )),
                     ),
             )
+            // Status bar with the remote indicator (bottom-left), IDE-style.
+            .child(self.status_bar(cx))
             .when(self.preview_expanded && self.details_open, |root| {
                 root.child(components::reveal(
                     div()

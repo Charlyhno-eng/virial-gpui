@@ -266,6 +266,15 @@ impl Language {
             "Cannot save recent history" => "Impossible d’enregistrer l’historique récent",
             "Cannot open Virial" => "Impossible d’ouvrir Virial",
             "File Manager" => "Gestionnaire de fichiers",
+            "Connect to Host…" => "Se connecter à l’hôte…",
+            "Connect to Host" => "Connexion à l’hôte",
+            "Close Remote Connection" => "Fermer la connexion distante",
+            "Connecting…" => "Connexion…",
+            "Remote" => "Distant",
+            "SSH session is not connected" => "La session SSH n’est pas connectée",
+            "Format: user@host[:port] — keys and the SSH agent are tried automatically" => {
+                "Format : utilisateur@hôte[:port] — les clés et l’agent SSH sont essayés automatiquement"
+            }
             _ => english,
         }
     }

@@ -7,6 +7,7 @@ pub(crate) mod progress;
 pub(crate) mod queue;
 pub(crate) mod recent;
 pub(crate) mod search;
+pub(crate) mod ssh;
 pub(crate) mod storage;
 pub(crate) mod undo;
 pub(crate) mod workspaces;
