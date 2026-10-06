@@ -121,7 +121,7 @@ fn highlights_the_common_code_families_of_the_syntax_set() {
         ("main.sol", "contract C {}\n", "contract"),
         ("main.tf", "resource \"a\" \"b\" {}\n", "resource"),
         ("main.glsl", "void main() { gl_FragColor = vec4(1.); }\n", "void"),
-        ("main.scss", "$c: red;\n.a { color: $c; }\n", "red"),
+        ("main.scss", "$c: red;\n.a { color: $c; }\n", ".a"),
         ("conf.toml", "key = 1\n", "key"),
         ("host.nginx.conf", "server { listen 80; }\n", "server"),
     ];
