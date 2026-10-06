@@ -9,6 +9,7 @@ use crate::{
 };
 use gpui::{AppContext, Context, KeyDownEvent, ScrollStrategy, UniformListScrollHandle, Window};
 use std::{
+    io,
     path::PathBuf,
     process::Command,
     sync::{Arc, atomic::AtomicBool},
@@ -26,12 +27,13 @@ impl FileManager {
             .unwrap_or_else(|| PathBuf::from("/"));
         let focus = cx.focus_handle();
         focus.focus(window);
+        let data_home = crate::infrastructure::recent::data_home(&home);
         let mut view = Self {
             history: History::new(path.clone().into()),
             location: path.clone().into(),
             language: Language::system(),
-            data_home: crate::infrastructure::recent::data_home(&home),
-            places: crate::platform::linux::places::discover(&home),
+            data_home: data_home.clone(),
+            places: crate::platform::places::discover(&home),
             devices: Vec::new(),
             device_error: None,
             device_monitor: None,
@@ -630,7 +632,6 @@ impl FileManager {
         }
         cx.stop_propagation();
     }
-}
 
     /// Open a file living on a connected SSH host: download it into a local
     /// cache directory, then hand the local copy to xdg-open. The cache is
@@ -647,6 +648,7 @@ impl FileManager {
         let runtime = self.ssh.runtime.clone();
         let language = self.language;
         let data = self.data_home.clone();
+        let entry_name = entry.name.clone();
         let open = cx.background_executor().spawn(async move {
             // russh futures must be polled inside a tokio runtime.
             let downloaded = runtime
@@ -678,7 +680,7 @@ impl FileManager {
                 .arg(&downloaded)
                 .output()
                 .map_err(|error| {
-                    format!("{} {}: {error}", language.text("Cannot open"), entry.name)
+                    format!("{} {}: {error}", language.text("Cannot open"), entry_name)
                 })
                 .and_then(|output| {
                     if output.status.success() {
@@ -687,7 +689,7 @@ impl FileManager {
                         Err(format!(
                             "{} {}: {}",
                             language.text("Cannot open"),
-                            entry.name,
+                            entry_name,
                             String::from_utf8_lossy(&output.stderr).trim()
                         ))
                     }
@@ -711,3 +713,4 @@ impl FileManager {
         })
         .detach();
     }
+}

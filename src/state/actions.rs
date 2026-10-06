@@ -1,14 +1,15 @@
 //! Context actions and dialogs; filesystem work runs outside the UI thread.
 use crate::{
     app::FileManager, domain::models::Entry, infrastructure::operations::Operation,
-    platform::linux::applications::Application, ui::components::input::NameInput,
+    platform::applications::Application, ui::components::input::NameInput,
 };
 use gpui::{AppContext, ClipboardItem, Context, Entity, KeyDownEvent, Pixels, Point, Window};
 use std::{
     fs,
-    os::unix::fs::{MetadataExt, PermissionsExt},
     path::PathBuf,
 };
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 #[derive(Clone)]
 pub struct Menu {
@@ -178,7 +179,7 @@ impl FileManager {
                 Action::Rename => {
                     if let Some(entry) = entry {
                         let input =
-                            cx.new(|cx| NameInput::for_rename(&entry.name, entry.directory, window, cx));
+                            cx.new(|cx| NameInput::for_rename(entry.name.clone(), entry.directory, window, cx));
                         self.dialog = Some(Dialog::Name {
                             action: NameAction::RemoteRename { source: entry.path.clone() },
                             input,
@@ -314,7 +315,7 @@ impl FileManager {
                             let home = self.home.clone();
                             let language = self.language;
                             let task = cx.background_executor().spawn(async move {
-                                crate::platform::linux::applications::installed(&home, language)
+                                crate::platform::applications::installed(&home, language)
                             });
                             cx.spawn(async move |view, cx| {
                                 let applications = task.await;
@@ -356,6 +357,7 @@ impl FileManager {
                                     ));
                                 }
                                 fs::symlink_metadata(&path).map(|metadata| {
+                                    #[cfg(unix)]
                                     let mut details = format!(
                                         "{}: {}\n{}: {}\n{}: {:o}\nUID: {} · GID: {}",
                                         language.text("Path"),
@@ -366,6 +368,14 @@ impl FileManager {
                                         metadata.permissions().mode() & 0o7777,
                                         metadata.uid(),
                                         metadata.gid()
+                                    );
+                                    #[cfg(not(unix))]
+                                    let mut details = format!(
+                                        "{}: {}\n{}: {}",
+                                        language.text("Path"),
+                                        path.display(),
+                                        language.text("Size (bytes)"),
+                                        metadata.len()
                                     );
                                     if let Ok(modified) = metadata.modified() {
                                         let date: chrono::DateTime<chrono::Utc> = modified.into();
@@ -774,10 +784,12 @@ impl FileManager {
     pub(crate) fn open_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.ssh.menu_open = false;
         self.ssh.error = None;
-        let mut input =
-            crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
-        input.placeholder = self.language.text("user@host[:port]").into();
-        self.ssh.dialog_input = Some(cx.new(|_| input));
+        self.ssh.dialog_input = Some(cx.new(|cx| {
+            let mut input =
+                crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
+            input.placeholder = self.language.text("user@host[:port]").into();
+            input
+        }));
         self.focus.focus(window);
         cx.notify();
     }

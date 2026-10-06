@@ -430,7 +430,7 @@ impl FileManager {
                                     .when(!renaming && !view.busy && !view.loading && view.marquee.is_none(), |row| {
                                         let manager = cx.entity();
                                         row.when(!trash, |row| row.on_drag(payload, move |drag, _, window, cx| {
-                                            if let Some(uris) = crate::platform::linux::file_drag::uri_list(&drag.paths) {
+                                            if let Some(uris) = crate::platform::file_drag::uri_list(&drag.paths) {
                                                 window.start_file_drag(uris);
                                             }
                                             manager.update(cx, |view, cx| {

@@ -8,15 +8,16 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
-    os::{
-        fd::AsRawFd,
-        unix::{
-            ffi::OsStrExt,
-            fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-        },
-    },
     path::{Path, PathBuf},
     sync::Mutex,
+};
+#[cfg(unix)]
+use std::os::{
+    fd::AsRawFd,
+    unix::{
+        ffi::OsStrExt,
+        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+    },
 };
 use url::Url;
 
@@ -27,6 +28,26 @@ struct Record {
     path: PathBuf,
     before: String,
     after: String,
+}
+
+#[cfg(unix)]
+fn os_name_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn os_name_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.to_string_lossy().as_bytes().to_vec()
+}
+
+#[cfg(unix)]
+fn link_bytes(target: &Path) -> Vec<u8> {
+    target.as_os_str().as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn link_bytes(target: &Path) -> Vec<u8> {
+    target.to_string_lossy().as_bytes().to_vec()
 }
 
 fn invalid() -> io::Error {
@@ -159,15 +180,21 @@ fn fingerprint_impl(
             progress.checkpoint()?;
         }
         let metadata = fs::symlink_metadata(path)?;
+        #[cfg(unix)]
         if permissions {
             hash.update(metadata.permissions().mode().to_le_bytes());
+        }
+        #[cfg(windows)]
+        if permissions {
+            // No POSIX mode bits: hash the readonly flag for a stable signature.
+            hash.update([u8::from(metadata.permissions().readonly())]);
         }
         if metadata.is_symlink() {
             hash.update(b"link");
             let target = fs::read_link(path)?;
-            let bytes = target.as_os_str().as_bytes();
+            let bytes = link_bytes(&target);
             hash.update((bytes.len() as u64).to_le_bytes());
-            hash.update(bytes);
+            hash.update(&bytes);
         } else if metadata.is_dir() {
             hash.update(b"directory");
             let mut children = fs::read_dir(path)?.collect::<io::Result<Vec<_>>>()?;
@@ -175,7 +202,7 @@ fn fingerprint_impl(
             hash.update((children.len() as u64).to_le_bytes());
             for child in children {
                 let name = child.file_name();
-                let bytes = name.as_bytes();
+                let bytes = os_name_bytes(&name);
                 hash.update((bytes.len() as u64).to_le_bytes());
                 hash.update(bytes);
                 visit(&child.path(), hash, progress, buffer, report, permissions)?;
@@ -185,10 +212,13 @@ fn fingerprint_impl(
             hash.update(metadata.len().to_le_bytes());
             let mut file = operations::open_regular_file(path)?;
             let opened = file.metadata()?;
-            if opened.dev() != metadata.dev()
+            #[cfg(unix)]
+            let changed = opened.dev() != metadata.dev()
                 || opened.ino() != metadata.ino()
-                || opened.len() != metadata.len()
-            {
+                || opened.len() != metadata.len();
+            #[cfg(windows)]
+            let changed = opened.len() != metadata.len();
+            if changed {
                 return Err(io::Error::other("Source changed while reading"));
             }
             // Allocate once for the whole tree, rather than clearing a large
@@ -326,10 +356,14 @@ fn entries(directory: &Path) -> io::Result<Vec<(u64, PathBuf)>> {
 
 fn history(data: &Path) -> io::Result<(PathBuf, File)> {
     let directory = data.join("virial/undo");
+    #[cfg(unix)]
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(&directory)?;
+    #[cfg(windows)]
+    fs::DirBuilder::new().recursive(true).create(&directory)?;
+    #[cfg(unix)]
     let lock = OpenOptions::new()
         .read(true)
         .write(true)
@@ -337,7 +371,15 @@ fn history(data: &Path) -> io::Result<(PathBuf, File)> {
         .truncate(false)
         .mode(0o600)
         .open(directory.join("lock"))?;
+    #[cfg(windows)]
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(directory.join("lock"))?;
     // A separate open file description per call serializes other Virial processes too.
+    #[cfg(unix)]
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
         return Err(io::Error::last_os_error());
     }
@@ -445,10 +487,17 @@ fn snapshot_with_progress(
 fn discard(path: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_dir() {
+        #[cfg(unix)]
         fs::set_permissions(
             path,
             fs::Permissions::from_mode(metadata.permissions().mode() | 0o700),
         )?;
+        #[cfg(windows)]
+        {
+            let mut permissions = metadata.permissions();
+            permissions.set_readonly(false);
+            fs::set_permissions(path, permissions)?;
+        }
         for entry in fs::read_dir(path)? {
             discard(&entry?.path())?;
         }
@@ -880,7 +929,10 @@ fn restore_moves(records: &[Record]) -> io::Result<()> {
         }
         match operations::rename(&target.path, &source.path) {
             Ok(()) => {}
+            #[cfg(unix)]
             Err(error) if error.raw_os_error() == Some(libc::EXDEV) => continue,
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(17) => continue,
             Err(error) => return Err(error),
         }
         if fingerprint(&source.path)

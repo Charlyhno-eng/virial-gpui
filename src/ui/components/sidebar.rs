@@ -1,4 +1,4 @@
-use crate::platform::linux::devices::{Action, Volume};
+use crate::platform::devices::{Action, Volume};
 use crate::ui::components::button::navigation_button;
 use crate::ui::components::section_label;
 use crate::{app::FileManager, domain::location::Location, ui::icons::icon, ui::theme::*};

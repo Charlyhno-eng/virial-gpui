@@ -58,7 +58,7 @@ impl Location {
         match self {
             Self::Workspaces => language.text("Workspaces").into(),
             Self::Directory(path) => path.display().to_string(),
-            Self::Remote { host, path } => format!("{host}:{path}"),
+            Self::Remote { host, path } => format!("{host}:{}", path.display()),
             Self::Recent => language.text("Recently opened files").into(),
             Self::Trash => language
                 .text("Restore items to their original location")

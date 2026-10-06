@@ -7,13 +7,6 @@ use std::{
     ffi::{CString, OsStr, OsString},
     fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter, Write},
-    os::{
-        fd::{AsRawFd, FromRawFd, OwnedFd},
-        unix::{
-            ffi::{OsStrExt, OsStringExt},
-            fs::MetadataExt,
-        },
-    },
     path::{Path, PathBuf},
     sync::{
         Arc, RwLock,
@@ -22,11 +15,64 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+#[cfg(unix)]
+use std::os::{
+    fd::{AsRawFd, FromRawFd, OwnedFd},
+    unix::{
+        ffi::{OsStrExt, OsStringExt},
+        fs::MetadataExt,
+    },
+};
 
+#[cfg(windows)]
+fn windows_identity(metadata: &fs::Metadata) -> (u64, u64) {
+    (metadata.len(), 0)
+}
+
+#[cfg(unix)]
+fn os_bytes(value: &OsStr) -> &[u8] {
+    value.as_bytes()
+}
+
+#[cfg(windows)]
+fn os_bytes(value: &OsStr) -> Vec<u8> {
+    value.to_string_lossy().as_bytes().to_vec()
+}
+
+#[cfg(unix)]
+fn bytes_to_os(value: &[u8]) -> OsString {
+    OsString::from_vec(value.to_vec())
+}
+
+#[cfg(windows)]
+fn bytes_to_os(value: &[u8]) -> OsString {
+    OsString::from(String::from_utf8_lossy(value).into_owned())
+}
+
+#[cfg(unix)]
+fn path_bytes(value: &Path) -> Vec<u8> {
+    value.as_os_str().as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn path_bytes(value: &Path) -> Vec<u8> {
+    value.to_string_lossy().as_bytes().to_vec()
+}
+
+#[cfg(unix)]
+fn os_name_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn os_name_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.to_string_lossy().as_bytes().to_vec()
+}
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Stamp(u64, u64, i64, i64, i64, i64);
 
 impl Stamp {
+    #[cfg(unix)]
     fn read(metadata: &fs::Metadata) -> Self {
         Self(
             metadata.dev(),
@@ -36,6 +82,17 @@ impl Stamp {
             metadata.ctime(),
             metadata.ctime_nsec(),
         )
+    }
+
+    #[cfg(windows)]
+    fn read(metadata: &fs::Metadata) -> Self {
+        let secs = |time: std::io::Result<std::time::SystemTime>| {
+            time.ok()
+                .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0)
+        };
+        Self(metadata.len(), 0, secs(metadata.modified()), 0, secs(metadata.created()), 0)
     }
 }
 
@@ -89,13 +146,13 @@ fn letter_mask(text: &str) -> u128 {
 
 impl Directory {
     fn new(stored: StoredDirectory, roots: &[PathBuf]) -> Self {
-        let path = PathBuf::from(OsString::from_vec(stored.path.clone()));
+        let path = PathBuf::from(bytes_to_os(&stored.path));
         let hidden_parent = roots
             .iter()
             .find_map(|root| path.strip_prefix(root).ok())
             .unwrap_or(&path)
             .components()
-            .any(|part| part.as_os_str().as_bytes().starts_with(b"."));
+            .any(|part| os_bytes(part.as_os_str()).starts_with(b"."));
         let mut path_key = path.to_string_lossy().to_lowercase();
         if !path_key.ends_with('/') {
             path_key.push('/');
@@ -106,7 +163,7 @@ impl Directory {
             .iter()
             .enumerate()
             .map(|(stored_index, item)| {
-                let name = OsStr::from_bytes(&item.name).to_string_lossy();
+                let name = bytes_to_os(&item.name).as_os_str().to_string_lossy().into_owned();
                 let name_key = name.to_lowercase().into_boxed_str();
                 let letters = parent_letters | letter_mask(&name_key);
                 let hidden = hidden_parent || name.starts_with('.');
@@ -134,7 +191,7 @@ impl Directory {
     }
 
     fn item_path(&self, item: &Item) -> PathBuf {
-        self.path.join(OsStr::from_bytes(&self.raw_item(item).name))
+        self.path.join(bytes_to_os(&self.raw_item(item).name).as_os_str())
     }
 }
 
@@ -396,7 +453,7 @@ impl SearchHandle {
             let directory = raw.kind == 1 || (raw.kind == 2 && path.is_dir());
             entries.push(Entry {
                 path,
-                name: OsStr::from_bytes(&raw.name).to_string_lossy().into_owned(),
+                name: bytes_to_os(&raw.name).as_os_str().to_string_lossy().into_owned(),
                 bytes: None,
                 // Resolve only selected symlinks, never every file in the catalog.
                 directory,
@@ -410,11 +467,13 @@ impl SearchHandle {
     }
 }
 
+#[cfg(unix)]
 struct Watches {
     fd: Option<OwnedFd>,
     paths: HashMap<i32, PathBuf>,
 }
 
+#[cfg(unix)]
 impl Watches {
     fn new() -> Self {
         // SAFETY: inotify_init1 takes only flags and returns a new owned descriptor.
@@ -516,6 +575,28 @@ impl Watches {
     }
 }
 
+#[cfg(not(unix))]
+struct Watches;
+
+#[cfg(not(unix))]
+impl Watches {
+    fn new() -> Self {
+        Watches
+    }
+
+    fn add(&mut self, _path: &Path) {}
+
+    fn remove_tree(&mut self, _root: &Path) {}
+
+    fn wait(&self) {
+        // No native notifications on this platform yet: poll on a timer.
+        thread::park_timeout(Duration::from_secs(1));
+    }
+
+    fn changes(&mut self) -> (HashSet<PathBuf>, bool) {
+        (HashSet::new(), false)
+    }
+}
 struct Inventory {
     handle: SearchHandle,
     roots: Vec<PathBuf>,
@@ -550,7 +631,11 @@ impl Inventory {
     }
 
     fn excluded(&self, path: &Path) -> bool {
-        ["/proc", "/sys", "/dev"]
+        #[cfg(unix)]
+        let pseudo = ["/proc", "/sys", "/dev"];
+        #[cfg(windows)]
+        let pseudo = ["\\\\?\\", "C:\\Windows\\System32\\config"];
+        pseudo
             .iter()
             .any(|root| path.starts_with(root))
             || self
@@ -608,7 +693,11 @@ impl Inventory {
                 return;
             }
         };
-        if !self.visited.insert((metadata.dev(), metadata.ino())) {
+        #[cfg(unix)]
+        let identity = (metadata.dev(), metadata.ino());
+        #[cfg(windows)]
+        let identity = windows_identity(&metadata);
+        if !self.visited.insert(identity) {
             return;
         }
         self.seen.insert(path.clone());
@@ -656,7 +745,7 @@ impl Inventory {
                     continue;
                 };
                 stored.push(StoredItem {
-                    name: item.file_name().into_vec().into_boxed_slice(),
+                    name: os_name_bytes(&item.file_name()).into_boxed_slice(),
                     kind: if kind.is_dir() {
                         1
                     } else if kind.is_symlink() {
@@ -674,7 +763,7 @@ impl Inventory {
             } else {
                 let directory = Arc::new(Directory::new(
                     StoredDirectory {
-                        path: path.as_os_str().as_bytes().to_vec(),
+                        path: path_bytes(path.as_path()),
                         stamp,
                         items: stored.into_boxed_slice(),
                     },
@@ -704,7 +793,7 @@ impl Inventory {
                 .iter()
                 .filter(|item| item.kind == 1 && !children.contains(&item.name))
             {
-                self.remove_tree(&path.join(OsStr::from_bytes(&child.name)));
+                self.remove_tree(&path.join(bytes_to_os(&child.name).as_os_str()));
             }
         }
         let known = self.handle.0.read().unwrap();
@@ -713,7 +802,7 @@ impl Inventory {
             .items
             .iter()
             .filter(|item| item.kind == 1)
-            .map(|item| path.join(OsStr::from_bytes(&item.name)))
+            .map(|item| path.join(bytes_to_os(&item.name).as_os_str()))
             .filter(|path| self.full_scan || !known.directories.contains_key(path))
             .collect();
         drop(known);
@@ -750,7 +839,7 @@ impl Inventory {
             1,
             self.roots
                 .iter()
-                .map(|path| path.as_os_str().as_bytes().to_vec())
+                .map(|root: &std::path::PathBuf| path_bytes(root.as_path()))
                 .collect(),
         )
     }
@@ -773,7 +862,7 @@ impl Inventory {
                 break;
             }
             let stored: StoredDirectory = serde_json::from_str(&line?)?;
-            let path = PathBuf::from(OsString::from_vec(stored.path.clone()));
+            let path = PathBuf::from(bytes_to_os(&stored.path));
             if self.excluded(&path) || !self.roots.iter().any(|root| path.starts_with(root)) {
                 continue;
             }
@@ -830,7 +919,11 @@ impl Inventory {
         for path in changed {
             self.invalidated.insert(path.clone());
             if let Ok(metadata) = fs::metadata(&path) {
-                self.visited.remove(&(metadata.dev(), metadata.ino()));
+                #[cfg(unix)]
+                let identity = (metadata.dev(), metadata.ino());
+                #[cfg(windows)]
+                let identity = windows_identity(&metadata);
+                self.visited.remove(&identity);
             }
             if !self.pending.contains(&path) {
                 self.pending.push_back(path);

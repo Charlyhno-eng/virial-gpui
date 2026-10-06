@@ -15,13 +15,13 @@ use gpui::{
 fn main() {
     // Register downloaded binaries without requiring a graphical session.
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--install-desktop")) {
-        if let Err(error) = platform::linux::desktop::register() {
+        if let Err(error) = platform::desktop::register() {
             eprintln!("Cannot register Virial's desktop icon: {error}");
             std::process::exit(1);
         }
         return;
     }
-    if let Err(error) = platform::linux::desktop::register() {
+    if let Err(error) = platform::desktop::register() {
         eprintln!("Cannot register Virial's desktop icon: {error}");
     }
     let path = config::initial_path();
@@ -54,7 +54,7 @@ fn main() {
                 window_background: WindowBackgroundAppearance::Transparent,
                 // Match the desktop launcher for window icons. GPUI 0.2.2
                 // panics when requesting a raw X11 window handle.
-                app_id: Some(platform::linux::desktop::APP_ID.into()),
+                app_id: Some(platform::desktop::APP_ID.into()),
                 window_min_size: Some(minimum_size),
                 ..Default::default()
             };

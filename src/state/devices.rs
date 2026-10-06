@@ -1,6 +1,6 @@
 use crate::{
     app::FileManager,
-    platform::linux::devices::{self, Action, Volume},
+    platform::devices::{self, Action, Volume},
 };
 use gpui::Context;
 use std::time::Duration;

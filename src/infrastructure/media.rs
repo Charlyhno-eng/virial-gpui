@@ -1,8 +1,9 @@
 //! Optional libmpv playback. The UI only reads snapshots and queues commands.
 use gpui::RenderImage;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::{
     ffi::{CStr, CString, c_char, c_int, c_void},
-    os::unix::ffi::OsStrExt,
     path::PathBuf,
     ptr,
     sync::{
@@ -138,7 +139,10 @@ impl Api {
         // SAFETY: symbols use the public libmpv C ABI; all copied function pointers
         // are kept alive by _library. No user-provided libraries are loaded.
         unsafe {
+            #[cfg(unix)]
             let library = libloading::Library::new("libmpv.so.2").map_err(|_| ())?;
+            #[cfg(windows)]
+            let library = libloading::Library::new("libmpv-2.dll").map_err(|_| ())?;
             Ok(Arc::new(Self {
                 create: *library.get(b"mpv_create\0").map_err(|_| ())?,
                 initialize: *library.get(b"mpv_initialize\0").map_err(|_| ())?,
@@ -237,7 +241,10 @@ fn run(
     commands: mpsc::Receiver<Control>,
 ) -> Result<(), ()> {
     let api = Api::load()?;
+    #[cfg(unix)]
     let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| ())?;
+    #[cfg(windows)]
+    let path = CString::new(path.to_string_lossy().as_bytes()).map_err(|_| ())?;
     // SAFETY: creates a uniquely owned handle, used only by this control thread.
     let handle = unsafe { (api.create)() };
     if handle.is_null() {
