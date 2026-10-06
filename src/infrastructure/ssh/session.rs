@@ -298,6 +298,11 @@ impl Session {
             .map_err(|error| format!("Cannot read {target}: {error}"))
     }
 
+    // TODO(ssh-pr3): stream large files with open() + chunked reads instead
+    // of read(), reporting progress through infrastructure::progress.
+    // TODO(ssh-pr2): expose the presented host key fingerprint after the
+    // handshake so the connect dialog can show it (verify dialog).
+
     /// Close the session gracefully.
     pub(crate) async fn disconnect(&self) {
         let mut handle = self.connection.lock().await;

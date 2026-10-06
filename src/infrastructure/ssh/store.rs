@@ -123,6 +123,13 @@ impl SshStore {
             session.disconnect().await;
         }
     }
+
+    // TODO(ssh-pr2): emit SessionEvent::StateChanged on connect/disconnect so
+    // the status bar reacts to a dropped connection without user polling.
+    // TODO(ssh-pr2): track per-session failure counts and surface the last
+    // error string through SessionState::Failed for the badge tooltip.
+    // TODO(ssh-pr3): upload/download entry points returning a progress handle
+    // compatible with infrastructure::progress for the transfer panel.
 }
 
 #[cfg(test)]
