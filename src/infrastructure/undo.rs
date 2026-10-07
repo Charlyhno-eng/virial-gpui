@@ -472,11 +472,14 @@ fn snapshot_with_progress(
             }
         }
         // Windows requires a writable handle to change file times; a read-only
-        // File::open would fail with Access Denied there.
-        fs::OpenOptions::new()
-            .write(true)
-            .open(destination)?
-            .set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
+        // File::open would fail with Access Denied there. Unix checks ownership
+        // instead, so a read-only handle also covers directories (a writable
+        // open fails with EISDIR) and read-only files (EACCES).
+        #[cfg(windows)]
+        let opened = fs::OpenOptions::new().write(true).open(destination)?;
+        #[cfg(unix)]
+        let opened = File::open(destination)?;
+        opened.set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
     }
     if progress.is_some() {
         operations::copy_with_progress(source, destination, progress)?;

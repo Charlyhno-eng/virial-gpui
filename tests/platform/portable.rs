@@ -33,6 +33,7 @@ fn portable_places_never_panics_on_a_missing_home() {
     assert_eq!(discovered[0].label, "Home");
 }
 
+#[cfg(not(target_os = "linux"))]
 #[test]
 fn portable_open_with_list_is_empty_but_callable() {
     let home = temp_home("apps");

@@ -31,7 +31,8 @@ fn entry_count_matches_read_directory_length() {
     fs::write(root.join("two"), b"22").unwrap();
     fs::write(root.join(".dot-file"), b"").unwrap();
     assert_eq!(directory_entry_count(&root, true).unwrap(), 3);
-    // ".dot-file" counts as hidden, so it disappears when hidden=false.`r`n    assert_eq!(directory_entry_count(&root, false).unwrap(), 2);
+    // ".dot-file" counts as hidden, so it disappears when hidden=false.
+    assert_eq!(directory_entry_count(&root, false).unwrap(), 2);
     assert!(directory_entry_count(&root.join("missing"), false).is_err());
     fs::remove_dir_all(root).unwrap();
 }
