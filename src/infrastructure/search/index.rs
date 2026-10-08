@@ -642,17 +642,38 @@ impl Inventory {
 
     fn excluded(&self, path: &Path) -> bool {
         #[cfg(unix)]
-        let pseudo = ["/proc", "/sys", "/dev"];
+        {
+            const PSEUDO: [&str; 3] = ["/proc", "/sys", "/dev"];
+            if PSEUDO.iter().any(|root| path.starts_with(root)) {
+                return true;
+            }
+        }
         #[cfg(windows)]
-        let pseudo = ["\\\\?\\", "C:\\Windows\\System32\\config"];
-        pseudo
-            .iter()
-            .any(|root| path.starts_with(root))
-            || self
-                .cache
-                .as_ref()
-                .and_then(|cache| cache.parent())
-                .is_some_and(|cache| path.starts_with(cache))
+        {
+            // Root noise that can never be worth crawling on Windows, matched
+            // by directory name so drive-letter assumptions stay out. AppData
+            // and node_modules alone bury real results under tens of thousands
+            // of cache entries.
+            const NOISE: [&str; 6] = [
+                "AppData",
+                "node_modules",
+                "$Recycle.Bin",
+                "System Volume Information",
+                "Program Files",
+                "ProgramData",
+            ];
+            let noisy = path.components().any(|component| {
+                matches!(component, std::path::Component::Normal(name)
+                    if NOISE.iter().any(|needle| name.eq_ignore_ascii_case(needle)))
+            });
+            if noisy || path.starts_with("\\\\?\\") {
+                return true;
+            }
+        }
+        self.cache
+            .as_ref()
+            .and_then(|cache| cache.parent())
+            .is_some_and(|cache| path.starts_with(cache))
     }
 
     fn begin_scan(&mut self, force: bool) {
