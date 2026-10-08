@@ -9,6 +9,7 @@ use russh::client::{self, AuthResult};
 use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::marker::Unpin;
 use tokio::sync::Mutex as AsyncMutex;
 
 /// What the status bar badge shows. Plain data so the UI layer maps it to
@@ -92,11 +93,55 @@ pub(crate) fn entry_from_dir_entry(
 /// remote metadata into the repository's own `Entry` model.
 pub(crate) fn entry_from_parts(parent: &Path, name: &str, directory: bool, bytes: Option<u64>) -> Entry {
     Entry {
-        path: parent.join(name),
+        path: join_remote(parent, name),
         name: name.to_string(),
         directory,
         bytes,
     }
+}
+
+/// Join a remote POSIX parent and name. Remote paths must never go through
+/// `Path::join`: on Windows it injects `\` separators the SFTP server rejects
+/// (`/home\demon`). Passing through here also repairs paths that arrived via
+/// a Windows `PathBuf`.
+pub(crate) fn join_remote(parent: &Path, name: &str) -> PathBuf {
+    let base = parent.to_string_lossy().replace('\\', "/");
+    let base = base.trim_end_matches('/');
+    if base.is_empty() {
+        PathBuf::from(format!("/{name}"))
+    } else {
+        PathBuf::from(format!("{base}/{name}"))
+    }
+}
+
+/// The wire form of a remote path: forward slashes only.
+fn remote_string(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+/// Enumerate one agent connection's identities and try each against `handle`.
+async fn try_agent_identities<S: russh::keys::agent::client::AgentStream + Send + Unpin>(
+    mut agent: russh::keys::agent::client::AgentClient<S>,
+    handle: &mut client::Handle<HostKeyVerifier>,
+    username: &str,
+) -> Result<AuthResult, String> {
+    let identities = agent
+        .request_identities()
+        .await
+        .map_err(|error| format!("SSH agent error: {error}"))?;
+    let mut last = Err("SSH agent has no identities".into());
+    for identity in identities {
+        let public = identity.public_key().into_owned();
+        match handle
+            .authenticate_publickey_with(username, public, None, &mut agent)
+            .await
+        {
+            Ok(result) if result.success() => return Ok(result),
+            Ok(_) => last = Err("SSH agent key rejected".into()),
+            Err(error) => last = Err(format!("SSH agent error: {error}")),
+        }
+    }
+    last
 }
 
 /// A live SSH session: connection handle plus an SFTP channel.
@@ -126,9 +171,15 @@ impl Session {
             ..Default::default()
         };
         let address = (config.host.as_str(), config.port);
-        let mut handle = client::connect(Arc::new(client_config), address, verifier)
-            .await
-            .map_err(|error| format!("{}:{}, {error}", config.host, config.port))?;
+        // A filtered port otherwise burns ~21 s of SYN retries with the badge
+        // stuck on "Connecting…"; 10 s keeps the failure actionable.
+        let mut handle = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client::connect(Arc::new(client_config), address, verifier),
+        )
+        .await
+        .map_err(|_| format!("{}:{}: connection timed out after 10 s", config.host, config.port))?
+        .map_err(|error| format!("{}:{}, {error}", config.host, config.port))?;
         let username = config.username.clone();
         let outcome = match &auth {
             HostAuth::Agent => Self::authenticate_with_agent(&mut handle, &username).await,
@@ -173,40 +224,58 @@ impl Session {
         })
     }
 
-    /// Enumerate agent identities and try each one (ssh-agent flow).
+    /// Enumerate agent identities and try each one (ssh-agent flow). When no
+    /// agent has a usable key, the default keys in `~/.ssh` are tried — which
+    /// is what the connect dialog promises, and what makes a plain key-based
+    /// connect work without any agent running.
     async fn authenticate_with_agent(
         handle: &mut client::Handle<HostKeyVerifier>,
         username: &str,
     ) -> Result<AuthResult, String> {
+        let mut last: Result<AuthResult, String> = Err("No SSH agent".into());
         #[cfg(unix)]
-        {
-            let mut agent = russh::keys::agent::client::AgentClient::connect_env()
+        match russh::keys::agent::client::AgentClient::connect_env().await {
+            Ok(agent) => last = try_agent_identities(agent, handle, username).await,
+            Err(error) => last = Err(format!("No SSH agent: {error}")),
+        }
+        #[cfg(windows)]
+        // Pageant first, then the OpenSSH agent's named pipe; the two streams
+        // are distinct types, so each connection scopes its own attempt.
+        match russh::keys::agent::client::AgentClient::connect_pageant().await {
+            Ok(agent) => last = try_agent_identities(agent, handle, username).await,
+            Err(_) => {
+                match russh::keys::agent::client::AgentClient::connect_named_pipe(
+                    r"\\.\pipe\openssh-ssh-agent",
+                )
                 .await
-                .map_err(|error| format!("No SSH agent: {error}"))?;
-            let identities = agent
-                .request_identities()
-                .await
-                .map_err(|error| format!("SSH agent error: {error}"))?;
-            let mut last = Err("SSH agent has no identities".into());
-            for identity in identities {
-                let public = identity.public_key().into_owned();
-                match handle
-                    .authenticate_publickey_with(username, public, None, &mut agent)
-                    .await
                 {
-                    Ok(result) if result.success() => return Ok(result),
-                    Ok(_) => last = Err("SSH agent key rejected".into()),
-                    Err(error) => last = Err(format!("SSH agent error: {error}")),
+                    Ok(agent) => last = try_agent_identities(agent, handle, username).await,
+                    Err(error) => last = Err(format!("No SSH agent: {error}")),
                 }
             }
-            last
         }
-        #[cfg(not(unix))]
-        {
-            let _ = handle;
-            let _ = username;
-            Err("SSH agent authentication is unavailable on this platform".into())
+        if last.is_ok() {
+            return last;
         }
+        // No agent key worked (or no agent at all): fall back to the default
+        // keys, which is what the connect dialog promises.
+        if let Some(home) = home::home_dir() {
+            for name in ["id_ed25519", "id_rsa"] {
+                let path = home.join(".ssh").join(name);
+                if !path.exists() {
+                    continue;
+                }
+                let Ok(key) = load_secret_key(&path, None) else {
+                    continue;
+                };
+                let key = PrivateKeyWithHashAlg::new(Arc::new(key), None);
+                match handle.authenticate_publickey(username, key).await {
+                    Ok(result) if result.success() => return Ok(result),
+                    _ => {}
+                }
+            }
+        }
+        last
     }
 
     pub(crate) fn state(&self) -> &SessionState {
@@ -229,7 +298,7 @@ impl Session {
 
     /// List a remote directory as the repository's own entries.
     pub(crate) async fn read_dir(&self, directory: &Path) -> Result<Vec<Entry>, String> {
-        let path = directory.to_string_lossy().into_owned();
+        let path = remote_string(directory);
         let sftp = self.sftp.lock().await;
         let read = sftp
             .read_dir(&path)
@@ -242,7 +311,7 @@ impl Session {
 
     /// Create a remote directory.
     pub(crate) async fn create_dir(&self, path: &Path) -> Result<(), String> {
-        let target = path.to_string_lossy().into_owned();
+        let target = remote_string(path);
         self.sftp
             .lock()
             .await
@@ -253,10 +322,7 @@ impl Session {
 
     /// Rename (move) a remote path.
     pub(crate) async fn rename(&self, from: &Path, to: &Path) -> Result<(), String> {
-        let (source, target) = (
-            from.to_string_lossy().into_owned(),
-            to.to_string_lossy().into_owned(),
-        );
+        let (source, target) = (remote_string(from), remote_string(to));
         self.sftp
             .lock()
             .await
@@ -267,7 +333,7 @@ impl Session {
 
     /// Delete a remote file.
     pub(crate) async fn remove_file(&self, path: &Path) -> Result<(), String> {
-        let target = path.to_string_lossy().into_owned();
+        let target = remote_string(path);
         self.sftp
             .lock()
             .await
@@ -278,7 +344,7 @@ impl Session {
 
     /// Delete an empty remote directory.
     pub(crate) async fn remove_dir(&self, path: &Path) -> Result<(), String> {
-        let target = path.to_string_lossy().into_owned();
+        let target = remote_string(path);
         self.sftp
             .lock()
             .await
@@ -289,7 +355,7 @@ impl Session {
 
     /// Read a whole remote file into memory (small files: previews).
     pub(crate) async fn read_file(&self, path: &Path) -> Result<Vec<u8>, String> {
-        let target = path.to_string_lossy().into_owned();
+        let target = remote_string(path);
         self.sftp
             .lock()
             .await
