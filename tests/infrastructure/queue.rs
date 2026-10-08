@@ -1,6 +1,7 @@
 use super::*;
 use std::{
     ffi::OsString,
+    process::Command,
     sync::mpsc,
     time::Duration,
 };
