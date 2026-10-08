@@ -24,9 +24,19 @@ use std::os::{
     },
 };
 
+/// What the walk keys its "already visited folders" set on: inode identity
+/// where it exists, resolved paths where it does not (Windows).
+#[cfg(unix)]
+type VisitIdentity = (u64, u64);
 #[cfg(windows)]
-fn windows_identity(metadata: &fs::Metadata) -> (u64, u64) {
-    (metadata.len(), 0)
+type VisitIdentity = PathBuf;
+
+#[cfg(windows)]
+fn windows_identity(path: &Path) -> PathBuf {
+    // Directories all report len 0, so a size-based identity would collapse
+    // the whole walk onto the first folder visited and silently skip the rest;
+    // resolved paths are stable, and the walk never follows links.
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(unix)]
@@ -603,7 +613,7 @@ struct Inventory {
     cache: Option<PathBuf>,
     watches: Watches,
     pending: VecDeque<PathBuf>,
-    visited: HashSet<(u64, u64)>,
+    visited: HashSet<VisitIdentity>,
     seen: HashSet<PathBuf>,
     full_scan: bool,
     force_scan: bool,
@@ -696,7 +706,7 @@ impl Inventory {
         #[cfg(unix)]
         let identity = (metadata.dev(), metadata.ino());
         #[cfg(windows)]
-        let identity = windows_identity(&metadata);
+        let identity = windows_identity(&path);
         if !self.visited.insert(identity) {
             return;
         }
@@ -918,11 +928,14 @@ impl Inventory {
         }
         for path in changed {
             self.invalidated.insert(path.clone());
+            #[cfg(unix)]
             if let Ok(metadata) = fs::metadata(&path) {
-                #[cfg(unix)]
                 let identity = (metadata.dev(), metadata.ino());
-                #[cfg(windows)]
-                let identity = windows_identity(&metadata);
+                self.visited.remove(&identity);
+            }
+            #[cfg(windows)]
+            {
+                let identity = windows_identity(&path);
                 self.visited.remove(&identity);
             }
             if !self.pending.contains(&path) {
