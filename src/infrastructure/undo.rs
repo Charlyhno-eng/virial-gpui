@@ -472,11 +472,20 @@ fn snapshot_with_progress(
             }
         }
         // Windows requires a writable handle to change file times; a read-only
-        // File::open would fail with Access Denied there. Unix checks ownership
-        // instead, so a read-only handle also covers directories (a writable
-        // open fails with EISDIR) and read-only files (EACCES).
+        // File::open would fail with Access Denied there. Directories reject a
+        // plain writable open outright, so the backup-semantics flag (the same
+        // route SetFileTime-style tools take) keeps the snapshot working for
+        // them. Unix checks ownership instead, so a read-only handle covers
+        // directories (a writable open fails with EISDIR) and read-only files.
         #[cfg(windows)]
-        let opened = fs::OpenOptions::new().write(true).open(destination)?;
+        let opened = {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+            fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(destination)?
+        };
         #[cfg(unix)]
         let opened = File::open(destination)?;
         opened.set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
