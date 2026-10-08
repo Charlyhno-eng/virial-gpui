@@ -96,10 +96,11 @@ impl FileManager {
                     .border_color(color(BORDER))
                     .text_size(px(9.5))
                     .text_color(color(MUTED))
-                    .child(self.language.text("LOCAL FILES"))
-                    // Remote indicator rides the same line as the footer label
-                    // instead of adding a full-width status bar row.
+                    // Remote indicator leads the row, split from the location
+                    // label by a thin vertical rule: two zones, one line.
                     .child(self.remote_indicator(cx))
+                    .child(div().w(px(1.)).h(px(14.)).bg(color(BORDER)))
+                    .child(self.language.text("LOCAL FILES"))
                     .when_some(available_space, |footer, bytes| {
                         footer.child(div().flex_1().min_w_0().text_ellipsis().text_right().child(
                             format!(
