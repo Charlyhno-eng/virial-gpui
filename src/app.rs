@@ -22,9 +22,10 @@ pub(crate) use crate::state::app_state::FileManager;
 
 impl FileManager {
     pub fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/"));
+        // The portable chain (HOME, USERPROFILE, HOMEDRIVE+HOMEPATH) instead of
+        // a bare HOME: a double-clicked exe has no POSIX environment, and the
+        // old "/" fallback scattered app data across the drive root.
+        let home = crate::config::home();
         let focus = cx.focus_handle();
         focus.focus(window);
         let data_home = crate::infrastructure::recent::data_home(&home);
@@ -402,7 +403,11 @@ impl FileManager {
             // A remote directory opens by navigating; a remote file needs a
             // local materialized copy first.
             if let Location::Remote { host, .. } = &self.location {
-                if !entry.directory {
+                if entry.directory {
+                    let host = host.clone();
+                    let path = entry.path;
+                    self.navigate_location(Location::Remote { host, path }, cx);
+                } else {
                     self.open_remote_file(host.clone(), entry, cx);
                 }
                 return;
