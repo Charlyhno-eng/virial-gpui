@@ -486,8 +486,18 @@ impl FileManager {
         )
     }
 
-    /// The SSH connect dialog: target + optional credential, in-memory only.
+    /// The SSH connect dialog: target, authentication route (agent / key file
+    /// / password) and the per-route field. The secret stays in memory only.
     fn ssh_dialog(&self, cx: &mut Context<Self>) -> Div {
+        use crate::state::ssh::SshAuthMode;
+        let auth_chip = |cx: &mut Context<Self>, id: &'static str, mode: SshAuthMode, label: &'static str| {
+            let active = self.ssh.dialog_auth == mode;
+            button(id, self.language.text(label))
+                .when(active, |chip| chip.bg(color(SELECTED)))
+                .on_click(cx.listener(move |view, _, window, cx| {
+                    view.select_ssh_auth(mode, window, cx)
+                }))
+        };
         let mut content = div()
             .id("ssh-dialog-panel")
             .occlude()
@@ -512,9 +522,23 @@ impl FileManager {
                     .text_size(px(11.))
                     .text_color(color(MUTED))
                     .child(self.language.text("Format: user@host[:port] — keys and the SSH agent are tried automatically")),
+            )
+            .child(
+                div()
+                    .id("ssh-auth-modes")
+                    .flex()
+                    .gap_1()
+                    .child(auth_chip(cx, "auth-agent", SshAuthMode::Agent, "Agent"))
+                    .child(auth_chip(cx, "auth-key", SshAuthMode::Key, "Key file"))
+                    .child(auth_chip(cx, "auth-password", SshAuthMode::Password, "Password")),
             );
         if let Some(input) = &self.ssh.dialog_input {
             content = content.child(input.clone());
+        }
+        if self.ssh.dialog_auth != SshAuthMode::Agent {
+            if let Some(aux) = &self.ssh.dialog_aux {
+                content = content.child(aux.clone());
+            }
         }
         if let Some(error) = &self.ssh.error {
             content = content.child(div().text_color(color(ERROR)).child(error.clone()));

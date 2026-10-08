@@ -535,7 +535,9 @@ impl FileManager {
                     NameAction::RemoteRename { source } => {
                         let target = source
                             .parent()
-                            .map(|parent| parent.join(&name))
+                            .map(|parent| {
+                                crate::infrastructure::ssh::join_remote(parent, &name)
+                            })
                             .unwrap_or_else(|| PathBuf::from(&name));
                         self.close_dialog(window, cx);
                         self.run_remote_operation(
@@ -779,11 +781,13 @@ impl FileManager {
         }
     }
 
-    /// Open the connect dialog: one field for `user@host[:port]`; keys and the
-    /// agent are tried before a typed credential.
+    /// Open the connect dialog: the target plus the authentication route
+    /// (agent / key file / password). The secret, when typed, stays in memory.
     pub(crate) fn open_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.ssh.menu_open = false;
         self.ssh.error = None;
+        self.ssh.dialog_auth = crate::state::ssh::SshAuthMode::default();
+        self.ssh.dialog_aux = None;
         self.ssh.dialog_input = Some(cx.new(|cx| {
             let mut input =
                 crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
@@ -796,7 +800,30 @@ impl FileManager {
 
     pub(crate) fn close_ssh_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.ssh.dialog_input = None;
-        self.ssh.dialog_credential = None;
+        self.ssh.dialog_aux = None;
+        self.focus.focus(window);
+        cx.notify();
+    }
+
+    /// Pick the authentication route from the dialog chips.
+    pub(crate) fn select_ssh_auth(
+        &mut self,
+        mode: crate::state::ssh::SshAuthMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ssh.dialog_auth = mode;
+        let placeholder = self.language.text(match mode {
+            crate::state::ssh::SshAuthMode::Agent => return,
+            crate::state::ssh::SshAuthMode::Key => "Key path (~/.ssh/id_ed25519)",
+            crate::state::ssh::SshAuthMode::Password => "Password",
+        });
+        self.ssh.dialog_aux = Some(cx.new(|cx| {
+            let mut input =
+                crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
+            input.placeholder = placeholder.into();
+            input
+        }));
         self.focus.focus(window);
         cx.notify();
     }
@@ -808,18 +835,56 @@ impl FileManager {
             return;
         };
         let target = input.read(cx).text.clone();
-        let credential = self.ssh.dialog_credential.take();
-        match crate::state::ssh::SshManager::parse_target(&target) {
-            Ok(host) => {
-                self.ssh.dialog_input = None;
-                let data_home = self.data_home.clone();
-                self.ssh.spawn_connect(host, credential, data_home, cx);
-            }
+        let mut credential = None;
+        let mut host = match crate::state::ssh::SshManager::parse_target(&target) {
+            Ok(host) => host,
             Err(message) => {
                 self.ssh.error = Some(message);
                 self.focus.focus(window);
+                cx.notify();
+                return;
+            }
+        };
+        match self.ssh.dialog_auth {
+            crate::state::ssh::SshAuthMode::Agent => {}
+            crate::state::ssh::SshAuthMode::Key => {
+                let path = self
+                    .ssh
+                    .dialog_aux
+                    .as_ref()
+                    .map(|input| input.read(cx).text.trim().to_string())
+                    .unwrap_or_default();
+                if path.is_empty() {
+                    self.ssh.error = Some("Key path must not be empty".into());
+                    self.focus.focus(window);
+                    cx.notify();
+                    return;
+                }
+                host.auth_hint = crate::infrastructure::ssh::AuthHint::Key {
+                    path: std::path::PathBuf::from(expand_home(&path)),
+                };
+            }
+            crate::state::ssh::SshAuthMode::Password => {
+                let secret = self
+                    .ssh
+                    .dialog_aux
+                    .as_ref()
+                    .map(|input| input.read(cx).text.clone())
+                    .unwrap_or_default();
+                if secret.is_empty() {
+                    self.ssh.error = Some("Password must not be empty".into());
+                    self.focus.focus(window);
+                    cx.notify();
+                    return;
+                }
+                host.auth_hint = crate::infrastructure::ssh::AuthHint::Interactive;
+                credential = Some(secret);
             }
         }
+        self.ssh.dialog_input = None;
+        self.ssh.dialog_aux = None;
+        let data_home = self.data_home.clone();
+        self.ssh.spawn_connect(host, credential, data_home, cx);
         cx.notify();
     }
 
@@ -883,7 +948,11 @@ impl FileManager {
                     };
                     match operation {
                         RemoteOperation::CreateDirectory { name } => {
-                            session.create_dir(&directory.join(&name)).await
+                            session
+                                .create_dir(&crate::infrastructure::ssh::join_remote(
+                                    &directory, &name,
+                                ))
+                                .await
                         }
                         RemoteOperation::Rename { from, to } => session.rename(&from, &to).await,
                         RemoteOperation::Delete(entry) => {
@@ -912,4 +981,15 @@ impl FileManager {
         })
         .detach();
     }
+}
+
+/// Expand a leading `~` to the user's home, for typed key paths.
+fn expand_home(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix('~') {
+        let base = crate::config::home();
+        let base = base.to_string_lossy().into_owned();
+        let trimmed = base.trim_end_matches(['/', '\\']);
+        return format!("{trimmed}{rest}");
+    }
+    path.to_string()
 }

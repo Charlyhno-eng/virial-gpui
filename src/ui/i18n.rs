@@ -275,6 +275,12 @@ impl Language {
             "Format: user@host[:port] — keys and the SSH agent are tried automatically" => {
                 "Format : utilisateur@hôte[:port] — les clés et l’agent SSH sont essayés automatiquement"
             }
+            "Agent" => "Agent",
+            "Key file" => "Fichier de clé",
+            "Password" => "Mot de passe",
+            "Key path (~/.ssh/id_ed25519)" => "Chemin de clé (~/.ssh/id_ed25519)",
+            "Key path must not be empty" => "Le chemin de clé ne doit pas être vide",
+            "Password must not be empty" => "Le mot de passe ne doit pas être vide",
             _ => english,
         }
     }

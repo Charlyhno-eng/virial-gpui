@@ -25,6 +25,18 @@ pub(crate) enum SshActivity {
     Connected(HostId),
 }
 
+/// The authentication route picked in the connect dialog.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum SshAuthMode {
+    /// ssh-agent, then the default keys in `~/.ssh`.
+    #[default]
+    Agent,
+    /// A private key file; the aux input carries its path.
+    Key,
+    /// A typed password; the aux input carries the secret (memory only).
+    Password,
+}
+
 pub(crate) struct SshManager {
     pub(crate) store: Arc<SshStore>,
     /// Tokio runtime driving russh futures; created once, never recreated.
@@ -38,8 +50,10 @@ pub(crate) struct SshManager {
     pub(crate) menu_open: bool,
     /// The connect dialog with its input, when shown.
     pub(crate) dialog_input: Option<gpui::Entity<crate::ui::components::input::NameInput>>,
-    /// Credential typed into the dialog for the pending connect.
-    pub(crate) dialog_credential: Option<String>,
+    /// The authentication route selected in the dialog.
+    pub(crate) dialog_auth: SshAuthMode,
+    /// Key path or password, per `dialog_auth`; never persisted.
+    pub(crate) dialog_aux: Option<gpui::Entity<crate::ui::components::input::NameInput>>,
 }
 
 impl SshManager {
@@ -58,7 +72,8 @@ impl SshManager {
             pending: None,
             menu_open: false,
             dialog_input: None,
-            dialog_credential: None,
+            dialog_auth: SshAuthMode::default(),
+            dialog_aux: None,
         }
     }
 
@@ -167,11 +182,15 @@ impl SshManager {
                     }
                     Ok(Err(message)) => {
                         view.ssh.activity = SshActivity::Idle;
-                        view.ssh.error = Some(message);
+                        view.ssh.error = Some(message.clone());
+                        // The dialog is already closed at this point; without
+                        // the global banner the failure would be invisible.
+                        view.error = Some(format!("SSH: {message}"));
                     }
                     Err(join) => {
                         view.ssh.activity = SshActivity::Idle;
                         view.ssh.error = Some(format!("SSH task failed: {join}"));
+                        view.error = Some(format!("SSH task failed: {join}"));
                     }
                 }
                 cx.notify();
