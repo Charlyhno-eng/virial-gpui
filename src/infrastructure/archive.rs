@@ -5,10 +5,11 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom, Write},
-    os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Component, Path, PathBuf},
     sync::Mutex,
 };
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use tempfile::{NamedTempFile, TempDir};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -289,6 +290,7 @@ fn extract(
             .create_new(true)
             .open(target)?;
         io::copy(&mut file, &mut output)?;
+        #[cfg(unix)]
         if let Some(mode) = file.unix_mode() {
             output.set_permissions(fs::Permissions::from_mode(mode & 0o777))?;
         }
@@ -296,6 +298,7 @@ fn extract(
     Ok(())
 }
 
+#[cfg(unix)]
 fn signature(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
     (
         metadata.dev(),
@@ -306,6 +309,17 @@ fn signature(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
         metadata.ctime(),
         metadata.ctime_nsec(),
     )
+}
+
+#[cfg(windows)]
+fn signature(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
+    let secs = |time: std::io::Result<std::time::SystemTime>| {
+        time.ok()
+            .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    };
+    (metadata.len(), 0, 0, secs(metadata.modified()), 0, secs(metadata.created()), 0)
 }
 
 fn rewrite(
@@ -391,8 +405,10 @@ fn append<W: Write + io::Seek>(
             "Links and special files cannot be added to ZIP archives",
         ));
     }
-    let options =
-        SimpleFileOptions::default().unix_permissions(metadata.permissions().mode() & 0o777);
+    #[cfg(unix)]
+    let options = SimpleFileOptions::default().unix_permissions(metadata.permissions().mode() & 0o777);
+    #[cfg(windows)]
+    let options = SimpleFileOptions::default();
     let name = member_name(target)?;
     if metadata.is_dir() {
         writer.add_directory(format!("{name}/"), options)?;
@@ -645,6 +661,6 @@ pub fn create(directory: &Path, name: &str, folder: bool) -> io::Result<()> {
     transfer(vec![path], directory.to_path_buf(), false)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/archive.rs"]
 mod tests;

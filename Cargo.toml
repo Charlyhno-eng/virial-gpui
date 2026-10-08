@@ -11,6 +11,12 @@ gpui = "=0.2.2"
 libc = "=0.2.186"
 # Load the optional media backend without requiring development headers.
 libloading = "0.8"
+# SSH remote browsing (russh 0.62 + russh-sftp 2.4 are the pair documented and
+# CI-tested together; russh 0.63+ pulls a release-candidate ssh-key).
+russh = "=0.62.7"
+russh-sftp = "=2.4.0"
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "sync", "net", "time", "macros"] }
+home = "0.5"
 roxmltree = "0.20"
 url = "2.5"
 zbus = "5.19"
@@ -29,8 +35,15 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 webp = { version = "0.3", default-features = false }
 oxipng = { version = "10.2", default-features = false }
 
+[target.'cfg(windows)'.dependencies]
+# Free-space queries without a COM dependency.
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+
 # Native outgoing file drags are not exposed by upstream GPUI 0.2.2.
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
 # Fix Rust's future-incompatibility warning in proc-macro-error2 2.0.1.
 proc-macro-error2 = { path = "vendor/proc-macro-error2" }
+
+# The parent directory contains unrelated manifests; keep this package standalone.
+[workspace]

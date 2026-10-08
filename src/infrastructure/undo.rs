@@ -8,15 +8,16 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
-    os::{
-        fd::AsRawFd,
-        unix::{
-            ffi::OsStrExt,
-            fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-        },
-    },
     path::{Path, PathBuf},
     sync::Mutex,
+};
+#[cfg(unix)]
+use std::os::{
+    fd::AsRawFd,
+    unix::{
+        ffi::OsStrExt,
+        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+    },
 };
 use url::Url;
 
@@ -27,6 +28,26 @@ struct Record {
     path: PathBuf,
     before: String,
     after: String,
+}
+
+#[cfg(unix)]
+fn os_name_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn os_name_bytes(value: &std::ffi::OsStr) -> Vec<u8> {
+    value.to_string_lossy().as_bytes().to_vec()
+}
+
+#[cfg(unix)]
+fn link_bytes(target: &Path) -> Vec<u8> {
+    target.as_os_str().as_bytes().to_vec()
+}
+
+#[cfg(windows)]
+fn link_bytes(target: &Path) -> Vec<u8> {
+    target.to_string_lossy().as_bytes().to_vec()
 }
 
 fn invalid() -> io::Error {
@@ -159,15 +180,21 @@ fn fingerprint_impl(
             progress.checkpoint()?;
         }
         let metadata = fs::symlink_metadata(path)?;
+        #[cfg(unix)]
         if permissions {
             hash.update(metadata.permissions().mode().to_le_bytes());
+        }
+        #[cfg(windows)]
+        if permissions {
+            // No POSIX mode bits: hash the readonly flag for a stable signature.
+            hash.update([u8::from(metadata.permissions().readonly())]);
         }
         if metadata.is_symlink() {
             hash.update(b"link");
             let target = fs::read_link(path)?;
-            let bytes = target.as_os_str().as_bytes();
+            let bytes = link_bytes(&target);
             hash.update((bytes.len() as u64).to_le_bytes());
-            hash.update(bytes);
+            hash.update(&bytes);
         } else if metadata.is_dir() {
             hash.update(b"directory");
             let mut children = fs::read_dir(path)?.collect::<io::Result<Vec<_>>>()?;
@@ -175,7 +202,7 @@ fn fingerprint_impl(
             hash.update((children.len() as u64).to_le_bytes());
             for child in children {
                 let name = child.file_name();
-                let bytes = name.as_bytes();
+                let bytes = os_name_bytes(&name);
                 hash.update((bytes.len() as u64).to_le_bytes());
                 hash.update(bytes);
                 visit(&child.path(), hash, progress, buffer, report, permissions)?;
@@ -185,10 +212,13 @@ fn fingerprint_impl(
             hash.update(metadata.len().to_le_bytes());
             let mut file = operations::open_regular_file(path)?;
             let opened = file.metadata()?;
-            if opened.dev() != metadata.dev()
+            #[cfg(unix)]
+            let changed = opened.dev() != metadata.dev()
                 || opened.ino() != metadata.ino()
-                || opened.len() != metadata.len()
-            {
+                || opened.len() != metadata.len();
+            #[cfg(windows)]
+            let changed = opened.len() != metadata.len();
+            if changed {
                 return Err(io::Error::other("Source changed while reading"));
             }
             // Allocate once for the whole tree, rather than clearing a large
@@ -260,7 +290,7 @@ fn save(directory: &Path, records: &[Record], ready: bool) -> io::Result<()> {
     file.as_file().sync_all()?;
     file.persist(directory.join("manifest"))
         .map_err(|error| error.error)?;
-    File::open(directory)?.sync_all()
+    super::sync_directory(directory)
 }
 
 fn load(directory: &Path) -> io::Result<Vec<Record>> {
@@ -326,10 +356,14 @@ fn entries(directory: &Path) -> io::Result<Vec<(u64, PathBuf)>> {
 
 fn history(data: &Path) -> io::Result<(PathBuf, File)> {
     let directory = data.join("virial/undo");
+    #[cfg(unix)]
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(&directory)?;
+    #[cfg(windows)]
+    fs::DirBuilder::new().recursive(true).create(&directory)?;
+    #[cfg(unix)]
     let lock = OpenOptions::new()
         .read(true)
         .write(true)
@@ -337,7 +371,15 @@ fn history(data: &Path) -> io::Result<(PathBuf, File)> {
         .truncate(false)
         .mode(0o600)
         .open(directory.join("lock"))?;
+    #[cfg(windows)]
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(directory.join("lock"))?;
     // A separate open file description per call serializes other Virial processes too.
+    #[cfg(unix)]
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
         return Err(io::Error::last_os_error());
     }
@@ -374,7 +416,7 @@ fn sync_snapshot(path: &Path, progress: Option<&super::progress::Progress>) -> i
             if let Some(progress) = progress {
                 progress.checkpoint()?;
             }
-            File::open(file)?.sync_all()?;
+            super::sync_file(file)?;
         }
     } else {
         std::thread::scope(|scope| -> io::Result<()> {
@@ -386,7 +428,7 @@ fn sync_snapshot(path: &Path, progress: Option<&super::progress::Progress>) -> i
                             if let Some(progress) = progress {
                                 progress.checkpoint()?;
                             }
-                            File::open(file)?.sync_all()?;
+                            super::sync_file(file)?;
                         }
                         Ok(())
                     })
@@ -404,7 +446,7 @@ fn sync_snapshot(path: &Path, progress: Option<&super::progress::Progress>) -> i
         if let Some(progress) = progress {
             progress.checkpoint()?;
         }
-        File::open(directory)?.sync_all()?;
+        super::sync_directory(&directory)?;
     }
     Ok(())
 }
@@ -429,7 +471,15 @@ fn snapshot_with_progress(
                 timestamps(&entry.path(), &destination.join(entry.file_name()))?;
             }
         }
-        File::open(destination)?.set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
+        // Windows requires a writable handle to change file times; a read-only
+        // File::open would fail with Access Denied there. Unix checks ownership
+        // instead, so a read-only handle also covers directories (a writable
+        // open fails with EISDIR) and read-only files (EACCES).
+        #[cfg(windows)]
+        let opened = fs::OpenOptions::new().write(true).open(destination)?;
+        #[cfg(unix)]
+        let opened = File::open(destination)?;
+        opened.set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
     }
     if progress.is_some() {
         operations::copy_with_progress(source, destination, progress)?;
@@ -437,7 +487,8 @@ fn snapshot_with_progress(
         operations::copy(source, destination)?;
     }
     timestamps(source, destination)?;
-    sync_snapshot(destination, progress)
+    let synced = sync_snapshot(destination, progress);
+    synced
 }
 
 // Snapshots may include read-only folders. Make only our private copies writable
@@ -445,10 +496,17 @@ fn snapshot_with_progress(
 fn discard(path: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_dir() {
+        #[cfg(unix)]
         fs::set_permissions(
             path,
             fs::Permissions::from_mode(metadata.permissions().mode() | 0o700),
         )?;
+        #[cfg(windows)]
+        {
+            let mut permissions = metadata.permissions();
+            permissions.set_readonly(false);
+            fs::set_permissions(path, permissions)?;
+        }
         for entry in fs::read_dir(path)? {
             discard(&entry?.path())?;
         }
@@ -465,7 +523,7 @@ fn discard_entry(directory: &Path) -> io::Result<()> {
         .tempdir_in(parent)?;
     // Remove the entry from the stack atomically before deleting its backups.
     fs::rename(directory, discarded.path().join("entry"))?;
-    File::open(parent)?.sync_all()?;
+    super::sync_directory(parent)?;
     discard(discarded.path())
 }
 
@@ -538,7 +596,7 @@ fn record_with_progress<T>(
     save(staging.path(), &records, false)?;
     let directory = history.join(number.to_string());
     fs::rename(staging.path(), &directory)?;
-    File::open(&history)?.sync_all()?;
+    super::sync_directory(&history)?;
     let result = action();
     if let Some(progress) = progress {
         progress.begin(super::progress::Phase::Finishing, None);
@@ -646,9 +704,9 @@ pub(crate) fn durable(
             if before != "-" {
                 let backup = staging.path().join(index.to_string());
                 snapshot_with_progress(&path, &backup, Some(progress))?;
-                if fingerprint_with_progress(&backup, Some(progress))? != before
-                    || fingerprint_with_progress(&path, Some(progress))? != before
-                {
+                let backup_now = fingerprint_with_progress(&backup, Some(progress))?;
+                let source_now = fingerprint_with_progress(&path, Some(progress))?;
+                if backup_now != before || source_now != before {
                     return Err(io::Error::other(
                         "File changed while recording undo history; retry",
                     ));
@@ -667,8 +725,12 @@ pub(crate) fn durable(
             file.sync_all()?;
         }
         let directory = history.join(number.to_string());
-        fs::rename(staging.path(), &directory)?;
-        File::open(&history)?.sync_all()?;
+        if let Err(error) = fs::rename(staging.path(), &directory) {
+                return Err(error);
+        }
+        if let Err(error) = super::sync_directory(&history) {
+                return Err(error);
+        }
         (directory, records)
     };
     let result = action();
@@ -849,7 +911,7 @@ fn restore(path: &Path, backup: &Path, before: &str, after: &str) -> io::Result<
         }
         return Err(error);
     }
-    File::open(parent)?.sync_all()?;
+    super::sync_directory(parent)?;
     if after != "-" {
         discard(&parked)?;
     }
@@ -880,15 +942,18 @@ fn restore_moves(records: &[Record]) -> io::Result<()> {
         }
         match operations::rename(&target.path, &source.path) {
             Ok(()) => {}
+            #[cfg(unix)]
             Err(error) if error.raw_os_error() == Some(libc::EXDEV) => continue,
+            #[cfg(windows)]
+            Err(error) if error.raw_os_error() == Some(17) => continue,
             Err(error) => return Err(error),
         }
         if fingerprint(&source.path)
             .as_ref()
             .is_ok_and(|state| *state == source.before)
         {
-            File::open(source.path.parent().ok_or_else(invalid)?)?.sync_all()?;
-            File::open(target.path.parent().ok_or_else(invalid)?)?.sync_all()?;
+            super::sync_directory(source.path.parent().ok_or_else(invalid)?)?;
+            super::sync_directory(target.path.parent().ok_or_else(invalid)?)?;
         } else {
             if operations::rename(&source.path, &target.path).is_err() {
                 return Err(io::Error::other(format!(
@@ -960,6 +1025,6 @@ fn undo_impl(data: &Path, expected: Option<&str>) -> io::Result<bool> {
     Ok(true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/undo.rs"]
 mod tests;

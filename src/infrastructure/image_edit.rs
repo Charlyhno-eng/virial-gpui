@@ -309,15 +309,15 @@ fn export_with_rembg(
         ImageEdit::Convert(format) => encode(image, &output, format)?,
         ImageEdit::RemoveBackground => remove_background(image, &output, executable)?,
     }
-    File::open(&output)?.sync_all()?;
+    super::sync_file(&output)?;
     if archive::split(directory).is_some() {
         archive::transfer(vec![output], directory.to_path_buf(), false)
     } else {
         operations::rename(&output, &target)?;
-        File::open(directory)?.sync_all()
+        super::sync_directory(directory)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/image_edit.rs"]
 mod tests;

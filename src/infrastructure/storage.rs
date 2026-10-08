@@ -1,8 +1,11 @@
 use crate::domain::models::Entry;
-use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
+#[cfg(unix)]
+use std::{
+    ffi::CString,
+    os::unix::{ffi::OsStrExt, fs::MetadataExt},
+};
 use std::{
     collections::HashSet,
-    ffi::CString,
     fs, io,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -15,7 +18,14 @@ pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
     let mut entries = Vec::new();
     for item in fs::read_dir(path)? {
         let item = item?;
-        if !hidden && item.file_name().as_bytes().starts_with(b".") {
+        #[cfg(unix)]
+        let skip = !hidden && item.file_name().as_bytes().starts_with(b".");
+        #[cfg(not(unix))]
+        let skip = !hidden
+            && item.file_name().to_string_lossy().starts_with('.')
+            && item.file_name() != "."
+            && item.file_name() != "..";
+        if skip {
             continue;
         }
         // Follow directory symlinks, but retain broken links in the listing.
@@ -54,7 +64,16 @@ pub fn directory_entry_count(path: &Path, hidden: bool) -> io::Result<usize> {
     }
     fs::read_dir(path)?.try_fold(0, |count, item| {
         let item = item?;
-        Ok(count + usize::from(hidden || !item.file_name().as_bytes().starts_with(b".")))
+        #[cfg(unix)]
+        let hidden_entry = item.file_name().as_bytes().starts_with(b".");
+        #[cfg(not(unix))]
+        let hidden_entry = item
+            .file_name()
+            .to_string_lossy()
+            .starts_with('.')
+            && item.file_name() != "."
+            && item.file_name() != "..";
+        Ok(count + usize::from(hidden || !hidden_entry))
     })
 }
 
@@ -85,7 +104,13 @@ pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
     while let Some(path) = pending.pop() {
         check_cancelled(cancelled)?;
         let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_dir() || !visited.insert((metadata.dev(), metadata.ino())) {
+        #[cfg(unix)]
+        let identity = (metadata.dev(), metadata.ino());
+        // Windows: directories all report len 0, so a size-based identity
+        // would collide; canonicalize yields a unique per-directory key.
+        #[cfg(windows)]
+        let identity = fs::canonicalize(&path)?;
+        if !metadata.is_dir() || !visited.insert(identity) {
             continue;
         }
         for item in fs::read_dir(path)? {
@@ -106,6 +131,45 @@ pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
     Ok(total)
 }
 
+#[cfg(windows)]
+pub fn available_space(path: &Path) -> io::Result<u64> {
+    use std::os::windows::ffi::OsStrExt as _;
+    // GetDiskFreeSpaceExW only accepts a directory; resolve files to theirs.
+    let directory = if path.is_file() {
+        path.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+    let mut wide: Vec<u16> = directory
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    if wide.len() > 4 {
+        while wide.len() > 2 && *wide.iter().rev().nth(1).unwrap() == u16::from(b'\\') {
+            wide.remove(wide.len() - 2);
+        }
+    }
+    let mut free: u64 = 0;
+    let mut total: u64 = 0;
+    let mut unused: u64 = 0;
+    // SAFETY: `wide` is NUL-terminated, the targets are writable u64s.
+    let ok = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut unused,
+            &mut total,
+            &mut free,
+        )
+    };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(free)
+}
+#[cfg(unix)]
 pub fn available_space(path: &Path) -> io::Result<u64> {
     let path = CString::new(path.as_os_str().as_bytes())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Path contains a NUL byte"))?;
@@ -125,6 +189,6 @@ pub fn available_space(path: &Path) -> io::Result<u64> {
     Ok(bytes.min(u64::MAX as u128) as u64)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/storage.rs"]
 mod tests;

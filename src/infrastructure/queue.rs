@@ -10,13 +10,14 @@ use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom},
-    os::{
-        fd::AsRawFd,
-        unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink},
-    },
     path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicUsize, Ordering},
+};
+#[cfg(unix)]
+use std::os::{
+    fd::AsRawFd,
+    unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink},
 };
 use url::Url;
 
@@ -61,10 +62,13 @@ fn path(uri: &str) -> io::Result<PathBuf> {
 }
 fn root(data: &Path) -> io::Result<PathBuf> {
     let root = data.join("virial/operations");
+    #[cfg(unix)]
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(&root)?;
+    #[cfg(windows)]
+    fs::DirBuilder::new().recursive(true).create(&root)?;
     root.canonicalize()
 }
 fn journal(data: &Path, job: &Job) -> io::Result<PathBuf> {
@@ -84,7 +88,13 @@ fn save(data: &Path, job: &Job) -> io::Result<()> {
     serde_json::to_writer(&mut file, job)?;
     file.as_file().sync_all()?;
     file.persist(destination).map_err(|error| error.error)?;
-    File::open(root(data)?)?.sync_all()
+    // Sync the operations directory so the journal survives a crash. Windows
+    // cannot open directories as files, so only Unix flushes the parent here.
+    #[cfg(unix)]
+    super::sync_directory(&root(data)?)?;
+    #[cfg(windows)]
+    let _ = root(data)?;
+    Ok(())
 }
 
 pub fn supported(operation: &Operation) -> bool {
@@ -180,6 +190,7 @@ pub fn recover(data: &Path) -> io::Result<Vec<Job>> {
 }
 
 fn job_lock(data: &Path, job: &Job) -> io::Result<File> {
+    #[cfg(unix)]
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -187,6 +198,14 @@ fn job_lock(data: &Path, job: &Job) -> io::Result<File> {
         .truncate(false)
         .mode(0o600)
         .open(journal(data, job)?.with_extension("lock"))?;
+    #[cfg(windows)]
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(journal(data, job)?.with_extension("lock"))?;
+    #[cfg(unix)]
     if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
         return Err(io::Error::other(
             "This operation is active in another Virial window",
@@ -217,7 +236,7 @@ fn forget_unlocked(data: &Path, job: &Job) -> io::Result<()> {
     match fs::remove_file(&file) {
         Ok(()) => {
             let _ = fs::remove_file(file.with_extension("lock"));
-            File::open(root(data)?)?.sync_all()
+            super::sync_directory(&root(data)?)
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -239,7 +258,11 @@ fn counts_controlled(source: &Path, progress: Option<&Progress>) -> io::Result<(
             bytes = bytes.checked_add(metadata.len()).ok_or_else(invalid)?;
         }
         if metadata.is_dir() {
-            if !seen.insert((metadata.dev(), metadata.ino())) {
+            #[cfg(unix)]
+            let identity = (metadata.dev(), metadata.ino());
+            #[cfg(windows)]
+            let identity = (metadata.len(), 0u64);
+            if !seen.insert(identity) {
                 return Err(io::Error::other("Folder tree contains a cycle"));
             }
             directories.push(fs::read_dir(path)?);
@@ -420,19 +443,25 @@ fn prepare(data: &Path, job: &Job, progress: &Progress) -> io::Result<Vec<Item>>
 
 /// Unknown or rotating devices use one worker; nonrotating devices can service
 /// independent files concurrently. Bound both CPU usage and outstanding I/O.
-fn workers(directory: &Path, files: usize) -> usize {
-    let device = fs::metadata(directory).map(|m| m.dev()).unwrap_or(0);
-    let sys = PathBuf::from(format!(
-        "/sys/dev/block/{}:{}",
-        libc::major(device),
-        libc::minor(device)
-    ));
-    let solid = sys.canonicalize().ok().is_some_and(|device| {
-        device.ancestors().any(|parent| {
-            fs::read_to_string(parent.join("queue/rotational"))
-                .is_ok_and(|value| value.trim() == "0")
+fn workers(_directory: &Path, files: usize) -> usize {
+    #[cfg(unix)]
+    let solid = {
+        let device = fs::metadata(_directory).map(|m| m.dev()).unwrap_or(0);
+        let sys = PathBuf::from(format!(
+            "/sys/dev/block/{}:{}",
+            libc::major(device),
+            libc::minor(device)
+        ));
+        sys.canonicalize().ok().is_some_and(|device| {
+            device.ancestors().any(|parent| {
+                fs::read_to_string(parent.join("queue/rotational"))
+                    .is_ok_and(|value| value.trim() == "0")
+            })
         })
-    });
+    };
+    // Without device metadata, assume a rotating disk: keep one worker.
+    #[cfg(windows)]
+    let solid = false;
     if !solid || files < 16 {
         1
     } else {
@@ -486,6 +515,7 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
     progress.checkpoint()?;
     let metadata = fs::symlink_metadata(source)?;
     let mut input = operations::open_regular_file(source)?;
+    #[cfg(unix)]
     let mut output = match OpenOptions::new()
         .read(true)
         .write(true)
@@ -516,11 +546,29 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
         }
         Err(error) => return Err(error),
     };
-    let output_metadata = output.metadata()?;
-    if !output_metadata.is_file()
-        || output_metadata.nlink() != 1
-        || output_metadata.len() > metadata.len()
+    #[cfg(windows)]
+    let mut output = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(target)
     {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            // Reopen the partial destination created by a previous run.
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(target)?
+        }
+        Err(error) => return Err(error),
+    };
+    let output_metadata = output.metadata()?;
+    #[cfg(unix)]
+    let linked = output_metadata.nlink() != 1;
+    #[cfg(windows)]
+    let linked = false;
+    if !output_metadata.is_file() || linked || output_metadata.len() > metadata.len() {
         return Err(io::Error::other("Invalid partial transfer"));
     }
     let offset = output_metadata.len();
@@ -546,6 +594,7 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
     input.seek(SeekFrom::Start(offset))?;
     output.seek(SeekFrom::Start(offset))?;
     let mut copied = offset;
+    #[cfg(unix)]
     if offset == 0 && metadata.len() >= 128 * 1024 {
         let result = unsafe { libc::ioctl(output.as_raw_fd(), libc::FICLONE, input.as_raw_fd()) };
         if result == 0 {
@@ -585,16 +634,27 @@ fn stage_copy(source: &Path, target: &Path, progress: &Progress) -> io::Result<(
         progress.checkpoint()?;
         let metadata = fs::symlink_metadata(&source)?;
         if metadata.is_symlink() {
-            let link = fs::read_link(&source)?;
-            match symlink(&link, &target) {
-                Ok(()) => {}
-                Err(error)
-                    if error.kind() == io::ErrorKind::AlreadyExists
-                        && fs::read_link(&target)? == link => {}
-                Err(error) => return Err(error),
+            #[cfg(unix)]
+            {
+                let link = fs::read_link(&source)?;
+                match symlink(&link, &target) {
+                    Ok(()) => {}
+                    Err(error)
+                        if error.kind() == io::ErrorKind::AlreadyExists
+                            && fs::read_link(&target)? == link => {}
+                    Err(error) => return Err(error),
+                }
+                progress.advance(1);
+                progress.transferred(0, 1);
             }
-            progress.advance(1);
-            progress.transferred(0, 1);
+            #[cfg(windows)]
+            {
+                let _ = target;
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "Symlinks cannot be staged on this platform yet",
+                ));
+            }
         } else if metadata.is_dir() {
             match fs::create_dir(&target) {
                 Ok(()) => {}
@@ -603,7 +663,10 @@ fn stage_copy(source: &Path, target: &Path, progress: &Progress) -> io::Result<(
                         && fs::symlink_metadata(&target)?.is_dir() => {}
                 Err(error) => return Err(error),
             }
+            #[cfg(unix)]
             fs::set_permissions(&target, fs::Permissions::from_mode(0o700))?;
+            #[cfg(windows)]
+            fs::set_permissions(&target, metadata.permissions())?;
             let children = fs::read_dir(&source)?.collect::<io::Result<Vec<_>>>()?;
             let names = children
                 .iter()
@@ -642,7 +705,7 @@ fn stage_copy(source: &Path, target: &Path, progress: &Progress) -> io::Result<(
     for (directory, permissions) in directories.into_iter().rev() {
         progress.checkpoint()?;
         fs::set_permissions(&directory, permissions)?;
-        File::open(directory)?.sync_all()?;
+        super::sync_directory(&directory)?;
         progress.advance(1);
         progress.transferred(0, 1);
     }
@@ -650,7 +713,7 @@ fn stage_copy(source: &Path, target: &Path, progress: &Progress) -> io::Result<(
 }
 
 fn sync_parent(path: &Path) -> io::Result<()> {
-    File::open(path.parent().ok_or_else(invalid)?)?.sync_all()
+    super::sync_directory(path.parent().ok_or_else(invalid)?)
 }
 
 fn transfer(item: &Item, cut: bool, verify: bool, progress: &Progress) -> io::Result<()> {
@@ -671,7 +734,10 @@ fn transfer(item: &Item, cut: bool, verify: bool, progress: &Progress) -> io::Re
                     progress.transferred(item.bytes, item.files);
                     return Ok(());
                 }
+                #[cfg(unix)]
                 Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {}
+                #[cfg(windows)]
+                Err(error) if error.raw_os_error() == Some(17) => {}
                 Err(error) => return Err(error),
             }
         }
@@ -711,10 +777,17 @@ fn transfer(item: &Item, cut: bool, verify: bool, progress: &Progress) -> io::Re
 fn discard_private(path: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_dir() {
+        #[cfg(unix)]
         fs::set_permissions(
             path,
             fs::Permissions::from_mode(metadata.permissions().mode() | 0o700),
         )?;
+        #[cfg(windows)]
+        {
+            let mut permissions = metadata.permissions();
+            permissions.set_readonly(false);
+            fs::set_permissions(path, permissions)?;
+        }
         for entry in fs::read_dir(path)? {
             discard_private(&entry?.path())?;
         }
@@ -760,10 +833,16 @@ fn validate(job: &Job) -> io::Result<()> {
                     {
                         return Err(invalid());
                     }
-                    if let Ok(metadata) = fs::symlink_metadata(location)
-                        && (!metadata.is_dir() || metadata.uid() != unsafe { libc::geteuid() })
-                    {
-                        return Err(invalid());
+                    if let Ok(metadata) = fs::symlink_metadata(location) {
+                        #[cfg(unix)]
+                        let foreign = !metadata.is_dir()
+                            || metadata.uid() != unsafe { libc::geteuid() };
+                        // Windows staging paths live under the user profile; no uid check.
+                        #[cfg(windows)]
+                        let foreign = !metadata.is_dir();
+                        if foreign {
+                            return Err(invalid());
+                        }
                     }
                 }
             }
@@ -823,6 +902,7 @@ pub fn label(job: &Job) -> &'static str {
 }
 
 pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()> {
+    #[cfg(unix)]
     let lock = OpenOptions::new()
         .read(true)
         .write(true)
@@ -830,6 +910,14 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
         .truncate(false)
         .mode(0o600)
         .open(root(data)?.join("lock"))?;
+    #[cfg(windows)]
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(root(data)?.join("lock"))?;
+    #[cfg(unix)]
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
         return Err(io::Error::other(
             "Another Virial window is running the operation queue",
@@ -952,6 +1040,6 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/queue.rs"]
 mod tests;

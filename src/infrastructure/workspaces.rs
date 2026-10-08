@@ -193,6 +193,6 @@ pub(crate) fn summaries(data: &Path, hidden: bool) -> io::Result<Vec<Summary>> {
         .collect())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/workspaces.rs"]
 mod tests;

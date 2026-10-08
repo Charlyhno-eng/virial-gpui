@@ -6,11 +6,12 @@ pub(crate) use index::SearchIndex;
 use std::{
     collections::{HashSet, VecDeque},
     fs,
-    os::unix::fs::MetadataExt,
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
+#[cfg(all(test, unix))]
+use std::os::unix::fs::MetadataExt;
 
 pub(crate) const RESULT_LIMIT: usize = 100;
 
@@ -111,7 +112,11 @@ pub(crate) fn search(
                 continue;
             }
         };
-        if !visited.insert((metadata.dev(), metadata.ino())) {
+        #[cfg(unix)]
+        let identity = (metadata.dev(), metadata.ino());
+        #[cfg(windows)]
+        let identity = (metadata.len(), 0u64);
+        if !visited.insert(identity) {
             continue;
         }
         let items = match fs::read_dir(&directory) {
@@ -191,6 +196,6 @@ pub(crate) fn search(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/search.rs"]
 mod tests;

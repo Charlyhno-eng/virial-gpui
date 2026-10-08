@@ -1,9 +1,21 @@
 use super::*;
 use crate::infrastructure::{operations::Operation, undo};
-use std::{
-    io::Write,
-    os::unix::fs::{PermissionsExt, symlink},
-};
+use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::{PermissionsExt, symlink};
+#[cfg(windows)]
+use std::os::windows::fs::{symlink_dir as symlink_dir_win, symlink_file as symlink_file_win};
+#[cfg(windows)]
+fn symlink<P: AsRef<std::path::Path>, Q: AsRef<std::path::Path>>(
+    original: P,
+    link: Q,
+) -> std::io::Result<()> {
+    if std::fs::metadata(&original).map(|m| m.is_dir()).unwrap_or(false) {
+        symlink_dir_win(original, link)
+    } else {
+        symlink_file_win(original, link)
+    }
+}
 
 fn fixture(root: &Path) -> PathBuf {
     let source = root.join("photo with spaces.png");

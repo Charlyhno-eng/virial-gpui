@@ -1,15 +1,18 @@
 //! Filesystem mutations. Never overwrite a destination or follow links while copying.
 use std::{
-    ffi::CString,
     fs::{self, File, OpenOptions},
     io::{self, Read},
+    path::{Component, Path, PathBuf},
+    process::Command,
+};
+#[cfg(unix)]
+use std::{
+    ffi::CString,
     os::fd::AsRawFd,
     os::unix::{
         ffi::OsStrExt,
         fs::{OpenOptionsExt, symlink},
     },
-    path::{Component, Path, PathBuf},
-    process::Command,
 };
 
 #[derive(Clone, Debug)]
@@ -58,32 +61,50 @@ pub fn named_path(directory: &Path, name: &str) -> io::Result<PathBuf> {
 }
 
 pub(super) fn rename(source: &Path, destination: &Path) -> io::Result<()> {
-    let source = CString::new(source.as_os_str().as_bytes())?;
-    let destination = CString::new(destination.as_os_str().as_bytes())?;
-    // Linux atomic no-replace rename also protects against a concurrent creator.
-    let result = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            source.as_ptr(),
-            libc::AT_FDCWD,
-            destination.as_ptr(),
-            libc::RENAME_NOREPLACE,
-        )
-    };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
+    #[cfg(unix)]
+    {
+        let source = CString::new(source.as_os_str().as_bytes())?;
+        let destination = CString::new(destination.as_os_str().as_bytes())?;
+        // Linux atomic no-replace rename also protects against a concurrent creator.
+        let result = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                source.as_ptr(),
+                libc::AT_FDCWD,
+                destination.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+    // Windows: no atomic no-replace rename in std; keep the never-overwrite
+    // guarantee with a check-then-rename race window instead of failing here.
+    #[cfg(windows)]
+    {
+        if destination.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "Destination already exists",
+            ));
+        }
+        fs::rename(source, destination)
     }
 }
 
 // A source can be replaced between enumeration and opening. O_NONBLOCK prevents
 // a replacement FIFO from hanging a worker, and O_NOFOLLOW retains link safety.
 pub(super) fn open_regular_file(path: &Path) -> io::Result<File> {
+    #[cfg(unix)]
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
+    #[cfg(windows)]
+    let file = OpenOptions::new().read(true).open(path)?;
     if !file.metadata()?.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -106,12 +127,21 @@ pub(super) fn copy_with_progress(
         progress.checkpoint()?;
     }
     let metadata = fs::symlink_metadata(source)?;
+    #[cfg(unix)]
     if metadata.is_symlink() {
         symlink(fs::read_link(source)?, destination)?;
         if let Some(progress) = progress {
             progress.advance(1);
         }
         return Ok(());
+    }
+    #[cfg(windows)]
+    if metadata.is_symlink() {
+        let _ = destination;
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Symlinks cannot be copied on this platform yet",
+        ));
     }
     if metadata.is_dir() {
         fs::create_dir(destination)?;
@@ -192,6 +222,7 @@ fn copy_contents(
 ) -> io::Result<()> {
     // Whole-file CoW cloning avoids copying blocks (including sparse holes) for
     // transfers and undo snapshots. Small files are cheaper to copy directly.
+    #[cfg(unix)]
     if size >= 128 * 1024 {
         loop {
             // Both descriptors remain open. The destination was created with
@@ -376,7 +407,10 @@ fn transfer_with_progress(
                     }
                     continue;
                 }
+                #[cfg(unix)]
                 Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {}
+                #[cfg(windows)]
+                Err(error) if error.raw_os_error() == Some(17) => {}
                 Err(error) => return Err(error),
             }
         }
@@ -475,19 +509,9 @@ pub(super) fn execute_with_progress(
                 transfer(sources, directory, cut)
             }
         }
-        Operation::Trash(paths) => command(Command::new("gio").arg("trash").arg("--").args(paths)),
+        Operation::Trash(paths) => trash_paths(&paths),
         Operation::Launch { desktop, file } => {
-            let extracted = if super::archive::is_member(&file) {
-                Some(super::archive::materialize(&file, u64::MAX)?)
-            } else {
-                None
-            };
-            let file = extracted
-                .as_ref()
-                .map(|file| file.path.as_path())
-                .unwrap_or(&file);
-            command(Command::new("gio").arg("launch").arg(desktop).arg(file))?;
-            return Ok(extracted);
+            return launch(&desktop, &file);
         }
         Operation::Compress(path) => {
             let name = path
@@ -522,6 +546,89 @@ pub(super) fn execute_with_progress(
     .map(|_| None)
 }
 
+const APOSTROPHE: char = '\u{27}';
+
+// Trash via the desktop service. Windows moves items to the Recycle Bin with
+// PowerShell's FileSystem API (no extra crate); other targets fail cleanly.
+fn trash_paths(paths: &[PathBuf]) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        command(Command::new("gio").arg("trash").arg("--").args(paths))
+    }
+    #[cfg(windows)]
+    {
+        // One verb per item: files and folders need different .NET calls.
+        let quoted = paths
+            .iter()
+            .map(|path| format!("'{}'", path.to_string_lossy().replace(APOSTROPHE, "''")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let script = format!(
+            "$ErrorActionPreference='Stop'; Add-Type -AssemblyName Microsoft.VisualBasic; foreach ($item in @({quoted})) {{ if (Test-Path -LiteralPath $item -PathType Container) {{ [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($item, 'OnlyErrorDialogs', 'SendToRecycleBin') }} else {{ [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($item, 'OnlyErrorDialogs', 'SendToRecycleBin') }} }}",
+        );
+        let status = Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(script)
+            .status()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(io::Error::other("Recycle Bin move failed"))
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = paths;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Trash is not supported on this platform yet",
+        ))
+    }
+}
+
+// Launch a file with its default application.
+fn launch(desktop: &Path, file: &Path) -> io::Result<Option<super::archive::Materialized>> {
+    let extracted = if super::archive::is_member(file) {
+        Some(super::archive::materialize(file, u64::MAX)?)
+    } else {
+        None
+    };
+    let file = extracted
+        .as_ref()
+        .map(|file| file.path.as_path())
+        .unwrap_or(file);
+    #[cfg(unix)]
+    {
+        command(Command::new("gio").arg("launch").arg(desktop).arg(file))?;
+    }
+    #[cfg(windows)]
+    {
+        // The .desktop entry is a Linux concept; the shell resolves defaults.
+        let _ = desktop;
+        let target = file.to_string_lossy().replace(APOSTROPHE, "''");
+        command(Command::new("powershell").args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!("Start-Process -FilePath '{target}'"),
+        ]))?;
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (desktop, file);
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Launch is not supported on this platform yet",
+        ));
+    }
+    Ok(extracted)
+}
 #[cfg(test)]
+#[path = "../../tests/infrastructure/operations_portable.rs"]
+mod portable_tests;
+
+#[cfg(all(test, unix))]
 #[path = "../../tests/infrastructure/operations.rs"]
 mod tests;

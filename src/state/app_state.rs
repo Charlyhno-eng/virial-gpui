@@ -28,8 +28,8 @@ pub struct FileManager {
     pub(crate) language: Language,
     pub(crate) data_home: PathBuf,
     pub(crate) home: PathBuf,
-    pub(crate) places: Vec<crate::platform::linux::places::Place>,
-    pub(crate) devices: Vec<crate::platform::linux::devices::Volume>,
+    pub(crate) places: Vec<crate::platform::places::Place>,
+    pub(crate) devices: Vec<crate::platform::devices::Volume>,
     pub(crate) device_error: Option<String>,
     pub(crate) device_monitor: Option<Task<()>>,
     pub(crate) device_generation: usize,
@@ -85,8 +85,12 @@ pub struct FileManager {
     pub(crate) preview_media_updates: Option<Task<()>>,
     pub(crate) preview_image_cache: gpui::Entity<gpui::RetainAllImageCache>,
     pub(crate) opened_archive_files: Vec<crate::infrastructure::archive::Materialized>,
+    /// Local copies of remote files handed to xdg-open, wiped on exit.
+    pub(crate) remote_cache_files: Vec<PathBuf>,
     pub(crate) name_descending: bool,
     pub(crate) titlebar_drag: Option<gpui::Point<gpui::Pixels>>,
+    /// Remote browsing: sessions, saved hosts, status-bar activity.
+    pub(crate) ssh: crate::state::ssh::SshManager,
 }
 
 impl FileManager {
