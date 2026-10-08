@@ -13,6 +13,50 @@ pub(crate) mod storage;
 pub(crate) mod undo;
 pub(crate) mod workspaces;
 
+/// Non-blocking exclusive lock over an open file, so two Virial windows cannot
+/// interleave journals or undo history. `busy` becomes the user-facing error.
+#[cfg(unix)]
+pub(crate) fn try_lock_exclusive(file: &File, busy: &'static str) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let error = io::Error::last_os_error();
+        if matches!(error.kind(), io::ErrorKind::WouldBlock) {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, busy));
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn try_lock_exclusive(file: &File, busy: &'static str) -> io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::{
+        Foundation::ERROR_LOCK_VIOLATION,
+        Storage::FileSystem::{LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY},
+        System::IO::OVERLAPPED,
+    };
+    let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    let ok = unsafe {
+        LockFileEx(
+            file.as_raw_handle(),
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    };
+    if ok != 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(ERROR_LOCK_VIOLATION as i32) {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, busy));
+    }
+    Err(error)
+}
+
 // Freedesktop-trash module: Linux only; a portable stub serves other targets.
 #[cfg(unix)]
 pub(crate) mod trash;

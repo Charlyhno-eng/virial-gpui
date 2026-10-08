@@ -379,10 +379,10 @@ fn history(data: &Path) -> io::Result<(PathBuf, File)> {
         .truncate(false)
         .open(directory.join("lock"))?;
     // A separate open file description per call serializes other Virial processes too.
-    #[cfg(unix)]
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    super::try_lock_exclusive(
+        &lock,
+        "Virial's undo history is active in another window",
+    )?;
     Ok((directory.canonicalize()?, lock))
 }
 
@@ -521,6 +521,16 @@ fn discard(path: &Path) -> io::Result<()> {
         }
         fs::remove_dir(path)
     } else {
+        #[cfg(windows)]
+        {
+            if metadata.permissions().readonly() {
+                // Read-only files cannot be removed until the attribute drops;
+                // the backup is ours, so it never needs to stay read-only.
+                let mut permissions = metadata.permissions();
+                permissions.set_readonly(false);
+                fs::set_permissions(path, permissions)?;
+            }
+        }
         fs::remove_file(path)
     }
 }

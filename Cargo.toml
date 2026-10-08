@@ -34,8 +34,8 @@ webp = { version = "0.3", default-features = false }
 oxipng = { version = "10.2", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-# Free-space queries without a COM dependency.
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+# Free-space queries, volume discovery and journal locks, without a COM dependency.
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_IO"] }
 
 # Native outgoing file drags are not exposed by upstream GPUI 0.2.2.
 [patch.crates-io]

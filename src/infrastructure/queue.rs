@@ -204,12 +204,7 @@ fn job_lock(data: &Path, job: &Job) -> io::Result<File> {
         .create(true)
         .truncate(false)
         .open(journal(data, job)?.with_extension("lock"))?;
-    #[cfg(unix)]
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::other(
-            "This operation is active in another Virial window",
-        ));
-    }
+    super::try_lock_exclusive(&file, "This operation is active in another Virial window")?;
     Ok(file)
 }
 
@@ -795,6 +790,15 @@ fn discard_private(path: &Path) -> io::Result<()> {
         }
         fs::remove_dir(path)
     } else {
+        #[cfg(windows)]
+        {
+            if metadata.permissions().readonly() {
+                // Staging is ours: drop the attribute instead of failing removal.
+                let mut permissions = metadata.permissions();
+                permissions.set_readonly(false);
+                fs::set_permissions(path, permissions)?;
+            }
+        }
         fs::remove_file(path)
     }
 }
@@ -919,12 +923,7 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
         .create(true)
         .truncate(false)
         .open(root(data)?.join("lock"))?;
-    #[cfg(unix)]
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::other(
-            "Another Virial window is running the operation queue",
-        ));
-    }
+    super::try_lock_exclusive(&lock, "Another Virial window is running the operation queue")?;
     let _job_lock = job_lock(data, &job)?;
     // A different window may already have completed or cancelled this job.
     File::open(journal(data, &job)?)?;
