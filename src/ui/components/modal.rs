@@ -439,7 +439,7 @@ impl FileManager {
             .occlude()
             .absolute()
             .left(px(6.))
-            .bottom(px(crate::ui::components::status_bar::STATUS_BAR_HEIGHT + 4.))
+            .bottom(px(crate::ui::components::sidebar::SIDEBAR_FOOTER_HEIGHT + 4.))
             .w(px(260.))
             .p_1()
             .rounded_md()
