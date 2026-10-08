@@ -7,6 +7,10 @@ use std::path::PathBuf;
 
 struct DeviceTooltip(String);
 
+/// Height of the sidebar footer row ("LOCAL FILES" line); the remote menu
+/// anchors right above it.
+pub(crate) const SIDEBAR_FOOTER_HEIGHT: f32 = 28.;
+
 impl gpui::Render for DeviceTooltip {
     fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
@@ -83,16 +87,19 @@ impl FileManager {
             .child(
                 div()
                     .px_3()
-                    .h(px(28.))
+                    .h(px(SIDEBAR_FOOTER_HEIGHT))
                     .flex_shrink_0()
                     .flex()
                     .items_center()
-                    .justify_between()
+                    .gap_2()
                     .border_t_1()
                     .border_color(color(BORDER))
                     .text_size(px(9.5))
                     .text_color(color(MUTED))
                     .child(self.language.text("LOCAL FILES"))
+                    // Remote indicator rides the same line as the footer label
+                    // instead of adding a full-width status bar row.
+                    .child(self.remote_indicator(cx))
                     .when_some(available_space, |footer, bytes| {
                         footer.child(div().flex_1().min_w_0().text_ellipsis().text_right().child(
                             format!(
@@ -103,6 +110,51 @@ impl FileManager {
                         ))
                     }),
             )
+    }
+
+    /// The `><` badge: muted when idle, amber while connecting, accent block
+    /// once connected — click opens the remote menu.
+    fn remote_indicator(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
+        let ssh = &self.ssh;
+        let (label, symbol_color, badge, connected_host) = match &ssh.activity {
+            crate::state::ssh::SshActivity::Idle => (None, MUTED, false, None),
+            crate::state::ssh::SshActivity::Connecting(host) => (
+                Some(self.language.text("Connecting…").to_string()),
+                ACCENT,
+                false,
+                Some(host.clone()),
+            ),
+            crate::state::ssh::SshActivity::Connected(id) => (
+                Some(format!("SSH: {id}")),
+                ACCENT,
+                true,
+                Some(id.to_string()),
+            ),
+        };
+        div()
+            .id("remote-indicator")
+            .flex()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .h(px(18.))
+            .rounded_md()
+            .text_size(px(10.))
+            .text_color(color(if badge { BACKGROUND } else { TEXT }))
+            .when(badge, |badge| badge.bg(color(ACCENT)))
+            .cursor_pointer()
+            .hover(|style| style.bg(color(if badge { ACCENT } else { HOVER })))
+            .tooltip(move |_, cx| {
+                let hint = connected_host.clone();
+                cx.new(move |_| {
+                    let text = hint.unwrap_or_else(|| "Remote connection".into());
+                    super::modal::StatusTooltip(text)
+                })
+                .into()
+            })
+            .child(icon("remote", 12., if badge { BACKGROUND } else { symbol_color }))
+            .when_some(label, |badge, label| badge.child(label))
+            .on_click(cx.listener(|view, _, window, cx| view.open_remote_menu(window, cx)))
     }
 
     fn place(
