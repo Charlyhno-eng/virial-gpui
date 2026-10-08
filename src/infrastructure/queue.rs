@@ -11,7 +11,6 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicUsize, Ordering},
 };
 #[cfg(unix)]
@@ -261,7 +260,10 @@ fn counts_controlled(source: &Path, progress: Option<&Progress>) -> io::Result<(
             #[cfg(unix)]
             let identity = (metadata.dev(), metadata.ino());
             #[cfg(windows)]
-            let identity = (metadata.len(), 0u64);
+            // Directories all report len 0, so a size-based identity would
+            // collide on the second folder visited; the resolved path is
+            // stable, and the walk never follows links so it cannot loop.
+            let identity = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if !seen.insert(identity) {
                 return Err(io::Error::other("Folder tree contains a cycle"));
             }
@@ -1005,16 +1007,8 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
                     if undo::fingerprint_controlled(&source, progress)? != item.hash {
                         return Err(io::Error::other("Source changed before moving to Trash"));
                     }
-                    let output = Command::new("gio")
-                        .arg("trash")
-                        .arg("--")
-                        .arg(&source)
-                        .output()?;
-                    if !output.status.success() {
-                        return Err(io::Error::other(
-                            String::from_utf8_lossy(&output.stderr).into_owned(),
-                        ));
-                    }
+                    // Platform trash service: gio on Linux, Recycle Bin on Windows.
+                    super::operations::trash_paths(std::slice::from_ref(&source))?;
                     sync_parent(&source)?;
                 }
                 progress.advance(item.files + item.bytes);

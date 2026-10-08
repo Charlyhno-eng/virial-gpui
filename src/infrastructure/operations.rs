@@ -550,7 +550,7 @@ const APOSTROPHE: char = '\u{27}';
 
 // Trash via the desktop service. Windows moves items to the Recycle Bin with
 // PowerShell's FileSystem API (no extra crate); other targets fail cleanly.
-fn trash_paths(paths: &[PathBuf]) -> io::Result<()> {
+pub(super) fn trash_paths(paths: &[PathBuf]) -> io::Result<()> {
     #[cfg(unix)]
     {
         command(Command::new("gio").arg("trash").arg("--").args(paths))
