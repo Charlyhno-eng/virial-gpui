@@ -17,7 +17,7 @@
 use std::{
     env,
     ffi::OsStr,
-    io,
+    fs, io,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -73,13 +73,15 @@ pub(crate) fn register() -> io::Result<()> {
 fn set_app_user_model_id() -> io::Result<()> {
     // SHGetFolderPathW + SetCurrentProcessExplicitAppUserModelID live
     // in shell32.dll. We bind them at runtime so a missing shell32 on
-    // an unusual Windows SKU does not stop the launch.
+    // an unusual Windows SKU does not stop the launch. The function
+    // returns an HRESULT (S_OK == 0); anything else is a failure we
+    // surface as a non-fatal warning to the launcher.
     let wide: Vec<u16> = APP_ID.encode_utf16().chain(std::iter::once(0)).collect();
     let result = unsafe { SetCurrentProcessExplicitAppUserModelID(wide.as_ptr()) };
-    if result.is_err() {
+    if result != 0 {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            "SetCurrentProcessExplicitAppUserModelID failed",
+            format!("SetCurrentProcessExplicitAppUserModelID returned 0x{result:08X}"),
         ));
     }
     Ok(())
