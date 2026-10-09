@@ -546,6 +546,9 @@ pub(super) fn execute_with_progress(
     .map(|_| None)
 }
 
+// Shell-quoting helper for the PowerShell paths below; the unix branches go
+// through gio and never quote by hand, so the constant is windows-only.
+#[cfg(windows)]
 const APOSTROPHE: char = '\u{27}';
 
 // Trash via the desktop service. Windows moves items to the Recycle Bin with
