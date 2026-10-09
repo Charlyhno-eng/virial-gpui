@@ -61,11 +61,11 @@ pub fn named_path(directory: &Path, name: &str) -> io::Result<PathBuf> {
 }
 
 pub(super) fn rename(source: &Path, destination: &Path) -> io::Result<()> {
-    #[cfg(unix)]
+    // Linux atomic no-replace rename also protects against a concurrent creator.
+    #[cfg(target_os = "linux")]
     {
         let source = CString::new(source.as_os_str().as_bytes())?;
         let destination = CString::new(destination.as_os_str().as_bytes())?;
-        // Linux atomic no-replace rename also protects against a concurrent creator.
         let result = unsafe {
             libc::renameat2(
                 libc::AT_FDCWD,
@@ -73,6 +73,28 @@ pub(super) fn rename(source: &Path, destination: &Path) -> io::Result<()> {
                 libc::AT_FDCWD,
                 destination.as_ptr(),
                 libc::RENAME_NOREPLACE,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+    // macOS: renameatx_np with RENAME_EXCL is the equivalent atomic
+    // no-replace primitive; it fails instead of clobbering the destination.
+    #[cfg(target_os = "macos")]
+    {
+        let source = CString::new(source.as_os_str().as_bytes())?;
+        let destination = CString::new(destination.as_os_str().as_bytes())?;
+        // SAFETY: both pointers are NUL-terminated and AT_FDCWD ignores the fds.
+        let result = unsafe {
+            libc::renameatx_np(
+                libc::AT_FDCWD,
+                source.as_ptr(),
+                libc::AT_FDCWD,
+                destination.as_ptr(),
+                libc::RENAME_EXCL,
             )
         };
         if result == 0 {
@@ -98,7 +120,7 @@ pub(super) fn rename(source: &Path, destination: &Path) -> io::Result<()> {
 // A source can be replaced between enumeration and opening. O_NONBLOCK prevents
 // a replacement FIFO from hanging a worker, and O_NOFOLLOW retains link safety.
 pub(super) fn open_regular_file(path: &Path) -> io::Result<File> {
-    #[cfg(unix)]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
