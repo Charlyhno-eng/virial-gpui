@@ -12,6 +12,14 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **Qualité obligatoire en CI** : nouveau job `lint` sur chaque PR —
+  `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D
+  warnings` (tests compris, zéro warning toléré) et vérification qu'une
+  entrée CHANGELOG « Non publié » est bien présente.
+- **Procédure de publication** : `RELEASE.md` décrit le chemin complet
+  (version → CHANGELOG → fmt → clippy → tests → tag `v*` → GitHub Release),
+  et le workflow de release attache désormais `virial-gpui-windows-x64.exe`
+  à la GitHub Release en plus du paquet Debian.
 - **Navigation SSH de bout en bout** : dialog de connexion complet avec
   sélection de la méthode d'authentification (agent / fichier de clé / mot de
   passe), agent SSH Windows (Pageant puis pipe OpenSSH) avec repli automatique

@@ -13,6 +13,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    # Gate for every PR merge: formatting, clippy and the changelog rule.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install Rust stable with lint components
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Lint (clippy, tests included)
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Require a changelog entry for the pull request
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          pending=$(awk '/^## \[Non publié\]/{flag=1; next} /^## /{flag=0} flag' CHANGELOG.md)
+          if ! printf '%s' "$pending" | grep -q '^- '; then
+            echo "::error::CHANGELOG.md: the [Non publié] section is empty."
+            echo "::error::Every pull request must add an entry there (rule in AGENTS.md)."
+            exit 1
+          fi
+
   linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
