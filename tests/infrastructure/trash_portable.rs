@@ -1,3 +1,4 @@
+#[cfg(not(unix))]
 use super::trash;
 
 #[cfg(not(unix))]

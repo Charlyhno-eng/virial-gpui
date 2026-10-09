@@ -2,6 +2,12 @@
 use super::{RESULT_LIMIT, SearchResults, score};
 use crate::domain::models::Entry;
 use serde::{Deserialize, Serialize};
+// Used only by the inotify watcher below, which is unix-only; keep the
+// imports scoped the same way so a Windows build does not warn about them.
+#[cfg(unix)]
+use std::collections::HashMap;
+#[cfg(unix)]
+use std::ffi::CString;
 #[cfg(unix)]
 use std::os::{
     fd::{AsRawFd, FromRawFd, OwnedFd},

@@ -1,7 +1,8 @@
 use super::*;
 use libc;
 #[cfg(unix)]
-use std::ffi::CString;
+use std::ffi::CString as PipeName;
+
 #[cfg(unix)]
 use std::os::unix::{ffi::OsStringExt, fs::symlink};
 #[cfg(windows)]
@@ -66,7 +67,7 @@ fn folder_sizes_include_hidden_files_but_skip_nested_links_and_special_files() {
     symlink(folder.join("file"), folder.join("file-link")).unwrap();
     symlink(folder.join("nested"), folder.join("folder-link")).unwrap();
     symlink(root.join("missing"), folder.join("broken-link")).unwrap();
-    let pipe = std::ffi::CString::new(folder.join("pipe").as_os_str().as_bytes()).unwrap();
+    let pipe = PipeName::new(folder.join("pipe").as_os_str().as_bytes()).unwrap();
     assert_eq!(unsafe { libc::mkfifo(pipe.as_ptr(), 0o600) }, 0);
     let cancelled = AtomicBool::new(false);
     assert_eq!(directory_size(&folder, &cancelled).unwrap(), 15);

@@ -1,4 +1,8 @@
-use std::{fs, fs::File, io};
+use std::{fs::File, io};
+// The Windows `sync_file` fallback opens through `fs::OpenOptions`; the unix
+// path uses `File::open`, so the plain `fs` import is windows-only.
+#[cfg(windows)]
+use std::fs;
 pub(crate) mod archive;
 pub(crate) mod image_edit;
 pub(crate) mod layout;

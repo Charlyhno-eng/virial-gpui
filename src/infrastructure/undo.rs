@@ -6,12 +6,9 @@ use super::{
 };
 use sha2::{Digest, Sha256};
 #[cfg(unix)]
-use std::os::{
-    fd::AsRawFd,
-    unix::{
-        ffi::OsStrExt,
-        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-    },
+use std::os::unix::{
+    ffi::OsStrExt,
+    fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
 };
 use std::{
     fs::{self, File, OpenOptions},
