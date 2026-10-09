@@ -51,7 +51,18 @@ oxipng = { version = "10.2", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 # Free-space queries, volume discovery and journal locks, without a COM dependency.
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_IO"] }
+# The Win32_UI and Win32_System_Com features are required by the brand-identity
+# code in `platform::windows::desktop` (`SetCurrentProcessExplicitAppUserModelID`
+# lives in the Shell API, and the COM allocator is needed for the OLE strings we
+# pass to it). `Win32_System_Com` is also pulled in for the registry helpers
+# we bind at runtime.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_IO",
+    "Win32_UI_Shell",
+] }
 
 # Native outgoing file drags are not exposed by upstream GPUI 0.2.2.
 [patch.crates-io]

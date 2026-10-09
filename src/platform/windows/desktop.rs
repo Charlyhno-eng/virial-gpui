@@ -17,17 +17,12 @@
 use std::{
     env,
     ffi::OsStr,
-    fs, io,
-    os::windows::ffi::OsStrExt,
+    io,
     path::{Path, PathBuf},
     process::Command,
 };
 
-use windows_sys::Win32::{
-    Foundation::HWND,
-    System::Com::CoTaskMemFree,
-    UI::Shell::{ITaskbarList3, SetCurrentProcessExplicitAppUserModelID},
-};
+use windows_sys::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 
 /// Application User Model ID used to group Virial windows on the taskbar.
 ///
@@ -124,7 +119,7 @@ fn install_file_associations() -> io::Result<()> {
         run_reg(&["add", &ext_root, "/ve", "/d", PROG_ID, "/f"])?;
         run_reg(&[
             "add",
-            &format!(r"HKCU\Software\Classes\Applications\{exe}\shell\open\command"),
+            &format!(r"HKCU\Software\Classes\Applications\{}\shell\open\command", binary.display()),
             "/ve",
             "/d",
             &format!("\"{}\" \"%1\"", binary.display()),
@@ -147,10 +142,6 @@ fn install_file_associations() -> io::Result<()> {
     // new keys are already persisted and the Explorer icon cache will
     // refresh on its own within a few minutes).
     refresh_shell_icon_cache();
-
-    let _ = ITaskbarList3; // keep the import alive for future use.
-    let _ = HWND(0);
-    let _ = CoTaskMemFree as *const ();
     Ok(())
 }
 
