@@ -603,12 +603,7 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
         // SAFETY: both descriptors are open for the whole call and the
         // destination was created with create_new, so nothing is overwritten.
         let result = unsafe {
-            libc::fclonefileat(
-                input.as_raw_fd(),
-                output.as_raw_fd(),
-                std::ptr::null(),
-                0,
-            )
+            libc::fclonefileat(input.as_raw_fd(), output.as_raw_fd(), std::ptr::null(), 0)
         };
         if result == 0 {
             copied = metadata.len();

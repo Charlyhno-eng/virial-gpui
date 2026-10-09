@@ -244,7 +244,9 @@ fn copy_contents(
 ) -> io::Result<()> {
     // Whole-file CoW cloning avoids copying blocks (including sparse holes) for
     // transfers and undo snapshots. Small files are cheaper to copy directly.
-    #[cfg(unix)]
+    // FICLONE is Linux-only; macOS uses fclonefileat elsewhere and falls back
+    // to a plain copy here.
+    #[cfg(target_os = "linux")]
     if size >= 128 * 1024 {
         loop {
             // Both descriptors remain open. The destination was created with

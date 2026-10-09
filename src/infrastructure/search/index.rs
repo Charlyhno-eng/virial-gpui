@@ -2,19 +2,18 @@
 use super::{RESULT_LIMIT, SearchResults, score};
 use crate::domain::models::Entry;
 use serde::{Deserialize, Serialize};
-// Used only by the inotify watcher below, which is unix-only; keep the
-// imports scoped the same way so a Windows build does not warn about them.
-#[cfg(unix)]
+// Used only by the inotify watcher below, which is Linux-only; keep the
+// imports scoped the same way so other targets do not warn about them.
+#[cfg(target_os = "linux")]
 use std::collections::HashMap;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
+#[cfg(target_os = "linux")]
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 #[cfg(unix)]
-use std::os::{
-    fd::{AsRawFd, FromRawFd, OwnedFd},
-    unix::{
-        ffi::{OsStrExt, OsStringExt},
-        fs::MetadataExt,
-    },
+use std::os::unix::{
+    ffi::{OsStrExt, OsStringExt},
+    fs::MetadataExt,
 };
 use std::{
     collections::{BTreeMap, BinaryHeap, HashSet, VecDeque},
@@ -497,13 +496,15 @@ impl SearchHandle {
     }
 }
 
-#[cfg(unix)]
+// inotify is a Linux-only API: macOS and other unixes take the no-op watcher
+// below, which polls on a timer instead of blocking on a native descriptor.
+#[cfg(target_os = "linux")]
 struct Watches {
     fd: Option<OwnedFd>,
     paths: HashMap<i32, PathBuf>,
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 impl Watches {
     fn new() -> Self {
         // SAFETY: inotify_init1 takes only flags and returns a new owned descriptor.
@@ -605,10 +606,10 @@ impl Watches {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "linux"))]
 struct Watches;
 
-#[cfg(not(unix))]
+#[cfg(not(target_os = "linux"))]
 impl Watches {
     fn new() -> Self {
         Watches
