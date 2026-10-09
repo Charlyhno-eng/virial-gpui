@@ -579,7 +579,7 @@ fn bounded_parallel_transfers_share_progress_and_remain_one_undo_batch() {
     assert_eq!(progress.snapshot().bytes_done, 64 * 1024);
     for source in &sources {
         assert_eq!(
-            fs::read(&source).unwrap(),
+            fs::read(source).unwrap(),
             fs::read(target.join(source.file_name().unwrap())).unwrap()
         );
     }

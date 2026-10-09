@@ -244,29 +244,27 @@ impl Session {
         handle: &mut client::Handle<HostKeyVerifier>,
         username: &str,
     ) -> Result<AuthResult, String> {
-        // Deferred init: each execution path assigns `last` exactly once.
-        let last;
         #[cfg(unix)]
-        match russh::keys::agent::client::AgentClient::connect_env().await {
-            Ok(agent) => last = try_agent_identities(agent, handle, username).await,
-            Err(error) => last = Err(format!("No SSH agent: {error}")),
-        }
+        let last = match russh::keys::agent::client::AgentClient::connect_env().await {
+            Ok(agent) => try_agent_identities(agent, handle, username).await,
+            Err(error) => Err(format!("No SSH agent: {error}")),
+        };
         #[cfg(windows)]
         // Pageant first, then the OpenSSH agent's named pipe; the two streams
         // are distinct types, so each connection scopes its own attempt.
-        match russh::keys::agent::client::AgentClient::connect_pageant().await {
-            Ok(agent) => last = try_agent_identities(agent, handle, username).await,
+        let last = match russh::keys::agent::client::AgentClient::connect_pageant().await {
+            Ok(agent) => try_agent_identities(agent, handle, username).await,
             Err(_) => {
                 match russh::keys::agent::client::AgentClient::connect_named_pipe(
                     r"\\.\pipe\openssh-ssh-agent",
                 )
                 .await
                 {
-                    Ok(agent) => last = try_agent_identities(agent, handle, username).await,
-                    Err(error) => last = Err(format!("No SSH agent: {error}")),
+                    Ok(agent) => try_agent_identities(agent, handle, username).await,
+                    Err(error) => Err(format!("No SSH agent: {error}")),
                 }
             }
-        }
+        };
         if last.is_ok() {
             return last;
         }
