@@ -119,7 +119,10 @@ fn install_file_associations() -> io::Result<()> {
         run_reg(&["add", &ext_root, "/ve", "/d", PROG_ID, "/f"])?;
         run_reg(&[
             "add",
-            &format!(r"HKCU\Software\Classes\Applications\{}\shell\open\command", binary.display()),
+            &format!(
+                r"HKCU\Software\Classes\Applications\{}\shell\open\command",
+                binary.display()
+            ),
             "/ve",
             "/d",
             &format!("\"{}\" \"%1\"", binary.display()),
