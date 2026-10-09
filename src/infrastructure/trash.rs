@@ -8,10 +8,10 @@ use std::{
 
 fn roots(data: &Path) -> Vec<(PathBuf, Option<PathBuf>)> {
     let mut roots = vec![(data.join("Trash"), None)];
-    let uid = unsafe { libc::getuid() };
     // Linux exposes the mount table here. macOS has no equivalent file, so only
     // the home Trash is scanned there and mounted volumes are not listed.
     #[cfg(target_os = "linux")]
+    let uid = unsafe { libc::getuid() };
     if let Ok(mounts) = fs::read_to_string("/proc/self/mountinfo") {
         for line in mounts.lines() {
             if let Some(mount) = line.split_whitespace().nth(4) {

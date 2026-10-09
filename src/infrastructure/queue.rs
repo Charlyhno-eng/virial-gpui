@@ -441,7 +441,8 @@ fn prepare(data: &Path, job: &Job, progress: &Progress) -> io::Result<Vec<Item>>
 /// Unknown or rotating devices use one worker; nonrotating devices can service
 /// independent files concurrently. Bound both CPU usage and outstanding I/O.
 fn workers(_directory: &Path, files: usize) -> usize {
-    #[cfg(unix)]
+    // The rotational marker lives in sysfs, which only Linux exposes.
+    #[cfg(target_os = "linux")]
     let solid = {
         let device = fs::metadata(_directory).map(|m| m.dev()).unwrap_or(0);
         let sys = PathBuf::from(format!(

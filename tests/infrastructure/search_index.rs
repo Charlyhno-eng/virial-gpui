@@ -126,6 +126,7 @@ fn notifications_refresh_creations_renames_and_removed_subtrees() {
     fs::create_dir_all(root.join("original/deep")).unwrap();
     fs::write(root.join("original/deep/report"), b"").unwrap();
     let mut index = inventory(root);
+    #[cfg(target_os = "linux")]
     assert!(index.watches.fd.is_some(), "inotify unavailable");
     index.begin_scan(false);
     finish(&mut index);
