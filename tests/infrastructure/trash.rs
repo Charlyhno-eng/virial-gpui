@@ -88,7 +88,7 @@ fn directory_symlink_and_batch_conflicts() {
     let target = temp.path().join("same");
     let a = item(&data, "a", &target);
     let b = item(&data, "b", &target);
-    assert!(restore(&data, &[&a, &b]).is_err());
+    assert!(restore(&data, &[a.clone(), b.clone()]).is_err());
     assert!(a.exists() && b.exists());
     assert!(!target.exists());
 }
@@ -127,7 +127,7 @@ fn restores_a_selection_as_one_undoable_action_with_non_utf8_names() {
     let first = item(&data, "first", &destination);
     let second_destination = temp.path().join("second");
     let second = item(&data, "second.2", &second_destination);
-    restore(&data, &[&first, &second]).unwrap();
+    restore(&data, &[first.clone(), second.clone()]).unwrap();
     assert!(destination.exists() && second_destination.exists());
     assert!(super::super::undo::undo(&data).unwrap());
     assert!(first.exists() && second.exists());
