@@ -1,4 +1,4 @@
-name: Publish Debian package
+name: Publish Virial releases
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  debian:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -65,3 +65,59 @@ jobs:
           else
             gh release create "$RELEASE_TAG" target/debian/*.deb --verify-tag --generate-notes --title "Virial $RELEASE_TAG"
           fi
+
+  # Runs after `debian` so the GitHub Release already exists and the exe is
+  # attached to the same release with --clobber.
+  windows:
+    needs: debian
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Check release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: pwsh
+        run: |
+          $match = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
+            Select-Object -First 1
+          $version = $match.Matches[0].Groups[1].Value
+          if ("v$version" -ne $env:RELEASE_TAG) {
+            Write-Error "Release tag must match Cargo.toml: v$version"
+            exit 1
+          }
+      - name: Install NASM
+        shell: pwsh
+        run: |
+          choco install nasm -y --no-progress
+          echo "$env:ProgramFiles\NASM" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Build release executable
+        shell: pwsh
+        run: |
+          cargo build --release --locked
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/virial-gpui.exe dist/virial-gpui.exe
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: virial-gpui-windows-x64
+          path: dist/virial-gpui.exe
+          if-no-files-found: error
+      - name: Attach Windows executable to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: pwsh
+        run: |
+          gh release upload "$env:RELEASE_TAG" dist/virial-gpui.exe --clobber
