@@ -794,7 +794,9 @@ impl FileManager {
             input.placeholder = self.language.text("user@host[:port]").into();
             input
         }));
-        self.focus.focus(window);
+        if let Some(input) = &self.ssh.dialog_input {
+            input.read(cx).focus(window);
+        }
         cx.notify();
     }
 
@@ -824,7 +826,9 @@ impl FileManager {
             input.placeholder = placeholder.into();
             input
         }));
-        self.focus.focus(window);
+        if let Some(aux) = &self.ssh.dialog_aux {
+            aux.read(cx).focus(window);
+        }
         cx.notify();
     }
 
