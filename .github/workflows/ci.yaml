@@ -103,6 +103,28 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  macos:
+    # macOS runs the same suite with the Metal (`macos-blade`) gpui backend.
+    # `continue-on-error` is deliberate: the runner is the only place that can
+    # compile this target, so the job reports instead of gating Linux/Windows.
+    runs-on: macos-14
+    timeout-minutes: 45
+    continue-on-error: true
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run tests
+        run: cargo test --locked
+      - name: Build release binary
+        run: cargo build --release --locked
+
   windows:
     runs-on: windows-latest
     timeout-minutes: 45

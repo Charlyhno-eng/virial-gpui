@@ -150,8 +150,12 @@ impl Api {
         // SAFETY: symbols use the public libmpv C ABI; all copied function pointers
         // are kept alive by _library. No user-provided libraries are loaded.
         unsafe {
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             let library = libloading::Library::new("libmpv.so.2").map_err(|_| ())?;
+            // macOS loads the dylib by its bare name; libloading resolves the
+            // extension itself, so no suffix is hard-coded here.
+            #[cfg(target_os = "macos")]
+            let library = libloading::Library::new("libmpv.2").map_err(|_| ())?;
             #[cfg(windows)]
             let library = libloading::Library::new("libmpv-2.dll").map_err(|_| ())?;
             Ok(Arc::new(Self {

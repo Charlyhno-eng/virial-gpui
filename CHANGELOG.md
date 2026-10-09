@@ -21,6 +21,17 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Barre de défilement latérale** : la liste de fichiers affiche un curseur
   proportionnel sur le bord droit, dont la position et la taille sont lues
   depuis la liste elle-même et ne peuvent donc pas diverger du contenu affiché.
+- **Linux et macOS** : `renameat2(RENAME_NOREPLACE)` et
+  `renameatx_np(RENAME_EXCL)` gardent le renommage atomique sans écrasement
+  sur les deux systèmes ; les ports de transfert gagnent le clone copy-on-write
+  de chaque plateforme (`FICLONE` sur Linux, `fclonefileat` sur macOS).
+- **macOS** : le job CI `macos` exécute la suite complète et construit le
+  binaire avec le backend Metal de gpui. gpui est désormais sélectionné par
+  cible dans `Cargo.toml`, ce qui évite d'imposer Wayland/X11 à macOS.
+- **macOS** : l'aperçu vidéo charge `libmpv.2` et la corbeille ne lit plus
+  `/proc/self/mountinfo`, inexistant sur ce système.
+
+### Ajouts
 - **Identité visuelle Windows complète** : `virial-gpui.exe` embarque désormais
   l'icône multi-résolutions (16/24/32/48/64/128/256) et un manifest
   PerMonitorV2. L'icône s'affiche dans l'installeur, sur le raccourci du
