@@ -232,10 +232,9 @@ impl FileManager {
                 }
                 return false;
             }
-        } else if self.global_search.is_none() {
-            return false;
-        } else if event.keystroke.key != "escape"
-            && !self.global_search.as_ref().unwrap().pending_open
+        } else if self.global_search.is_none()
+            || (event.keystroke.key != "escape"
+                && !self.global_search.as_ref().unwrap().pending_open)
         {
             return false;
         }

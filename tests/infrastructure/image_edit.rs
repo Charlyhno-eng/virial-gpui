@@ -10,7 +10,10 @@ fn symlink<P: AsRef<std::path::Path>, Q: AsRef<std::path::Path>>(
     original: P,
     link: Q,
 ) -> std::io::Result<()> {
-    if std::fs::metadata(&original).map(|m| m.is_dir()).unwrap_or(false) {
+    if std::fs::metadata(&original)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+    {
         symlink_dir_win(original, link)
     } else {
         symlink_file_win(original, link)

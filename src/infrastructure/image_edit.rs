@@ -40,7 +40,11 @@ impl ExportFormat {
         }
     }
 
+    /// Pure helper for the image tests (`#[cfg(all(test, unix))]` module):
+    /// asserts the encoded bytes independently of the file name. Kept behind
+    /// `cfg` for tests only; dead under a plain Windows build, hence the allow.
     #[cfg(test)]
+    #[cfg_attr(windows, allow(dead_code))]
     fn image_format(self) -> ImageFormat {
         match self {
             Self::Png => ImageFormat::Png,

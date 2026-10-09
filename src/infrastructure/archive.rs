@@ -1,6 +1,8 @@
 //! ZIP members use virtual paths such as `/downloads/book.zip/chapter/page.txt`.
 //! Writes rebuild beside the original and replace it only after the ZIP is complete.
 use crate::domain::models::Entry;
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::{
     collections::{BTreeMap, HashSet},
     fs::{self, File},
@@ -8,8 +10,6 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::Mutex,
 };
-#[cfg(unix)]
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use tempfile::{NamedTempFile, TempDir};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
@@ -319,7 +319,15 @@ fn signature(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0)
     };
-    (metadata.len(), 0, 0, secs(metadata.modified()), 0, secs(metadata.created()), 0)
+    (
+        metadata.len(),
+        0,
+        0,
+        secs(metadata.modified()),
+        0,
+        secs(metadata.created()),
+        0,
+    )
 }
 
 fn rewrite(
@@ -406,7 +414,8 @@ fn append<W: Write + io::Seek>(
         ));
     }
     #[cfg(unix)]
-    let options = SimpleFileOptions::default().unix_permissions(metadata.permissions().mode() & 0o777);
+    let options =
+        SimpleFileOptions::default().unix_permissions(metadata.permissions().mode() & 0o777);
     #[cfg(windows)]
     let options = SimpleFileOptions::default();
     let name = member_name(target)?;

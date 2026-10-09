@@ -2,9 +2,17 @@
 use super::{RESULT_LIMIT, SearchResults, score};
 use crate::domain::models::Entry;
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::{
+    fd::{AsRawFd, FromRawFd, OwnedFd},
+    unix::{
+        ffi::{OsStrExt, OsStringExt},
+        fs::MetadataExt,
+    },
+};
 use std::{
-    collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque},
-    ffi::{CString, OsStr, OsString},
+    collections::{BTreeMap, BinaryHeap, HashSet, VecDeque},
+    ffi::{OsStr, OsString},
     fs::{self, File},
     io::{self, BufRead, BufReader, BufWriter, Write},
     path::{Path, PathBuf},
@@ -14,14 +22,6 @@ use std::{
     },
     thread,
     time::{Duration, Instant},
-};
-#[cfg(unix)]
-use std::os::{
-    fd::{AsRawFd, FromRawFd, OwnedFd},
-    unix::{
-        ffi::{OsStrExt, OsStringExt},
-        fs::MetadataExt,
-    },
 };
 
 /// What the walk keys its "already visited folders" set on: inode identity
@@ -102,7 +102,14 @@ impl Stamp {
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0)
         };
-        Self(metadata.len(), 0, secs(metadata.modified()), 0, secs(metadata.created()), 0)
+        Self(
+            metadata.len(),
+            0,
+            secs(metadata.modified()),
+            0,
+            secs(metadata.created()),
+            0,
+        )
     }
 }
 
@@ -173,7 +180,10 @@ impl Directory {
             .iter()
             .enumerate()
             .map(|(stored_index, item)| {
-                let name = bytes_to_os(&item.name).as_os_str().to_string_lossy().into_owned();
+                let name = bytes_to_os(&item.name)
+                    .as_os_str()
+                    .to_string_lossy()
+                    .into_owned();
                 let name_key = name.to_lowercase().into_boxed_str();
                 let letters = parent_letters | letter_mask(&name_key);
                 let hidden = hidden_parent || name.starts_with('.');
@@ -201,7 +211,8 @@ impl Directory {
     }
 
     fn item_path(&self, item: &Item) -> PathBuf {
-        self.path.join(bytes_to_os(&self.raw_item(item).name).as_os_str())
+        self.path
+            .join(bytes_to_os(&self.raw_item(item).name).as_os_str())
     }
 }
 
@@ -463,7 +474,10 @@ impl SearchHandle {
             let directory = raw.kind == 1 || (raw.kind == 2 && path.is_dir());
             entries.push(Entry {
                 path,
-                name: bytes_to_os(&raw.name).as_os_str().to_string_lossy().into_owned(),
+                name: bytes_to_os(&raw.name)
+                    .as_os_str()
+                    .to_string_lossy()
+                    .into_owned(),
                 bytes: None,
                 // Resolve only selected symlinks, never every file in the catalog.
                 directory,

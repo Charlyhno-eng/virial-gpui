@@ -1,9 +1,9 @@
 use super::*;
-#[cfg(unix)]
-use std::os::unix::{ffi::OsStringExt, fs::symlink};
+use libc;
 #[cfg(unix)]
 use std::ffi::CString;
-use libc;
+#[cfg(unix)]
+use std::os::unix::{ffi::OsStringExt, fs::symlink};
 #[cfg(windows)]
 use std::os::windows::fs::{symlink_dir as symlink_dir_win, symlink_file as symlink_file_win};
 #[cfg(windows)]
@@ -11,7 +11,10 @@ fn symlink<P: AsRef<std::path::Path>, Q: AsRef<std::path::Path>>(
     original: P,
     link: Q,
 ) -> std::io::Result<()> {
-    if std::fs::metadata(&original).map(|m| m.is_dir()).unwrap_or(false) {
+    if std::fs::metadata(&original)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+    {
         symlink_dir_win(original, link)
     } else {
         symlink_file_win(original, link)

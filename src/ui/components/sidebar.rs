@@ -153,7 +153,11 @@ impl FileManager {
                 })
                 .into()
             })
-            .child(icon("remote", 12., if badge { BACKGROUND } else { symbol_color }))
+            .child(icon(
+                "remote",
+                12.,
+                if badge { BACKGROUND } else { symbol_color },
+            ))
             .when_some(label, |badge, label| badge.child(label))
             .on_click(cx.listener(|view, _, window, cx| view.open_remote_menu(window, cx)))
     }

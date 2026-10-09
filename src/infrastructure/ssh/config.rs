@@ -31,13 +31,21 @@ pub(crate) enum HostAuth {
     /// Try the local SSH agent (SSH_AUTH_SOCK), then default key paths.
     Agent,
     /// A specific OpenSSH private key file, optionally protected by a passphrase.
-    Key { path: PathBuf, passphrase: Option<String> },
+    Key {
+        path: PathBuf,
+        passphrase: Option<String>,
+    },
     /// A secret typed at connect time and kept in memory only.
     Interactive(String),
 }
 
 impl HostAuth {
     /// Short human label for the connect dialog and tooltips.
+    ///
+    /// Exercised by the unit tests and by the dialog rendering plan of
+    /// TODO(ssh-pr2); dead under a plain binary build, hence the allow.
+    #[cfg(test)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn label(&self) -> &'static str {
         match self {
             Self::Agent => "SSH agent",
@@ -85,7 +93,9 @@ impl HostConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AuthHint {
     Agent,
-    Key { path: PathBuf },
+    Key {
+        path: PathBuf,
+    },
     /// The secret is typed at connect time and never stored.
     Interactive,
 }

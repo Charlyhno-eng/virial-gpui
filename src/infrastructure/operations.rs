@@ -1,10 +1,4 @@
 //! Filesystem mutations. Never overwrite a destination or follow links while copying.
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{self, Read},
-    path::{Component, Path, PathBuf},
-    process::Command,
-};
 #[cfg(unix)]
 use std::{
     ffi::CString,
@@ -13,6 +7,12 @@ use std::{
         ffi::OsStrExt,
         fs::{OpenOptionsExt, symlink},
     },
+};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{self, Read},
+    path::{Component, Path, PathBuf},
+    process::Command,
 };
 
 #[derive(Clone, Debug)]
@@ -155,10 +155,10 @@ pub(super) fn copy_with_progress(
         if result.is_err() {
             let _ = fs::remove_dir_all(destination);
         }
-        if result.is_ok() {
-            if let Some(progress) = progress {
-                progress.advance(1);
-            }
+        if result.is_ok()
+            && let Some(progress) = progress
+        {
+            progress.advance(1);
         }
         return result;
     }

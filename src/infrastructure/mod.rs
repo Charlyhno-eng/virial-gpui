@@ -33,7 +33,7 @@ pub(crate) fn try_lock_exclusive(file: &File, busy: &'static str) -> io::Result<
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::{
         Foundation::ERROR_LOCK_VIOLATION,
-        Storage::FileSystem::{LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY},
+        Storage::FileSystem::{LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx},
         System::IO::OVERLAPPED,
     };
     let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
@@ -117,9 +117,6 @@ pub(crate) fn sync_file(file: &std::path::Path) -> io::Result<()> {
     }
     #[cfg(windows)]
     {
-        fs::OpenOptions::new()
-            .write(true)
-            .open(file)?
-            .sync_all()
+        fs::OpenOptions::new().write(true).open(file)?.sync_all()
     }
 }

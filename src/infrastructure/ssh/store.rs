@@ -12,20 +12,20 @@ use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
 
 /// Result of a connect attempt reported back to the UI thread.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum ConnectOutcome {
     /// A previously connected session for the same id is still alive.
     AlreadyConnected,
-    /// The session is now connected and browsable.
-    Connected(Arc<Session>),
+    /// The session is now connected and browsable (fetch it with
+    /// [`SshStore::session`] when needed).
+    Connected,
 }
 
 impl std::fmt::Debug for ConnectOutcome {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AlreadyConnected => formatter.write_str("AlreadyConnected"),
-            // Session internals are opaque; the variant alone is meaningful.
-            Self::Connected(_) => formatter.write_str("Connected(..)"),
+            Self::Connected => formatter.write_str("Connected"),
         }
     }
 }
@@ -75,15 +75,15 @@ impl SshStore {
         auth: HostAuth,
     ) -> Result<ConnectOutcome, String> {
         let mut sessions = self.sessions.lock().await;
-        if let Some(existing) = sessions.get(&config.id) {
-            if matches!(existing.state(), SessionState::Connected) {
-                return Ok(ConnectOutcome::AlreadyConnected);
-            }
+        if let Some(existing) = sessions.get(&config.id)
+            && matches!(existing.state(), SessionState::Connected)
+        {
+            return Ok(ConnectOutcome::AlreadyConnected);
         }
         let session = Session::connect(config.clone(), auth).await?;
         let session = Arc::new(session);
-        sessions.insert(config.id, session.clone());
-        Ok(ConnectOutcome::Connected(session))
+        sessions.insert(config.id, session);
+        Ok(ConnectOutcome::Connected)
     }
 
     /// The live session for `id`, if connected.
@@ -105,6 +105,10 @@ impl SshStore {
     }
 
     /// Ids of every live session, sorted for stable UI ordering.
+    ///
+    /// Only exercised from the registry unit tests so far; reserved for the
+    /// quick-pick session list of TODO(ssh-pr2) (state/ssh.rs).
+    #[cfg(test)]
     pub(crate) async fn connected_ids(&self) -> Vec<HostId> {
         let sessions = self.sessions.lock().await;
         let mut ids: Vec<HostId> = sessions

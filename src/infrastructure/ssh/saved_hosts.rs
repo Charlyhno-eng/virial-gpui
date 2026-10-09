@@ -29,7 +29,9 @@ struct SerializedHost {
 #[derive(Serialize, Deserialize)]
 enum SerializedAuth {
     Agent,
-    Key { path: String },
+    Key {
+        path: String,
+    },
     /// A secret is typed at connect time and never stored.
     Interactive,
 }
@@ -64,7 +66,9 @@ fn deserialize(saved: SerializedHost, id: HostId) -> HostConfig {
         initial_path: saved.initial_path.map(PathBuf::from),
         auth_hint: match saved.auth {
             SerializedAuth::Agent => AuthHint::Agent,
-            SerializedAuth::Key { path } => AuthHint::Key { path: PathBuf::from(path) },
+            SerializedAuth::Key { path } => AuthHint::Key {
+                path: PathBuf::from(path),
+            },
             SerializedAuth::Interactive => AuthHint::Interactive,
         },
     }
@@ -94,6 +98,9 @@ impl SavedHosts {
     }
 
     /// Remove a host by id. Removing an unknown id is not an error.
+    /// Exercised by the unit tests; wiring a delete action in the favorites
+    /// menu is TODO(ssh-pr2), so the function is dead in the binary build.
+    #[cfg(test)]
     pub(crate) fn remove(data_home: &Path, id: &HostId) -> io::Result<()> {
         let _guard = WRITE_LOCK
             .lock()

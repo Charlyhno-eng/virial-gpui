@@ -17,5 +17,5 @@ mod store;
 
 pub(crate) use config::{AuthHint, HostAuth, HostConfig, HostId};
 pub(crate) use saved_hosts::SavedHosts;
-pub(crate) use session::{join_remote, Session, SessionState};
+pub(crate) use session::join_remote;
 pub(crate) use store::{ConnectOutcome, SshStore};

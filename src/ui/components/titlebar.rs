@@ -53,11 +53,11 @@ impl FileManager {
             self.titlebar_drag = None;
             return;
         }
-        if let Some(start) = self.titlebar_drag {
-            if (event.position.x - start.x).abs() + (event.position.y - start.y).abs() > px(3.) {
-                self.titlebar_drag = None;
-                window.start_window_move();
-            }
+        if let Some(start) = self.titlebar_drag
+            && (event.position.x - start.x).abs() + (event.position.y - start.y).abs() > px(3.)
+        {
+            self.titlebar_drag = None;
+            window.start_window_move();
         }
     }
     pub(crate) fn titlebar(&self, window: &Window, cx: &mut Context<Self>) -> Div {

@@ -83,8 +83,8 @@ impl SshManager {
 
     /// Refresh the saved-host list from disk (after dialog edits).
     pub(crate) fn reload_hosts(&mut self, data_home: &std::path::Path) {
-        self.hosts = SavedHosts::read(data_home)
-            .unwrap_or_else(|_| std::mem::take(&mut self.hosts));
+        self.hosts =
+            SavedHosts::read(data_home).unwrap_or_else(|_| std::mem::take(&mut self.hosts));
     }
 
     /// Build the auth request for a host, honoring its saved hint. The typed
@@ -153,13 +153,13 @@ impl SshManager {
         let runtime = self.runtime.clone();
         let id = host.id.clone();
         self.pending = Some(cx.spawn(async move |view, cx| {
-            let result = runtime.spawn(async move {
-                store.connect(host, auth).await
-            }).await;
+            let result = runtime
+                .spawn(async move { store.connect(host, auth).await })
+                .await;
             let _ = view.update(cx, |view, cx| {
                 view.ssh.pending = None;
                 match result {
-                    Ok(Ok(ConnectOutcome::Connected(_))) => {
+                    Ok(Ok(ConnectOutcome::Connected)) => {
                         view.ssh.activity = SshActivity::Connected(id.clone());
                         view.ssh.error = None;
                         // Land the browser on the remote root.
@@ -208,7 +208,10 @@ impl SshManager {
         let store = self.store.clone();
         let runtime = self.runtime.clone();
         self.pending = Some(cx.spawn(async move |view, cx| {
-            runtime.spawn(async move { store.disconnect(&id).await }).await.ok();
+            runtime
+                .spawn(async move { store.disconnect(&id).await })
+                .await
+                .ok();
             let _ = view.update(cx, |view, cx| {
                 view.ssh.pending = None;
                 view.ssh.activity = SshActivity::Idle;
@@ -226,7 +229,7 @@ impl SshManager {
     /// Close every session (window close / app quit).
     pub(crate) fn shutdown(&self) {
         let store = self.store.clone();
-        let _ = self.runtime.clone().block_on(async move {
+        self.runtime.clone().block_on(async move {
             store.disconnect_all().await;
         });
     }

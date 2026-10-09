@@ -3,17 +3,23 @@
 //! russh-sftp multiplexes requests by id, so the session shares one SFTP
 //! session behind an `Arc` and lets callers issue concurrent operations.
 
-use super::config::{HostAuth, HostConfig, HostId};
+use super::config::{HostAuth, HostConfig};
 use crate::domain::models::Entry;
 use russh::client::{self, AuthResult};
-use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
+use russh::keys::{PrivateKeyWithHashAlg, load_secret_key};
+use std::marker::Unpin;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::marker::Unpin;
 use tokio::sync::Mutex as AsyncMutex;
 
 /// What the status bar badge shows. Plain data so the UI layer maps it to
 /// colors and labels without knowing anything about russh.
+///
+/// Only `Connected` is constructed today: the store never keeps a session in
+/// another state (a failed connect simply returns an error). The remaining
+/// variants are the badge contract reserved by TODO(ssh-pr2) (store.rs), which
+/// will surface the in-flight and failed states in the UI.
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SessionState {
     Connecting,
@@ -91,7 +97,12 @@ pub(crate) fn entry_from_dir_entry(
 
 /// Pure constructor used by `entry_from_dir_entry` and unit tests: mapping
 /// remote metadata into the repository's own `Entry` model.
-pub(crate) fn entry_from_parts(parent: &Path, name: &str, directory: bool, bytes: Option<u64>) -> Entry {
+pub(crate) fn entry_from_parts(
+    parent: &Path,
+    name: &str,
+    directory: bool,
+    bytes: Option<u64>,
+) -> Entry {
     Entry {
         path: join_remote(parent, name),
         name: name.to_string(),
@@ -146,7 +157,6 @@ async fn try_agent_identities<S: russh::keys::agent::client::AgentStream + Send 
 
 /// A live SSH session: connection handle plus an SFTP channel.
 pub(crate) struct Session {
-    pub(crate) id: HostId,
     pub(crate) state: SessionState,
     connection: AsyncMutex<client::Handle<HostKeyVerifier>>,
     sftp: Arc<AsyncMutex<russh_sftp::client::SftpSession>>,
@@ -178,7 +188,12 @@ impl Session {
             client::connect(Arc::new(client_config), address, verifier),
         )
         .await
-        .map_err(|_| format!("{}:{}: connection timed out after 10 s", config.host, config.port))?
+        .map_err(|_| {
+            format!(
+                "{}:{}: connection timed out after 10 s",
+                config.host, config.port
+            )
+        })?
         .map_err(|error| format!("{}:{}, {error}", config.host, config.port))?;
         let username = config.username.clone();
         let outcome = match &auth {
@@ -193,12 +208,10 @@ impl Session {
                     .await
                     .map_err(|error| format!("Authentication failed: {error}"))
             }
-            HostAuth::Interactive(secret) => {
-                handle
-                    .authenticate_password(username, secret.clone())
-                    .await
-                    .map_err(|error| format!("Authentication failed: {error}"))
-            }
+            HostAuth::Interactive(secret) => handle
+                .authenticate_password(username, secret.clone())
+                .await
+                .map_err(|error| format!("Authentication failed: {error}")),
         };
         match outcome {
             Ok(result) if result.success() => {}
@@ -217,7 +230,6 @@ impl Session {
             .await
             .map_err(|error| format!("SFTP initialization failed: {error}"))?;
         Ok(Self {
-            id: config.id.clone(),
             state: SessionState::Connected,
             connection: AsyncMutex::new(handle),
             sftp: Arc::new(AsyncMutex::new(sftp)),
@@ -232,7 +244,8 @@ impl Session {
         handle: &mut client::Handle<HostKeyVerifier>,
         username: &str,
     ) -> Result<AuthResult, String> {
-        let mut last: Result<AuthResult, String> = Err("No SSH agent".into());
+        // Deferred init: each execution path assigns `last` exactly once.
+        let last;
         #[cfg(unix)]
         match russh::keys::agent::client::AgentClient::connect_env().await {
             Ok(agent) => last = try_agent_identities(agent, handle, username).await,
@@ -282,20 +295,6 @@ impl Session {
         &self.state
     }
 
-    pub(crate) fn set_state(&mut self, state: SessionState) {
-        self.state = state;
-    }
-
-    /// Canonical absolute path of a remote directory.
-    pub(crate) async fn canonicalize(&self, path: &str) -> Result<String, String> {
-        self.sftp
-            .lock()
-            .await
-            .canonicalize(path)
-            .await
-            .map_err(|error| format!("Cannot resolve {path}: {error}"))
-    }
-
     /// List a remote directory as the repository's own entries.
     pub(crate) async fn read_dir(&self, directory: &Path) -> Result<Vec<Entry>, String> {
         let path = remote_string(directory);
@@ -305,7 +304,7 @@ impl Session {
             .await
             .map_err(|error| format!("Cannot read {path}: {error}"))?;
         Ok(read
-            .map(|entry| entry_from_dir_entry(directory.as_ref() as &Path, entry))
+            .map(|entry| entry_from_dir_entry(directory as &Path, entry))
             .collect())
     }
 
@@ -371,9 +370,13 @@ impl Session {
 
     /// Close the session gracefully.
     pub(crate) async fn disconnect(&self) {
-        let mut handle = self.connection.lock().await;
+        let handle = self.connection.lock().await;
         let _ = handle
             .disconnect(russh::Disconnect::ByApplication, "", "english")
             .await;
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/infrastructure/ssh/session.rs"]
+mod tests;

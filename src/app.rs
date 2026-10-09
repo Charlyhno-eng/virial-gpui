@@ -9,7 +9,6 @@ use crate::{
 };
 use gpui::{AppContext, Context, KeyDownEvent, ScrollStrategy, UniformListScrollHandle, Window};
 use std::{
-    io,
     path::PathBuf,
     process::Command,
     sync::{Arc, atomic::AtomicBool},
@@ -211,7 +210,7 @@ impl FileManager {
                             crate::state::browser::sort_by_name(&mut entries);
                             entries
                         })
-                        .map_err(|error| std::io::Error::other(error))
+                        .map_err(std::io::Error::other)
                 }
                 Location::Recent => {
                     crate::infrastructure::recent::read(&data, hidden).map(|mut entries| {

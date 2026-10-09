@@ -4,12 +4,9 @@ use crate::{
     platform::applications::Application, ui::components::input::NameInput,
 };
 use gpui::{AppContext, ClipboardItem, Context, Entity, KeyDownEvent, Pixels, Point, Window};
-use std::{
-    fs,
-    path::PathBuf,
-};
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::{fs, path::PathBuf};
 
 #[derive(Clone)]
 pub struct Menu {
@@ -151,20 +148,21 @@ impl FileManager {
             return;
         }
         // Remote locations route mutating actions to SFTP operations.
-        if let Some(directory) = self
-            .location
-            .remote()
-            .cloned()
-            .and_then(|_| match &self.location {
-                crate::domain::location::Location::Remote { path, .. } => Some(path.clone()),
-                _ => None,
-            })
+        if let Some(directory) =
+            self.location
+                .remote()
+                .cloned()
+                .and_then(|_| match &self.location {
+                    crate::domain::location::Location::Remote { path, .. } => Some(path.clone()),
+                    _ => None,
+                })
         {
             match action {
                 Action::Refresh => self.refresh(cx),
                 Action::NewFolder => {
-                    let input =
-                        cx.new(|cx| NameInput::new(self.language.text("New folder").to_string(), window, cx));
+                    let input = cx.new(|cx| {
+                        NameInput::new(self.language.text("New folder").to_string(), window, cx)
+                    });
                     self.dialog = Some(Dialog::Name {
                         action: NameAction::RemoteNewFolder { directory },
                         input,
@@ -178,10 +176,13 @@ impl FileManager {
                 }
                 Action::Rename => {
                     if let Some(entry) = entry {
-                        let input =
-                            cx.new(|cx| NameInput::for_rename(entry.name.clone(), entry.directory, window, cx));
+                        let input = cx.new(|cx| {
+                            NameInput::for_rename(entry.name.clone(), entry.directory, window, cx)
+                        });
                         self.dialog = Some(Dialog::Name {
-                            action: NameAction::RemoteRename { source: entry.path.clone() },
+                            action: NameAction::RemoteRename {
+                                source: entry.path.clone(),
+                            },
                             input,
                         });
                     }
@@ -325,12 +326,11 @@ impl FileManager {
                                         applications: list,
                                         loading,
                                     }) = &mut view.dialog
+                                        && target.path == entry.path
                                     {
-                                        if target.path == entry.path {
-                                            *list = applications;
-                                            *loading = false;
-                                            cx.notify();
-                                        }
+                                        *list = applications;
+                                        *loading = false;
+                                        cx.notify();
                                     }
                                 });
                             })
@@ -385,14 +385,14 @@ impl FileManager {
                                             date.format("%Y-%m-%d %H:%M:%S")
                                         ));
                                     }
-                                    if metadata.is_symlink() {
-                                        if let Ok(target) = fs::read_link(&path) {
-                                            details.push_str(&format!(
-                                                "\n{}: {}",
-                                                language.text("Link target"),
-                                                target.display()
-                                            ));
-                                        }
+                                    if metadata.is_symlink()
+                                        && let Ok(target) = fs::read_link(&path)
+                                    {
+                                        details.push_str(&format!(
+                                            "\n{}: {}",
+                                            language.text("Link target"),
+                                            target.display()
+                                        ));
                                     }
                                     details
                                 })
@@ -404,12 +404,10 @@ impl FileManager {
                                         entry: target,
                                         details,
                                     }) = &mut view.dialog
+                                        && target.path == entry.path
                                     {
-                                        if target.path == entry.path {
-                                            *details =
-                                                result.unwrap_or_else(|error| error.to_string());
-                                            cx.notify();
-                                        }
+                                        *details = result.unwrap_or_else(|error| error.to_string());
+                                        cx.notify();
                                     }
                                 });
                             })
@@ -535,13 +533,14 @@ impl FileManager {
                     NameAction::RemoteRename { source } => {
                         let target = source
                             .parent()
-                            .map(|parent| {
-                                crate::infrastructure::ssh::join_remote(parent, &name)
-                            })
+                            .map(|parent| crate::infrastructure::ssh::join_remote(parent, &name))
                             .unwrap_or_else(|| PathBuf::from(&name));
                         self.close_dialog(window, cx);
                         self.run_remote_operation(
-                            RemoteOperation::Rename { from: source, to: target },
+                            RemoteOperation::Rename {
+                                from: source,
+                                to: target,
+                            },
                             cx,
                         );
                         return;
@@ -904,7 +903,10 @@ impl FileManager {
             return;
         };
         // Interactive favorites ask for their credential through the dialog.
-        if matches!(host.auth_hint, crate::infrastructure::ssh::AuthHint::Interactive) {
+        if matches!(
+            host.auth_hint,
+            crate::infrastructure::ssh::AuthHint::Interactive
+        ) {
             self.open_ssh_dialog(window, cx);
             if let Some(input) = &self.ssh.dialog_input {
                 input.update(cx, |field, _| field.text = host.id.to_string());
@@ -932,8 +934,7 @@ impl FileManager {
         operation: RemoteOperation,
         cx: &mut Context<Self>,
     ) {
-        let crate::domain::location::Location::Remote { host, path } = &self.location
-        else {
+        let crate::domain::location::Location::Remote { host, path } = &self.location else {
             return;
         };
         let host = host.clone();

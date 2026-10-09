@@ -4,10 +4,8 @@ use super::*;
 use std::path::PathBuf;
 
 fn scratch_home(tag: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "virial-ssh-test-{}-{tag}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("virial-ssh-test-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).unwrap();
     directory

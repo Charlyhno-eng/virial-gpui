@@ -41,8 +41,7 @@ mod backend {
             return Err(io::Error::last_os_error());
         }
         let mut buffer = vec![0u16; needed as usize + 1];
-        let written =
-            unsafe { GetLogicalDriveStringsW(buffer.len() as u32, buffer.as_mut_ptr()) };
+        let written = unsafe { GetLogicalDriveStringsW(buffer.len() as u32, buffer.as_mut_ptr()) };
         if written == 0 || written as usize > buffer.len() {
             return Err(io::Error::last_os_error());
         }

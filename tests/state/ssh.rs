@@ -137,5 +137,8 @@ fn connected_matches_only_the_exact_id() {
     let other = HostId::new("nas", 22, "demon");
     manager.activity = SshActivity::Connected(kali.clone());
     assert!(manager.connected(&kali));
-    assert!(!manager.connected(&other), "a different host is not connected");
+    assert!(
+        !manager.connected(&other),
+        "a different host is not connected"
+    );
 }

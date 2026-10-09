@@ -25,6 +25,9 @@ fn measure(name: &str, mut operation: impl FnMut()) {
 
 #[test]
 #[ignore = "run explicitly in release mode to measure filesystem performance"]
+// A debug run reaches the CI default path; the const-block form clippy
+// suggests would not compile in debug, so the lint is allowed instead.
+#[allow(clippy::assertions_on_constants)]
 fn filesystem_performance() {
     assert!(!cfg!(debug_assertions), "Run this test with --release");
     let fixture = tempfile::tempdir().unwrap();
@@ -74,6 +77,9 @@ fn filesystem_performance() {
 // so timings are reported without a hardware-dependent pass/fail threshold.
 #[test]
 #[ignore = "run explicitly in release mode to measure transfer performance"]
+// Same rationale as `filesystem_performance`: the assertion must stay a
+// runtime check so a debug run fails with a clear message.
+#[allow(clippy::assertions_on_constants)]
 fn transfer_performance() {
     use super::{operations, progress::Progress, undo};
     use std::{io::Write, time::Duration};
