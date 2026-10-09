@@ -1,0 +1,13 @@
+// Windows resource script for Virial.
+// Bundles the multi-resolution .ico into the executable and links the
+// application manifest so the launcher uses Common Controls v6 and
+// honours per-monitor DPI v2. Without this the .exe would inherit a
+// generic icon (no install/desktop/taskbar branding) and pick up the
+// blurry GDI-bits-stretching behaviour of legacy DPI awareness.
+//
+// IDs:
+//   1 = main application icon (PNG-encoded .ico with 16,24,32,48,64,128,256)
+//   2 = explicit RT_MANIFEST resource referenced from `manifest` below.
+
+1 ICON "virial-gpui.ico"
+2 RT_MANIFEST "virial-gpui.manifest"

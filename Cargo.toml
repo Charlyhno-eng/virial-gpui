@@ -5,6 +5,20 @@ edition = "2024"
 license = "MIT"
 description = "A simple Linux file manager built with GPUI"
 
+[build-dependencies]
+# Windows-only resource compiler used by `build.rs` to embed the
+# application icon and the PerMonitorV2 DPI-aware manifest into
+# `virial-gpui.exe`. Kept off the Linux build because `winres` requires
+# the `windres` MinGW toolchain that the CI runner does not install.
+winres = { version = "0.1", optional = true }
+
+[features]
+# Enables the Windows-only resource embedding step. Off by default so
+# `cargo build` on Linux and macOS does not pull `winres`; the CI
+# Windows job (and downstream installers) flip it on with
+# `--features windows-resources`.
+windows-resources = ["dep:winres"]
+
 [dependencies]
 gpui = "=0.2.2"
 # GPUI's xattr 0.2 dependency uses ENOATTR, removed by newer libc releases.

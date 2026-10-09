@@ -4,8 +4,10 @@
 //! backend module directly.
 #[cfg(target_os = "linux")]
 pub(crate) mod linux;
+#[cfg(windows)]
+pub(crate) mod windows;
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{applications, desktop, devices, file_drag, places};
+pub(crate) use linux::{applications, devices, file_drag, places};
 
 #[cfg(not(target_os = "linux"))]
 pub(crate) mod applications;

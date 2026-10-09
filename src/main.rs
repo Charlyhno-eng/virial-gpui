@@ -1,3 +1,9 @@
+// Hide the console window on Windows so launching `virial-gpui.exe` from the
+// installer, the desktop shortcut or `Win+R` never spawns an extra terminal
+// behind the GUI window. The flag is a no-op on Linux/macOS and stays out
+// of the way for the `cargo run` development loop.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod config;
 mod domain;
@@ -12,16 +18,26 @@ use gpui::{
     prelude::*, px, size,
 };
 
+/// AppUserModelID used to group Virial windows on the Windows taskbar. The
+/// value is owned by the platform-specific module so the portable fallback
+/// (which is a no-op) does not need to know about Windows-specific names.
+#[cfg(target_os = "linux")]
+const APP_ID: &str = platform::linux::desktop::APP_ID;
+#[cfg(windows)]
+const APP_ID: &str = platform::windows::desktop::APP_ID;
+#[cfg(not(any(target_os = "linux", windows)))]
+const APP_ID: &str = "virial-gpui";
+
 fn main() {
     // Register downloaded binaries without requiring a graphical session.
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--install-desktop")) {
-        if let Err(error) = platform::desktop::register() {
+        if let Err(error) = install_desktop() {
             eprintln!("Cannot register Virial's desktop icon: {error}");
             std::process::exit(1);
         }
         return;
     }
-    if let Err(error) = platform::desktop::register() {
+    if let Err(error) = install_desktop() {
         eprintln!("Cannot register Virial's desktop icon: {error}");
     }
     let path = config::initial_path();
@@ -54,7 +70,7 @@ fn main() {
                 window_background: WindowBackgroundAppearance::Transparent,
                 // Match the desktop launcher for window icons. GPUI 0.2.2
                 // panics when requesting a raw X11 window handle.
-                app_id: Some(platform::desktop::APP_ID.into()),
+                app_id: Some(APP_ID.into()),
                 window_min_size: Some(minimum_size),
                 ..Default::default()
             };
@@ -70,4 +86,23 @@ fn main() {
             }
             cx.activate(true);
         });
+}
+
+/// Dispatch to the right platform-specific desktop installer. The Linux
+/// side writes a `.desktop` file under `$XDG_DATA_HOME`; the Windows side
+/// sets the AppUserModelID and (only with `--install-desktop`) registers
+/// the file associations declared in [`platform::windows::desktop`].
+fn install_desktop() -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        platform::linux::desktop::register()
+    }
+    #[cfg(windows)]
+    {
+        platform::windows::desktop::register()
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        platform::desktop::register()
+    }
 }
