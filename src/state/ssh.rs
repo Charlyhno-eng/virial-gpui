@@ -25,6 +25,18 @@ pub(crate) enum SshActivity {
     Connected(HostId),
 }
 
+/// The authentication route picked in the connect dialog.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum SshAuthMode {
+    /// ssh-agent, then the default keys in `~/.ssh`.
+    #[default]
+    Agent,
+    /// A private key file; the aux input carries its path.
+    Key,
+    /// A typed password; the aux input carries the secret (memory only).
+    Password,
+}
+
 pub(crate) struct SshManager {
     pub(crate) store: Arc<SshStore>,
     /// Tokio runtime driving russh futures; created once, never recreated.
@@ -38,8 +50,10 @@ pub(crate) struct SshManager {
     pub(crate) menu_open: bool,
     /// The connect dialog with its input, when shown.
     pub(crate) dialog_input: Option<gpui::Entity<crate::ui::components::input::NameInput>>,
-    /// Credential typed into the dialog for the pending connect.
-    pub(crate) dialog_credential: Option<String>,
+    /// The authentication route selected in the dialog.
+    pub(crate) dialog_auth: SshAuthMode,
+    /// Key path or password, per `dialog_auth`; never persisted.
+    pub(crate) dialog_aux: Option<gpui::Entity<crate::ui::components::input::NameInput>>,
 }
 
 impl SshManager {
@@ -58,7 +72,8 @@ impl SshManager {
             pending: None,
             menu_open: false,
             dialog_input: None,
-            dialog_credential: None,
+            dialog_auth: SshAuthMode::default(),
+            dialog_aux: None,
         }
     }
 
@@ -68,8 +83,8 @@ impl SshManager {
 
     /// Refresh the saved-host list from disk (after dialog edits).
     pub(crate) fn reload_hosts(&mut self, data_home: &std::path::Path) {
-        self.hosts = SavedHosts::read(data_home)
-            .unwrap_or_else(|_| std::mem::take(&mut self.hosts));
+        self.hosts =
+            SavedHosts::read(data_home).unwrap_or_else(|_| std::mem::take(&mut self.hosts));
     }
 
     /// Build the auth request for a host, honoring its saved hint. The typed
@@ -138,13 +153,13 @@ impl SshManager {
         let runtime = self.runtime.clone();
         let id = host.id.clone();
         self.pending = Some(cx.spawn(async move |view, cx| {
-            let result = runtime.spawn(async move {
-                store.connect(host, auth).await
-            }).await;
+            let result = runtime
+                .spawn(async move { store.connect(host, auth).await })
+                .await;
             let _ = view.update(cx, |view, cx| {
                 view.ssh.pending = None;
                 match result {
-                    Ok(Ok(ConnectOutcome::Connected(_))) => {
+                    Ok(Ok(ConnectOutcome::Connected)) => {
                         view.ssh.activity = SshActivity::Connected(id.clone());
                         view.ssh.error = None;
                         // Land the browser on the remote root.
@@ -167,11 +182,15 @@ impl SshManager {
                     }
                     Ok(Err(message)) => {
                         view.ssh.activity = SshActivity::Idle;
-                        view.ssh.error = Some(message);
+                        view.ssh.error = Some(message.clone());
+                        // The dialog is already closed at this point; without
+                        // the global banner the failure would be invisible.
+                        view.error = Some(format!("SSH: {message}"));
                     }
                     Err(join) => {
                         view.ssh.activity = SshActivity::Idle;
                         view.ssh.error = Some(format!("SSH task failed: {join}"));
+                        view.error = Some(format!("SSH task failed: {join}"));
                     }
                 }
                 cx.notify();
@@ -189,7 +208,10 @@ impl SshManager {
         let store = self.store.clone();
         let runtime = self.runtime.clone();
         self.pending = Some(cx.spawn(async move |view, cx| {
-            runtime.spawn(async move { store.disconnect(&id).await }).await.ok();
+            runtime
+                .spawn(async move { store.disconnect(&id).await })
+                .await
+                .ok();
             let _ = view.update(cx, |view, cx| {
                 view.ssh.pending = None;
                 view.ssh.activity = SshActivity::Idle;
@@ -207,7 +229,7 @@ impl SshManager {
     /// Close every session (window close / app quit).
     pub(crate) fn shutdown(&self) {
         let store = self.store.clone();
-        let _ = self.runtime.clone().block_on(async move {
+        self.runtime.clone().block_on(async move {
             store.disconnect_all().await;
         });
     }

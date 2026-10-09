@@ -1,14 +1,14 @@
 use crate::domain::models::Entry;
-#[cfg(unix)]
-use std::{
-    ffi::CString,
-    os::unix::{ffi::OsStrExt, fs::MetadataExt},
-};
 use std::{
     collections::HashSet,
     fs, io,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
+};
+#[cfg(unix)]
+use std::{
+    ffi::CString,
+    os::unix::{ffi::OsStrExt, fs::MetadataExt},
 };
 
 pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
@@ -67,10 +67,7 @@ pub fn directory_entry_count(path: &Path, hidden: bool) -> io::Result<usize> {
         #[cfg(unix)]
         let hidden_entry = item.file_name().as_bytes().starts_with(b".");
         #[cfg(not(unix))]
-        let hidden_entry = item
-            .file_name()
-            .to_string_lossy()
-            .starts_with('.')
+        let hidden_entry = item.file_name().to_string_lossy().starts_with('.')
             && item.file_name() != "."
             && item.file_name() != "..";
         Ok(count + usize::from(hidden || !hidden_entry))

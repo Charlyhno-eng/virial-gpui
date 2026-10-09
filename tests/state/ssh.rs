@@ -83,7 +83,8 @@ fn connected_tracks_the_active_host() {
         pending: None,
         menu_open: false,
         dialog_input: None,
-        dialog_credential: None,
+        dialog_auth: SshAuthMode::default(),
+        dialog_aux: None,
     };
     let id = HostId::new("kali", 22, "demon");
     assert!(!manager.connected(&id));
@@ -129,11 +130,15 @@ fn connected_matches_only_the_exact_id() {
         pending: None,
         menu_open: false,
         dialog_input: None,
-        dialog_credential: None,
+        dialog_auth: SshAuthMode::default(),
+        dialog_aux: None,
     };
     let kali = HostId::new("kali", 22, "demon");
     let other = HostId::new("nas", 22, "demon");
     manager.activity = SshActivity::Connected(kali.clone());
     assert!(manager.connected(&kali));
-    assert!(!manager.connected(&other), "a different host is not connected");
+    assert!(
+        !manager.connected(&other),
+        "a different host is not connected"
+    );
 }

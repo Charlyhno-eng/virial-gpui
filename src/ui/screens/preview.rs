@@ -452,8 +452,7 @@ impl FileManager {
                                         code.highlights.iter().filter_map(|(range, style)| {
                                             let from = range.start.max(start);
                                             let to = range.end.min(end);
-                                            (from < to)
-                                                .then(|| (from - start..to - start, style.clone()))
+                                            (from < to).then(|| (from - start..to - start, *style))
                                         });
                                     div()
                                         .flex()

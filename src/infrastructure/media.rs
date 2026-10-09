@@ -394,7 +394,7 @@ fn render_frames(
             for block in &pixels {
                 bytes.extend_from_slice(&block.0);
             }
-            for pixel in bytes.chunks_exact_mut(4) {
+            for pixel in bytes.as_chunks_mut::<4>().0 {
                 pixel[3] = 255;
             }
             let buffer = image::RgbaImage::from_raw(WIDTH, HEIGHT, bytes).unwrap();

@@ -1,19 +1,18 @@
 use super::*;
-use std::{
-    ffi::OsString,
-    sync::mpsc,
-    time::Duration,
-};
 #[cfg(unix)]
 use std::os::unix::{ffi::OsStringExt, fs::symlink};
 #[cfg(windows)]
 use std::os::windows::fs::{symlink_dir as symlink_dir_win, symlink_file as symlink_file_win};
+use std::{ffi::OsString, process::Command, sync::mpsc, time::Duration};
 #[cfg(windows)]
 fn symlink<P: AsRef<std::path::Path>, Q: AsRef<std::path::Path>>(
     original: P,
     link: Q,
 ) -> std::io::Result<()> {
-    if std::fs::metadata(&original).map(|m| m.is_dir()).unwrap_or(false) {
+    if std::fs::metadata(&original)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+    {
         symlink_dir_win(original, link)
     } else {
         symlink_file_win(original, link)
@@ -580,7 +579,7 @@ fn bounded_parallel_transfers_share_progress_and_remain_one_undo_batch() {
     assert_eq!(progress.snapshot().bytes_done, 64 * 1024);
     for source in &sources {
         assert_eq!(
-            fs::read(&source).unwrap(),
+            fs::read(source).unwrap(),
             fs::read(target.join(source.file_name().unwrap())).unwrap()
         );
     }

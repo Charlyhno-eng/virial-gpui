@@ -1,4 +1,9 @@
-use crate::platform::{applications, file_drag, places};
+// `applications` and `Language` are only exercised by the portable-open
+// test, which is skipped on Linux; `file_drag` and `places` are used below.
+#[cfg(not(target_os = "linux"))]
+use crate::platform::applications;
+use crate::platform::{file_drag, places};
+#[cfg(not(target_os = "linux"))]
 use crate::ui::i18n::Language;
 use std::{fs, path::PathBuf};
 

@@ -1,7 +1,6 @@
 //! Tests for the pure mapping helpers of `infrastructure::ssh::session`.
 
 use super::super::session::entry_from_parts;
-use crate::domain::models::Entry;
 use std::path::{Path, PathBuf};
 
 #[test]

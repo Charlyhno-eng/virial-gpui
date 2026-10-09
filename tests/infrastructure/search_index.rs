@@ -312,6 +312,9 @@ fn notification_overflow_requests_a_complete_reconciliation() {
 
 #[test]
 #[ignore = "run explicitly in release mode to measure indexed search performance"]
+// Same rationale as the filesystem performance tests: a debug run must fail
+// with a clear message, so the check stays a runtime assertion.
+#[allow(clippy::assertions_on_constants)]
 fn indexed_search_performance() {
     assert!(!cfg!(debug_assertions), "Run with --release");
     let resident_kib = || {

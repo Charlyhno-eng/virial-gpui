@@ -1,5 +1,7 @@
-use crate::infrastructure::storage::{available_space, directory_entry_count, directory_size, read_directory};
-use std::{fs, path::Path, sync::atomic::AtomicBool};
+use crate::infrastructure::storage::{
+    available_space, directory_entry_count, directory_size, read_directory,
+};
+use std::{fs, sync::atomic::AtomicBool};
 
 fn unique_root(tag: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("virial-portable-{}-{}", tag, std::process::id()))
@@ -47,7 +49,10 @@ fn folder_sizes_sum_files_and_tolerate_empty_folders() {
     fs::create_dir(folder.join("empty")).unwrap();
     let cancelled = AtomicBool::new(false);
     assert_eq!(directory_size(&folder, &cancelled).unwrap(), 12);
-    assert_eq!(directory_size(&folder.join("empty"), &cancelled).unwrap(), 0);
+    assert_eq!(
+        directory_size(&folder.join("empty"), &cancelled).unwrap(),
+        0
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

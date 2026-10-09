@@ -439,7 +439,9 @@ impl FileManager {
             .occlude()
             .absolute()
             .left(px(6.))
-            .bottom(px(crate::ui::components::sidebar::SIDEBAR_FOOTER_HEIGHT + 4.))
+            .bottom(px(
+                crate::ui::components::sidebar::SIDEBAR_FOOTER_HEIGHT + 4.
+            ))
             .w(px(260.))
             .p_1()
             .rounded_md()
@@ -447,27 +449,32 @@ impl FileManager {
             .border_1()
             .border_color(color(BORDER))
             .shadow_md()
-            .children(entries.into_iter().enumerate().map(|(index, (label, action))| {
-                div()
-                    .id(("remote-menu-action", index))
-                    .h(px(26.))
-                    .px_3()
-                    .flex()
-                    .items_center()
-                    .rounded_sm()
-                    .cursor_pointer()
-                    .text_size(px(10.5))
-                    .text_color(color(if action.is_disconnect() { ERROR } else { TEXT }))
-                    .hover(|style| style.bg(color(HOVER)))
-                    .child(label)
-                    .on_click(cx.listener(move |view, _, window, cx| match &action {
-                        RemoteMenuAction::Connect(id) => {
-                            view.connect_saved_host(id.clone(), window, cx)
-                        }
-                        RemoteMenuAction::OpenDialog => view.open_ssh_dialog(window, cx),
-                        RemoteMenuAction::Disconnect => view.disconnect_remote(cx),
-                    }))
-            }));
+            .children(
+                entries
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (label, action))| {
+                        div()
+                            .id(("remote-menu-action", index))
+                            .h(px(26.))
+                            .px_3()
+                            .flex()
+                            .items_center()
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .text_size(px(10.5))
+                            .text_color(color(if action.is_disconnect() { ERROR } else { TEXT }))
+                            .hover(|style| style.bg(color(HOVER)))
+                            .child(label)
+                            .on_click(cx.listener(move |view, _, window, cx| match &action {
+                                RemoteMenuAction::Connect(id) => {
+                                    view.connect_saved_host(id.clone(), window, cx)
+                                }
+                                RemoteMenuAction::OpenDialog => view.open_ssh_dialog(window, cx),
+                                RemoteMenuAction::Disconnect => view.disconnect_remote(cx),
+                            }))
+                    }),
+            );
         Some(
             div()
                 .absolute()
@@ -478,16 +485,30 @@ impl FileManager {
                         .occlude()
                         .absolute()
                         .inset_0()
-                        .on_mouse_down(MouseButton::Left, cx.listener(|view, _, _, cx| {
-                            view.close_remote_menu(cx);
-                        })),
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|view, _, _, cx| {
+                                view.close_remote_menu(cx);
+                            }),
+                        ),
                 )
                 .child(reveal(panel, "remote-menu-reveal")),
         )
     }
 
-    /// The SSH connect dialog: target + optional credential, in-memory only.
+    /// The SSH connect dialog: target, authentication route (agent / key file
+    /// / password) and the per-route field. The secret stays in memory only.
     fn ssh_dialog(&self, cx: &mut Context<Self>) -> Div {
+        use crate::state::ssh::SshAuthMode;
+        let auth_chip =
+            |cx: &mut Context<Self>, id: &'static str, mode: SshAuthMode, label: &'static str| {
+                let active = self.ssh.dialog_auth == mode;
+                button(id, self.language.text(label))
+                    .when(active, |chip| chip.bg(color(SELECTED)))
+                    .on_click(cx.listener(move |view, _, window, cx| {
+                        view.select_ssh_auth(mode, window, cx)
+                    }))
+            };
         let mut content = div()
             .id("ssh-dialog-panel")
             .occlude()
@@ -507,14 +528,32 @@ impl FileManager {
                     .text_size(px(16.))
                     .child(self.language.text("Connect to Host")),
             )
+            .child(div().text_size(px(11.)).text_color(color(MUTED)).child(
+                self.language.text(
+                    "Format: user@host[:port] — keys and the SSH agent are tried automatically",
+                ),
+            ))
             .child(
                 div()
-                    .text_size(px(11.))
-                    .text_color(color(MUTED))
-                    .child(self.language.text("Format: user@host[:port] — keys and the SSH agent are tried automatically")),
+                    .id("ssh-auth-modes")
+                    .flex()
+                    .gap_1()
+                    .child(auth_chip(cx, "auth-agent", SshAuthMode::Agent, "Agent"))
+                    .child(auth_chip(cx, "auth-key", SshAuthMode::Key, "Key file"))
+                    .child(auth_chip(
+                        cx,
+                        "auth-password",
+                        SshAuthMode::Password,
+                        "Password",
+                    )),
             );
         if let Some(input) = &self.ssh.dialog_input {
             content = content.child(input.clone());
+        }
+        if self.ssh.dialog_auth != SshAuthMode::Agent
+            && let Some(aux) = &self.ssh.dialog_aux
+        {
+            content = content.child(aux.clone());
         }
         if let Some(error) = &self.ssh.error {
             content = content.child(div().text_color(color(ERROR)).child(error.clone()));
@@ -523,24 +562,29 @@ impl FileManager {
             self.ssh.activity,
             crate::state::ssh::SshActivity::Connecting(_)
         );
-        content = content.child(
-            div()
-                .flex()
-                .justify_end()
-                .gap_2()
-                .child(button("cancel-ssh", self.language.text("Cancel")).on_click(
-                    cx.listener(|view, _, window, cx| view.close_ssh_dialog(window, cx)),
-                ))
-                .child(
-                    button(
-                        "confirm-ssh",
-                        self.language.text(if connecting { "Connecting…" } else { "Connect" }),
-                    )
-                    .on_click(cx.listener(|view, _, window, cx| {
-                        view.confirm_ssh_dialog(window, cx)
-                    })),
-                ),
-        );
+        content =
+            content.child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(button("cancel-ssh", self.language.text("Cancel")).on_click(
+                        cx.listener(|view, _, window, cx| view.close_ssh_dialog(window, cx)),
+                    ))
+                    .child(
+                        button(
+                            "confirm-ssh",
+                            self.language.text(if connecting {
+                                "Connecting…"
+                            } else {
+                                "Connect"
+                            }),
+                        )
+                        .on_click(
+                            cx.listener(|view, _, window, cx| view.confirm_ssh_dialog(window, cx)),
+                        ),
+                    ),
+            );
         div()
             .occlude()
             .absolute()

@@ -33,10 +33,9 @@ fn parse(text: &str, language: Language) -> Option<String> {
         let line = line.trim();
         if line.starts_with('[') {
             active = line == "[Desktop Entry]";
-        } else if active && !line.starts_with('#') {
-            if let Some((key, value)) = line.split_once('=') {
-                fields.insert(key.trim(), value.trim());
-            }
+        } else if active && !line.starts_with('#') && line.contains('=') {
+            let (key, value) = line.split_once('=').expect("contains '=' checked above");
+            fields.insert(key.trim(), value.trim());
         }
     }
     if fields.get("Type") != Some(&"Application")

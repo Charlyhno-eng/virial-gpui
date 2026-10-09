@@ -6,18 +6,17 @@ use super::{
     undo,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::{
+    fd::AsRawFd,
+    unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink},
+};
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicUsize, Ordering},
-};
-#[cfg(unix)]
-use std::os::{
-    fd::AsRawFd,
-    unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink},
 };
 use url::Url;
 
@@ -205,12 +204,7 @@ fn job_lock(data: &Path, job: &Job) -> io::Result<File> {
         .create(true)
         .truncate(false)
         .open(journal(data, job)?.with_extension("lock"))?;
-    #[cfg(unix)]
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::other(
-            "This operation is active in another Virial window",
-        ));
-    }
+    super::try_lock_exclusive(&file, "This operation is active in another Virial window")?;
     Ok(file)
 }
 
@@ -261,7 +255,10 @@ fn counts_controlled(source: &Path, progress: Option<&Progress>) -> io::Result<(
             #[cfg(unix)]
             let identity = (metadata.dev(), metadata.ino());
             #[cfg(windows)]
-            let identity = (metadata.len(), 0u64);
+            // Directories all report len 0, so a size-based identity would
+            // collide on the second folder visited; the resolved path is
+            // stable, and the walk never follows links so it cannot loop.
+            let identity = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if !seen.insert(identity) {
                 return Err(io::Error::other("Folder tree contains a cycle"));
             }
@@ -556,10 +553,7 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             // Reopen the partial destination created by a previous run.
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(target)?
+            OpenOptions::new().read(true).write(true).open(target)?
         }
         Err(error) => return Err(error),
     };
@@ -784,15 +778,31 @@ fn discard_private(path: &Path) -> io::Result<()> {
         )?;
         #[cfg(windows)]
         {
-            let mut permissions = metadata.permissions();
-            permissions.set_readonly(false);
-            fs::set_permissions(path, permissions)?;
+            // Staging is ours: drop the attribute instead of failing removal.
+            #[allow(clippy::permissions_set_readonly_false)]
+            {
+                let mut permissions = metadata.permissions();
+                permissions.set_readonly(false);
+                fs::set_permissions(path, permissions)?;
+            }
         }
         for entry in fs::read_dir(path)? {
             discard_private(&entry?.path())?;
         }
         fs::remove_dir(path)
     } else {
+        #[cfg(windows)]
+        {
+            if metadata.permissions().readonly() {
+                // Staging is ours: drop the attribute instead of failing removal.
+                #[allow(clippy::permissions_set_readonly_false)]
+                {
+                    let mut permissions = metadata.permissions();
+                    permissions.set_readonly(false);
+                    fs::set_permissions(path, permissions)?;
+                }
+            }
+        }
         fs::remove_file(path)
     }
 }
@@ -835,8 +845,8 @@ fn validate(job: &Job) -> io::Result<()> {
                     }
                     if let Ok(metadata) = fs::symlink_metadata(location) {
                         #[cfg(unix)]
-                        let foreign = !metadata.is_dir()
-                            || metadata.uid() != unsafe { libc::geteuid() };
+                        let foreign =
+                            !metadata.is_dir() || metadata.uid() != unsafe { libc::geteuid() };
                         // Windows staging paths live under the user profile; no uid check.
                         #[cfg(windows)]
                         let foreign = !metadata.is_dir();
@@ -917,12 +927,10 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
         .create(true)
         .truncate(false)
         .open(root(data)?.join("lock"))?;
-    #[cfg(unix)]
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(io::Error::other(
-            "Another Virial window is running the operation queue",
-        ));
-    }
+    super::try_lock_exclusive(
+        &lock,
+        "Another Virial window is running the operation queue",
+    )?;
     let _job_lock = job_lock(data, &job)?;
     // A different window may already have completed or cancelled this job.
     File::open(journal(data, &job)?)?;
@@ -1005,16 +1013,8 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
                     if undo::fingerprint_controlled(&source, progress)? != item.hash {
                         return Err(io::Error::other("Source changed before moving to Trash"));
                     }
-                    let output = Command::new("gio")
-                        .arg("trash")
-                        .arg("--")
-                        .arg(&source)
-                        .output()?;
-                    if !output.status.success() {
-                        return Err(io::Error::other(
-                            String::from_utf8_lossy(&output.stderr).into_owned(),
-                        ));
-                    }
+                    // Platform trash service: gio on Linux, Recycle Bin on Windows.
+                    super::operations::trash_paths(std::slice::from_ref(&source))?;
                     sync_parent(&source)?;
                 }
                 progress.advance(item.files + item.bytes);

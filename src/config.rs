@@ -1,16 +1,23 @@
 //! Startup configuration from the command line and environment.
 use std::path::PathBuf;
 
+/// The user's home directory, portable across platforms: HOME (POSIX shells),
+/// then USERPROFILE, then HOMEDRIVE+HOMEPATH, and finally the filesystem root
+/// rather than failing — call sites treat it as a location, not an assertion.
+pub(crate) fn home() -> PathBuf {
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        return PathBuf::from(home);
+    }
+    match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
+        (Some(drive), Some(path)) => PathBuf::from(drive).join(path),
+        _ => PathBuf::from("/"),
+    }
+}
+
 pub(crate) fn initial_path() -> PathBuf {
     let path = match std::env::args_os().nth(1) {
         Some(argument) => PathBuf::from(argument),
-        None => match std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
-            Some(home) => PathBuf::from(home),
-            None => match (std::env::var_os("HOMEDRIVE"), std::env::var_os("HOMEPATH")) {
-                (Some(drive), Some(path)) => PathBuf::from(drive).join(path),
-                _ => PathBuf::from("/"),
-            },
-        },
+        None => home(),
     };
     let path = if path.is_absolute() {
         path

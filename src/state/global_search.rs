@@ -21,6 +21,19 @@ pub(crate) struct GlobalSearch {
     pub scroll: gpui::UniformListScrollHandle,
 }
 
+/// Where the "everywhere" index walks. Linux keeps the historical whole-tree
+/// root; Windows indexes the user profile only — a literal "/" matches no
+/// Windows path and indexing every drive would crawl C:\Windows each rescan.
+fn search_roots(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    #[cfg(unix)]
+    {
+        let _ = home;
+        vec!["/".into()]
+    }
+    #[cfg(windows)]
+    vec![home.to_path_buf()]
+}
+
 fn queued_result(picker: &GlobalSearch) -> Option<crate::domain::models::Entry> {
     let entry = picker.results.entries.get(picker.selected)?;
     (picker.pending_open && (picker.results.finished || entry.name.to_lowercase() == picker.query))
@@ -67,10 +80,7 @@ impl FileManager {
                     .filter(|path| path.is_absolute())
                     .unwrap_or_else(|| self.home.join(".cache"))
                     .join("virial/search/catalog-v1.jsonl");
-                crate::infrastructure::search::SearchIndex::start(
-                    vec![self.home.clone(), "/".into()],
-                    cache,
-                )
+                crate::infrastructure::search::SearchIndex::start(search_roots(&self.home), cache)
             })
             .handle();
         let picker = self.global_search.get_or_insert_with(|| GlobalSearch {
@@ -222,10 +232,9 @@ impl FileManager {
                 }
                 return false;
             }
-        } else if self.global_search.is_none() {
-            return false;
-        } else if event.keystroke.key != "escape"
-            && !self.global_search.as_ref().unwrap().pending_open
+        } else if self.global_search.is_none()
+            || (event.keystroke.key != "escape"
+                && !self.global_search.as_ref().unwrap().pending_open)
         {
             return false;
         }

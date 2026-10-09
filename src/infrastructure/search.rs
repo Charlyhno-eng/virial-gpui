@@ -2,6 +2,8 @@
 mod index;
 use crate::domain::models::Entry;
 pub(crate) use index::SearchIndex;
+#[cfg(all(test, unix))]
+use std::os::unix::fs::MetadataExt;
 #[cfg(test)]
 use std::{
     collections::{HashSet, VecDeque},
@@ -10,8 +12,6 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
-#[cfg(all(test, unix))]
-use std::os::unix::fs::MetadataExt;
 
 pub(crate) const RESULT_LIMIT: usize = 100;
 
@@ -91,10 +91,7 @@ pub(crate) fn search(
     let mut skipped = 0;
     let mut last_update = Instant::now();
     let mut published_match = false;
-    loop {
-        let Some(directory) = pending.pop_front().or_else(|| roots.next()) else {
-            break;
-        };
+    while let Some(directory) = pending.pop_front().or_else(|| roots.next()) {
         if cancelled.load(Ordering::Relaxed) {
             return;
         }

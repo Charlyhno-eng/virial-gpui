@@ -110,16 +110,15 @@ fn refresh_desktop_cache(data: &Path) {
     // KDE's application menu caches desktop entries separately from icons.
     // These helpers are optional, and registration must work without them.
     for helper in ["kbuildsycoca6", "kbuildsycoca5"] {
-        if let Ok(status) = Command::new(helper)
+        if Command::new(helper)
             .arg("--noincremental")
             .env("XDG_DATA_HOME", data)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
+            .is_ok_and(|status| status.success())
         {
-            if status.success() {
-                break;
-            }
+            break;
         }
     }
 }

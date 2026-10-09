@@ -33,7 +33,7 @@ fn list_restore_and_undo_from_persisted_metadata() {
             .iter()
             .any(|entry| entry.path == source && entry.name == "original name.txt")
     );
-    restore(&data, &[source.clone()]).unwrap();
+    restore(&data, std::slice::from_ref(&source)).unwrap();
     assert_eq!(fs::read_to_string(&destination).unwrap(), "saved contents");
     assert!(!source.exists());
     assert!(
@@ -58,14 +58,16 @@ fn collisions_and_missing_parents_leave_trash_intact() {
     let source = item(&data, "entry", &destination);
     symlink("missing", &destination).unwrap();
     assert_eq!(
-        restore(&data, &[source.clone()]).unwrap_err().kind(),
+        restore(&data, std::slice::from_ref(&source))
+            .unwrap_err()
+            .kind(),
         io::ErrorKind::AlreadyExists
     );
     assert!(source.exists());
     fs::remove_file(destination).unwrap();
     let absent = temp.path().join("absent/file");
     let other = item(&data, "other", &absent);
-    assert!(restore(&data, &[other.clone()]).is_err());
+    assert!(restore(&data, std::slice::from_ref(&other)).is_err());
     assert!(other.exists());
 }
 

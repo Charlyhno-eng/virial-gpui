@@ -29,8 +29,8 @@ impl Entry {
         {
             "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => "Image",
             "mp3" | "flac" | "ogg" | "wav" | "m4a" => "Audio",
-            "mp4" | "m4v" | "mkv" | "mov" | "avi" | "webm" | "mpeg" | "mpg" | "wmv"
-            | "flv" | "3gp" => "Video",
+            "mp4" | "m4v" | "mkv" | "mov" | "avi" | "webm" | "mpeg" | "mpg" | "wmv" | "flv"
+            | "3gp" => "Video",
             "zip" | "gz" | "xz" | "tar" | "7z" | "bz2" | "zst" => "Archive",
             "rs" | "py" | "pyw" | "js" | "mjs" | "cjs" | "jsx" | "ts" | "tsx" | "html" | "htm"
             | "css" | "scss" | "sass" | "json" | "toml" | "yaml" | "yml" | "sh" | "bash" | "c"

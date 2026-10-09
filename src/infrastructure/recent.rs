@@ -119,7 +119,7 @@ pub fn record(data: &Path, path: &Path) -> io::Result<()> {
         .as_micros()
         .min(i64::MAX as u128) as i64;
     records.push((timestamp, path.to_path_buf()));
-    records.sort_by(|a, b| b.0.cmp(&a.0));
+    records.sort_by_key(|&(timestamp, _)| std::cmp::Reverse(timestamp));
     let text: String = records
         .into_iter()
         .take(LIMIT)

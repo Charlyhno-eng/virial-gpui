@@ -1,9 +1,11 @@
 use super::*;
 #[cfg(unix)]
-use std::os::unix::{ffi::OsStringExt, fs::symlink};
+use libc as libc_crate;
 #[cfg(unix)]
-use std::ffi::CString;
-use libc;
+use std::ffi::CString as PipeName;
+
+#[cfg(unix)]
+use std::os::unix::{ffi::OsStringExt, fs::symlink};
 #[cfg(windows)]
 use std::os::windows::fs::{symlink_dir as symlink_dir_win, symlink_file as symlink_file_win};
 #[cfg(windows)]
@@ -11,7 +13,10 @@ fn symlink<P: AsRef<std::path::Path>, Q: AsRef<std::path::Path>>(
     original: P,
     link: Q,
 ) -> std::io::Result<()> {
-    if std::fs::metadata(&original).map(|m| m.is_dir()).unwrap_or(false) {
+    if std::fs::metadata(&original)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+    {
         symlink_dir_win(original, link)
     } else {
         symlink_file_win(original, link)
@@ -63,8 +68,8 @@ fn folder_sizes_include_hidden_files_but_skip_nested_links_and_special_files() {
     symlink(folder.join("file"), folder.join("file-link")).unwrap();
     symlink(folder.join("nested"), folder.join("folder-link")).unwrap();
     symlink(root.join("missing"), folder.join("broken-link")).unwrap();
-    let pipe = std::ffi::CString::new(folder.join("pipe").as_os_str().as_bytes()).unwrap();
-    assert_eq!(unsafe { libc::mkfifo(pipe.as_ptr(), 0o600) }, 0);
+    let pipe = PipeName::new(folder.join("pipe").as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc_crate::mkfifo(pipe.as_ptr(), 0o600) }, 0);
     let cancelled = AtomicBool::new(false);
     assert_eq!(directory_size(&folder, &cancelled).unwrap(), 15);
     assert_eq!(

@@ -5,19 +5,16 @@ use super::{
     operations::{self, Operation},
 };
 use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use std::os::unix::{
+    ffi::OsStrExt,
+    fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::Mutex,
-};
-#[cfg(unix)]
-use std::os::{
-    fd::AsRawFd,
-    unix::{
-        ffi::OsStrExt,
-        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-    },
 };
 use url::Url;
 
@@ -379,10 +376,7 @@ fn history(data: &Path) -> io::Result<(PathBuf, File)> {
         .truncate(false)
         .open(directory.join("lock"))?;
     // A separate open file description per call serializes other Virial processes too.
-    #[cfg(unix)]
-    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    super::try_lock_exclusive(&lock, "Virial's undo history is active in another window")?;
     Ok((directory.canonicalize()?, lock))
 }
 
@@ -472,11 +466,20 @@ fn snapshot_with_progress(
             }
         }
         // Windows requires a writable handle to change file times; a read-only
-        // File::open would fail with Access Denied there. Unix checks ownership
-        // instead, so a read-only handle also covers directories (a writable
-        // open fails with EISDIR) and read-only files (EACCES).
+        // File::open would fail with Access Denied there. Directories reject a
+        // plain writable open outright, so the backup-semantics flag (the same
+        // route SetFileTime-style tools take) keeps the snapshot working for
+        // them. Unix checks ownership instead, so a read-only handle covers
+        // directories (a writable open fails with EISDIR) and read-only files.
         #[cfg(windows)]
-        let opened = fs::OpenOptions::new().write(true).open(destination)?;
+        let opened = {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+            fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(destination)?
+        };
         #[cfg(unix)]
         let opened = File::open(destination)?;
         opened.set_times(fs::FileTimes::new().set_modified(metadata.modified()?))
@@ -487,8 +490,8 @@ fn snapshot_with_progress(
         operations::copy(source, destination)?;
     }
     timestamps(source, destination)?;
-    let synced = sync_snapshot(destination, progress);
-    synced
+
+    sync_snapshot(destination, progress)
 }
 
 // Snapshots may include read-only folders. Make only our private copies writable
@@ -503,15 +506,32 @@ fn discard(path: &Path) -> io::Result<()> {
         )?;
         #[cfg(windows)]
         {
-            let mut permissions = metadata.permissions();
-            permissions.set_readonly(false);
-            fs::set_permissions(path, permissions)?;
+            // The backup is ours: drop the attribute instead of failing removal.
+            #[allow(clippy::permissions_set_readonly_false)]
+            {
+                let mut permissions = metadata.permissions();
+                permissions.set_readonly(false);
+                fs::set_permissions(path, permissions)?;
+            }
         }
         for entry in fs::read_dir(path)? {
             discard(&entry?.path())?;
         }
         fs::remove_dir(path)
     } else {
+        #[cfg(windows)]
+        {
+            if metadata.permissions().readonly() {
+                // Read-only files cannot be removed until the attribute drops;
+                // the backup is ours, so it never needs to stay read-only.
+                #[allow(clippy::permissions_set_readonly_false)]
+                {
+                    let mut permissions = metadata.permissions();
+                    permissions.set_readonly(false);
+                    fs::set_permissions(path, permissions)?;
+                }
+            }
+        }
         fs::remove_file(path)
     }
 }
@@ -725,12 +745,8 @@ pub(crate) fn durable(
             file.sync_all()?;
         }
         let directory = history.join(number.to_string());
-        if let Err(error) = fs::rename(staging.path(), &directory) {
-                return Err(error);
-        }
-        if let Err(error) = super::sync_directory(&history) {
-                return Err(error);
-        }
+        fs::rename(staging.path(), &directory)?;
+        super::sync_directory(&history)?;
         (directory, records)
     };
     let result = action();
@@ -833,6 +849,9 @@ pub(crate) fn latest_summary(data: &Path) -> io::Result<Option<(String, String)>
 }
 
 #[cfg(test)]
+// The undo tests are `#[cfg(all(test, unix))]`; keep the helper compiling and
+// referenced under any cfg, and silence the Windows-build dead-code lint.
+#[cfg_attr(windows, allow(dead_code))]
 pub fn execute(data: &Path, operation: Operation) -> io::Result<Option<archive::Materialized>> {
     execute_with_progress(data, operation, None)
 }
