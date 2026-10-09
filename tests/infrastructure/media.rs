@@ -147,6 +147,68 @@ fn invalid_media_reports_failure_and_releases_archive_copy() {
 }
 
 #[test]
+fn api_load_shares_one_library_handle_for_the_process_lifetime() {
+    let Ok(first) = Api::load() else {
+        eprintln!("Skipping library handle check: libmpv2 is required");
+        return;
+    };
+    // Unloading libmpv (dlclose on the last handle) while sibling workers
+    // still run inside it unmaps code under live threads and crashes the
+    // process, so every load must share one process-lifetime handle.
+    let second = Api::load().unwrap();
+    assert!(Arc::ptr_eq(&first, &second));
+    drop(second);
+    drop(first);
+    let reloaded = Api::load().unwrap();
+    assert!(Arc::ptr_eq(&reloaded, &Api::load().unwrap()));
+}
+
+#[test]
+fn parallel_worker_churn_keeps_the_library_loaded_and_usable() {
+    if Api::load().is_err() {
+        eprintln!("Skipping parallel worker churn check: libmpv2 is required");
+        return;
+    }
+    let mut workers = Vec::new();
+    for _ in 0..4 {
+        workers.push(std::thread::spawn(|| {
+            for _ in 0..10 {
+                // Each iteration releases every library handle the worker
+                // holds; before the fix the last release could dlclose()
+                // libmpv while sibling workers still ran inside it.
+                let api = Api::load().unwrap();
+                // SAFETY: this worker owns the handle and destroys it
+                // through Player after a full production lifecycle.
+                let handle = unsafe { (api.create)() };
+                assert!(!handle.is_null());
+                let player = Player {
+                    api: api.clone(),
+                    handle,
+                };
+                configure(&api, handle, false).unwrap();
+                assert!(unsafe { (api.initialize)(handle) } >= 0);
+                drop(player);
+                drop(api);
+            }
+        }));
+    }
+    for worker in workers {
+        worker.join().unwrap();
+    }
+    // The library must still serve new players after the churn.
+    let api = Api::load().unwrap();
+    // SAFETY: this test owns the handle and destroys it through Player.
+    let handle = unsafe { (api.create)() };
+    assert!(!handle.is_null());
+    configure(&api, handle, false).unwrap();
+    assert!(unsafe { (api.initialize)(handle) } >= 0);
+    let _player = Player {
+        api: api.clone(),
+        handle,
+    };
+}
+
+#[test]
 fn redraws_track_visible_media_changes_and_ignore_subsecond_audio_progress() {
     let original = Snapshot {
         ready: true,

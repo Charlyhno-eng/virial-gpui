@@ -63,7 +63,14 @@ impl CodePreview {
         let syntax = path
             .file_name()
             .and_then(|name| name.to_str())
-            .and_then(|name| SYNTAXES.find_syntax_by_extension(name))
+            // Grammars keyed by a different file name than the actual one.
+            .and_then(|name| {
+                let aliased = match name {
+                    "Containerfile" => "Dockerfile",
+                    _ => name,
+                };
+                SYNTAXES.find_syntax_by_extension(aliased)
+            })
             .or_else(|| {
                 path.extension()
                     .and_then(|extension| extension.to_str())
