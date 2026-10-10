@@ -152,6 +152,9 @@ fn counting_tree_honors_pause_and_cancellation() {
     worker.join().unwrap();
 }
 
+// APFS normalizes and rejects raw non-UTF-8 filename bytes, so this fixture is
+// only meaningfully exercisable on Linux.
+#[cfg(target_os = "linux")]
 #[test]
 fn copies_tree_links_empty_and_non_utf8_names_as_one_undo_batch() {
     let root = tempfile::tempdir().unwrap();
