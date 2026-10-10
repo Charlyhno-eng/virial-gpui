@@ -470,9 +470,12 @@ impl Element for EditorRow {
         let text = view.editor.buffer().line(self.line).to_owned();
         let style = window.text_style();
         let runs = highlight_runs(self.code.as_deref(), self.line, &text, &style.font());
-        let shape = window
-            .text_system()
-            .shape_line(text.into(), style.font_size.to_pixels(window.rem_size()), &runs, None);
+        let shape = window.text_system().shape_line(
+            text.clone().into(),
+            style.font_size.to_pixels(window.rem_size()),
+            &runs,
+            None,
+        );
         let start = view.editor.buffer().line_start(self.line);
         let selection = view.editor.selection();
         let mut rects = Vec::new();
@@ -546,8 +549,8 @@ impl Element for EditorRow {
 /// gaps with the default code color.
 fn highlight_runs(code: Option<&CodePreview>, line: usize, text: &str, font: &Font) -> Vec<TextRun> {
     let empty = CodeLine {
-        text: text.into(),
-        number: String::new().into(),
+        text: SharedString::default(),
+        number: SharedString::default(),
         highlights: Vec::new(),
     };
     let prepared = code.and_then(|code| code.lines.get(line)).unwrap_or(&empty);

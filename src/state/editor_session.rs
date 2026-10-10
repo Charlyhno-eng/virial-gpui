@@ -110,9 +110,10 @@ impl FileManager {
         let language = self.language;
 
         // Re-read the file first: saving over someone else's edit loses work.
+        let probe = path.clone();
         let check = cx.background_executor().spawn(async move {
-            let metadata = std::fs::metadata(&path).ok()?;
-            let bytes = std::fs::read(&path).ok()?;
+            let metadata = std::fs::metadata(&probe).ok()?;
+            let bytes = std::fs::read(&probe).ok()?;
             Some((
                 editor_io::fingerprint(&bytes, metadata.modified().ok()),
                 bytes.len() as u64,
