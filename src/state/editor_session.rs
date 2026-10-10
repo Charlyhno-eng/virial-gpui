@@ -31,7 +31,7 @@ impl FileManager {
                 path,
             ))
         });
-        cx.spawn_in(_window, async move |view, cx| {
+        cx.spawn_in(window, async move |view, cx| {
             let loaded = read.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 match loaded {
