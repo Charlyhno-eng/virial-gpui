@@ -80,6 +80,7 @@ fn newline_keeps_the_indentation_and_indents_after_a_brace() {
     editor.newline(LineEnding::Lf);
     assert_eq!(editor.text(), "    let x = 1;\n    \n");
 
+    let mut braces = editor("fn main() {\n");
     braces.set_cursor(11, false);
     braces.newline(LineEnding::Lf);
     assert_eq!(braces.text(), "fn main() {\n    \n");
@@ -138,6 +139,7 @@ fn shift_indents_and_outdents_every_line_of_the_selection() {
 
 #[test]
 fn line_column_is_one_based_and_follows_the_cursor() {
+    let mut lines = editor("one\ntwo\nthree\n");
     lines.set_cursor(0, false);
     assert_eq!(lines.line_column(), (1, 1));
     lines.set_cursor(5, false);
