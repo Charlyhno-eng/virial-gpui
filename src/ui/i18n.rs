@@ -204,6 +204,18 @@ impl Language {
             "Restore" => "Restaurer",
             "Full screen · F11" => "Plein écran · F11",
             "Exit full screen · F11" => "Quitter le plein écran · F11",
+            "Ln {line}, Col {column}" => "Ln {line}, col. {column}",
+            "{line_count} lines" => "{line_count} lignes",
+            "Edit · Ctrl+E" => "Éditer · Ctrl+E",
+            "Save · Ctrl+S" => "Enregistrer · Ctrl+S",
+            "The file changed on disk since it was opened" => {
+                "Le fichier a changé sur le disque depuis son ouverture"
+            }
+            "Cannot save the file" => "Impossible d’enregistrer le fichier",
+            "Cannot open this file in the editor" => {
+                "Impossible d’ouvrir ce fichier dans l’éditeur"
+            }
+            "Save the file before closing it" => "Enregistrez le fichier avant de le fermer",
             "Close" => "Fermer",
             "Confirm" => "Confirmer",
             "Operation failed" => "Échec de l’opération",

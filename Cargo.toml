@@ -3,7 +3,15 @@ name = "virial-gpui"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "A simple Linux file manager built with GPUI"
+description = "A file manager for local and remote files, built with GPUI"
+# Required by crates.io for publication and shown on the registry page.
+repository = "https://github.com/Charlyhno-eng/virial-gpui"
+homepage = "https://github.com/Charlyhno-eng/virial-gpui"
+readme = "README.md"
+keywords = ["file-manager", "gpu", "ssh", "file-browser", "wayland"]
+# crates.io caps keywords at 5 and categories at 2 per tag; `gui` is already
+# taken as a slug, `gui::` subcategories are the alternative.
+categories = ["filesystems", "gui"]
 
 [build-dependencies]
 # Windows-only resource compiler used by `build.rs` to embed the

@@ -17,6 +17,8 @@ pub(crate) enum Preview {
     Media(crate::infrastructure::media::Media),
     Text(String),
     Code(CodePreview),
+    /// The file is open in the editor rather than only previewed.
+    Editing,
     Unavailable,
 }
 

@@ -104,6 +104,9 @@ impl FileManager {
             preview_scroll: gpui::ScrollHandle::new(),
             code_preview_scroll: gpui::UniformListScrollHandle::new(),
             preview_focused: false,
+            editor: None,
+            editor_disk: None,
+            editor_task: None,
             preview_task: None,
             preview_media_image: None,
             preview_image_cache: gpui::RetainAllImageCache::new(cx),
@@ -565,7 +568,39 @@ impl FileManager {
             // Unhandled keys must reach GPUI's text input handler for typing and IME.
             return;
         }
+        // A focused editor owns the keyboard; save and escape are handled here
+        // because they touch the session, not the buffer.
+        if let Some(editor) = self.editor.clone()
+            && editor.read(cx).is_focused(window)
+        {
+            let save = (event.keystroke.key == "s"
+                && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform))
+                || event.keystroke.key == "f2";
+            if save {
+                self.save_editor(cx);
+                cx.stop_propagation();
+                return;
+            }
+            if event.keystroke.key == "escape" {
+                self.close_editor(window, cx);
+                cx.stop_propagation();
+                return;
+            }
+            if event.keystroke.key == "f11" {
+                return;
+            }
+        }
         if self.global_search_key(event, window, cx) {
+            return;
+        }
+        if self.dialog.is_none()
+            && event.keystroke.key == "e"
+            && event.keystroke.modifiers.control
+            && self.details_open
+            && let Some(path) = self.preview_path.clone()
+        {
+            self.open_editor(path, window, cx);
+            cx.stop_propagation();
             return;
         }
         if self.dialog.is_none()
