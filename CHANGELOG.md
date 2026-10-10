@@ -11,6 +11,24 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+- **CI plus rapide** : le cache `actions/cache` couvre le registre cargo et les
+  artefacts de dépendances (`.rlib`/`.rmeta`) au lieu de reconstruire ~150
+  crates de gpui à chaque run, et `CARGO_INCREMENTAL=0` évite d'embarquer 6 Go
+  d'artefacts incrémentaux qui ne servent à rien sur un runner jetable. La
+  construction du paquet Debian et les deux benchmarks `#[ignore]` sortent du job
+  Linux pour aller dans un job `package-and-benchmarks` séparé, exécuté **en
+  parallèle** des trois jobs de test : le job Linux ne fait plus que compiler et
+  tester. Le `.deb` n'est produit que sur `push`, sur `main` ou quand la PR
+  porte le label `packaging`, ce qui évite de payer sa compilation quand la
+  modification ne peut pas l'affecter. Le job Windows construit et dépose
+  désormais l'exe release, ce qui donne un binaire à tester sans attendre une
+  release. Le garde-fou de changelog est passé du job `merge-readiness` (qui
+  tournait en double) au job `lint`, et les runs s'interromment automatiquement
+  quand une nouvelle poussée arrive sur la même branche (`cancel-in-progress`).
+- **Noms de tests de benchmark corrigés** : le filtre `cargo test` du job de
+  performance pointait sur `infrastructure::search::index::tests::…`, le chemin
+  réel du module de test, et non sur le nom de fichier `search_index.rs`.
+
 ### Ajouts
 - **Section d'installation dans le README** : un tableau des quatre archives
   publiées (archive autonome Linux, `.deb`, `Virial.app`, zip Windows), la
