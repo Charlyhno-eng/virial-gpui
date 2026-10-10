@@ -121,7 +121,9 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
       - name: Run tests
-        run: cargo test --locked
+        # macOS file operations are slower and the suite shares per-process lock
+        # files, so run serial to avoid the lock-contention flakes.
+        run: cargo test --locked -- --test-threads=1
       - name: Build release binary
         run: cargo build --release --locked
 
