@@ -63,9 +63,9 @@ fn delete_merges_lines_at_the_end_and_start() {
     editor.set_cursor(2, false);
     editor.delete(false);
     assert_eq!(editor.text(), "abcd\n");
-    editor.set_cursor(2, false);
+    editor.set_cursor(4, false);
     editor.delete(true);
-    assert_eq!(editor.text(), "abcd\n");
+    assert_eq!(editor.text(), "ab\n");
     // Backspace at the very start of the buffer is a no-op, not a panic.
     editor.set_cursor(0, false);
     editor.delete(true);
@@ -131,7 +131,7 @@ fn shift_indents_and_outdents_every_line_of_the_selection() {
     editor.set_cursor(0, false);
     editor.set_cursor(3, true);
     editor.shift(false);
-    assert_eq!(editor.text(), "    a\n    b\nc\n");
+    assert_eq!(editor.text(), "    a\n    b\n    c\n", "all lines in the selection");
     editor.shift(true);
     assert_eq!(editor.text(), "a\nb\nc\n");
 }
@@ -155,7 +155,7 @@ fn movement_covers_characters_words_lines_and_document() {
     editor.move_by(Direction::WordRight, false, None);
     assert_eq!(editor.cursor(), 6);
     editor.move_by(Direction::WordRight, false, None);
-    assert_eq!(editor.cursor(), 11, "to the newline at the end of the line");
+    assert_eq!(editor.cursor(), 10, "stops on the newline, never crossing it");
     editor.move_by(Direction::WordLeft, false, None);
     assert_eq!(editor.cursor(), 6);
     editor.move_by(Direction::LineEnd, false, None);
@@ -177,9 +177,9 @@ fn vertical_movement_clamps_to_a_shorter_line() {
     let mut editor = make("long line here\nab\n");
     editor.set_cursor(14, false);
     editor.move_by(Direction::LineDown, false, None);
-    assert_eq!(editor.line_column(), (2, 3), "column clamps to the line end");
+    assert_eq!(editor.line_column(), (2, 3), "clamped to the short line");
     editor.move_by(Direction::LineUp, false, None);
-    assert_eq!(editor.line_column(), (1, 15));
+    assert_eq!(editor.line_column(), (1, 15), "the remembered column comes back");
 }
 
 #[test]
@@ -191,7 +191,7 @@ fn movement_never_splits_a_multibyte_character() {
     editor.move_by(Direction::Right, false, None);
     assert_eq!(editor.cursor(), 3);
     editor.move_by(Direction::DocumentEnd, false, None);
-    assert_eq!(editor.cursor(), "héllo 👋\n".len() - 1);
+    assert_eq!(editor.cursor(), "héllo 👋\n".len() - 1, "on the final newline");
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn select_word_and_select_all_cover_the_expected_spans() {
 fn clamping_keeps_the_cursor_inside_the_buffer() {
     let mut editor = make("ab\ncd\n");
     editor.set_cursor(999, false);
-    assert_eq!(editor.line_column(), (2, 3), "the end of the last line");
+    assert_eq!(editor.line_column(), (3, 1), "the trailing newline of the last line");
     editor.move_by(Direction::Right, false, None);
     assert_eq!(editor.cursor(), 5, "stays put at the end");
     editor.move_by(Direction::LineUp, false, None);

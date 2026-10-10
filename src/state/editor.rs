@@ -184,6 +184,27 @@ impl Buffer {
         change
     }
 
+    /// Replace without clamping: undo and redo spans are computed against the
+    /// previous text, where the recorded offsets are exact.
+    pub fn replace_raw(&mut self, range: Range<usize>, after: &str) -> Change {
+        let text = self.text();
+        let end = range.end.min(text.len());
+        let change = Change {
+            range: range.start..end,
+            before: text[range.start..end].to_owned(),
+            after: after.to_owned(),
+        };
+        let head = &text[..range.start];
+        let tail = &text[end..];
+        let joined = format!("{head}{}{tail}", change.after.replace("\r\n", "\n"));
+        self.lines = joined
+            .split('\n')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        self.revision = self.revision.wrapping_add(1);
+        change
+    }
+
     pub fn text_in(&self, range: Range<usize>) -> String {
         let text = self.text();
         let start = self.clamp_offset(range.start);
@@ -202,6 +223,8 @@ pub struct Editor {
     history: History,
     /// Text as loaded, to answer "is this modified?".
     saved: String,
+    /// Character column kept across vertical moves, as IDEs do.
+    sticky_column: Option<usize>,
     pub indent: String,
 }
 
@@ -214,6 +237,7 @@ impl Editor {
             history: History::default(),
             saved: text.replace("\r\n", "\n").replace('\r', "\n"),
             indent: "    ".to_owned(),
+            sticky_column: None,
         }
     }
 
@@ -275,6 +299,7 @@ impl Editor {
             self.anchor = offset;
         }
         self.cursor = offset;
+        self.sticky_column = None;
     }
 
     /// Replace the selection (or insert at the caret) and leave the caret after
@@ -432,7 +457,10 @@ impl Editor {
         };
         let mut cursor = None;
         for change in edit.changes.iter().rev() {
-            let applied = self.buffer.replace(change.range.clone(), &change.before);
+            // An insertion is reverted over the span its text occupies now,
+            // not over the empty range it once replaced.
+            let span = change.range.start..change.range.start + change.after.len();
+            let applied = self.buffer.replace_raw(span, &change.before);
             cursor = Some(applied.range.start);
         }
         self.history.redo.push(edit);
@@ -447,8 +475,9 @@ impl Editor {
         };
         let mut cursor = None;
         for change in edit.changes.iter().rev() {
-            let applied = self.buffer.replace(change.range.clone(), &change.after);
-            cursor = Some(applied.range.end);
+            let span = change.range.start..change.range.start + change.before.len();
+            let applied = self.buffer.replace_raw(span, &change.after);
+            cursor = Some(applied.range.start + applied.after.len());
         }
         self.history.undo.push(edit);
         let cursor = cursor.unwrap_or(self.cursor);
@@ -491,12 +520,16 @@ impl Editor {
                     _ => Some((line + step).min(self.buffer.line_count() - 1)),
                 };
                 match target_line {
-                    // Keep the column when the target line is long enough.
+                    // The column remembered from the last horizontal
+                    // position survives short lines, as in every IDE.
                     Some(target_line) => {
-                        let target_start = self.buffer.line_start(target_line);
-                        let width = self.buffer.line(target_line).len();
-                        let column = char_count(&self.buffer.line(line)[..column.min(self.buffer.line(line).len())]);
-                        target_start + byte_index(self.buffer.line(target_line), column).min(width)
+                        let line_text = self.buffer.line(line);
+                        let current = char_count(&line_text[..column.min(line_text.len())]);
+                        let wanted = *self.sticky_column.get_or_insert(current);
+                        let target_text = self.buffer.line(target_line);
+                        let offset = byte_index(target_text, wanted).min(target_text.len());
+                        self.sticky_column = Some(char_count(&target_text[..offset]));
+                        self.buffer.line_start(target_line) + offset
                     }
                     None => cursor,
                 }
