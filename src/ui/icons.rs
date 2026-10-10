@@ -224,7 +224,10 @@ const ASSETS: &[(&str, &[u8])] = &[
         "icons/docker.svg",
         include_bytes!("../../assets/icons/docker.svg"),
     ),
-    ("icons/git.svg", include_bytes!("../../assets/icons/git.svg")),
+    (
+        "icons/git.svg",
+        include_bytes!("../../assets/icons/git.svg"),
+    ),
 ];
 
 /// Whether the named icon is embedded in the binary. Lets callers (and the
@@ -233,7 +236,9 @@ const ASSETS: &[(&str, &[u8])] = &[
 /// Only referenced from tests today; the loader itself falls back gracefully.
 #[cfg(test)]
 pub fn has_asset(name: &str) -> bool {
-    ASSETS.iter().any(|(asset, _)| *asset == format!("icons/{name}.svg"))
+    ASSETS
+        .iter()
+        .any(|(asset, _)| *asset == format!("icons/{name}.svg"))
 }
 
 impl AssetSource for IconAssets {

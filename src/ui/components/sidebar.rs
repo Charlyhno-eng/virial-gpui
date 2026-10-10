@@ -116,53 +116,53 @@ impl FileManager {
     /// The `><` badge: muted when idle, amber while connecting, accent block
     /// once connected — click opens the remote menu.
     fn remote_indicator(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
-            let ssh = &self.ssh;
-            // The host name lives in the tooltip: printing it inline made the
-            // sidebar reflow every time a connection changed.
-            let (connected, symbol_color, badge) = match &ssh.activity {
-                crate::state::ssh::SshActivity::Idle => (false, MUTED, false),
-                crate::state::ssh::SshActivity::Connecting(_) => (false, ACCENT, false),
-                crate::state::ssh::SshActivity::Connected(_) => (true, ACCENT, true),
-            };
-            let connected_host = match &ssh.activity {
-                crate::state::ssh::SshActivity::Idle => None,
-                crate::state::ssh::SshActivity::Connecting(host) => Some(host.clone()),
-                crate::state::ssh::SshActivity::Connected(id) => Some(id.to_string()),
-            };
-            div()
-                .id("remote-indicator")
-                .flex()
-                .items_center()
-                .justify_center()
-                .size(px(22.))
-                .flex_shrink_0()
-                .rounded_md()
-                .border_1()
-                .border_color(color(if badge { ACCENT } else { BORDER }))
-                .bg(color(if badge {
-                    ACCENT
-                } else if connected {
-                    HOVER
-                } else {
-                    BACKGROUND
-                }))
-                .cursor_pointer()
-                .hover(|style| style.border_color(color(ACCENT)))
-                .tooltip(move |_, cx| {
-                    let hint = connected_host.clone();
-                    cx.new(move |_| {
-                        let text = hint.unwrap_or_else(|| "Remote connection".into());
-                        super::modal::StatusTooltip(text)
-                    })
-                    .into()
+        let ssh = &self.ssh;
+        // The host name lives in the tooltip: printing it inline made the
+        // sidebar reflow every time a connection changed.
+        let (connected, symbol_color, badge) = match &ssh.activity {
+            crate::state::ssh::SshActivity::Idle => (false, MUTED, false),
+            crate::state::ssh::SshActivity::Connecting(_) => (false, ACCENT, false),
+            crate::state::ssh::SshActivity::Connected(_) => (true, ACCENT, true),
+        };
+        let connected_host = match &ssh.activity {
+            crate::state::ssh::SshActivity::Idle => None,
+            crate::state::ssh::SshActivity::Connecting(host) => Some(host.clone()),
+            crate::state::ssh::SshActivity::Connected(id) => Some(id.to_string()),
+        };
+        div()
+            .id("remote-indicator")
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(22.))
+            .flex_shrink_0()
+            .rounded_md()
+            .border_1()
+            .border_color(color(if badge { ACCENT } else { BORDER }))
+            .bg(color(if badge {
+                ACCENT
+            } else if connected {
+                HOVER
+            } else {
+                BACKGROUND
+            }))
+            .cursor_pointer()
+            .hover(|style| style.border_color(color(ACCENT)))
+            .tooltip(move |_, cx| {
+                let hint = connected_host.clone();
+                cx.new(move |_| {
+                    let text = hint.unwrap_or_else(|| "Remote connection".into());
+                    super::modal::StatusTooltip(text)
                 })
-                .child(icon(
-                    "remote",
-                    13.,
-                    if badge { BACKGROUND } else { symbol_color },
-                ))
-                .on_click(cx.listener(|view, _, window, cx| view.open_remote_menu(window, cx)))
-        }
+                .into()
+            })
+            .child(icon(
+                "remote",
+                13.,
+                if badge { BACKGROUND } else { symbol_color },
+            ))
+            .on_click(cx.listener(|view, _, window, cx| view.open_remote_menu(window, cx)))
+    }
 
     fn place(
         &self,

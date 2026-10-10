@@ -79,16 +79,16 @@ pub fn icon_for_extension(extension: &str) -> &'static str {
         // Data
         "csv" | "tsv" | "parquet" | "db" | "sqlite" | "sqlite3" => "code",
         // Archives
-        "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "7z" | "rar" | "zst" | "lz4"
-        | "iso" | "cab" => "archive",
+        "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "7z" | "rar" | "zst" | "lz4" | "iso"
+        | "cab" => "archive",
         // Media
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "avif" | "heic" | "heif"
-        | "tiff" | "tif" | "ico" | "icns" | "xcf" | "psd" | "raw" | "cr2" | "nef"
-        | "arw" | "dng" | "orf" | "rw2" => "image",
-        "mp3" | "flac" | "wav" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "wma"
-        | "aiff" | "ape" | "mid" | "midi" => "music",
-        "mp4" | "mkv" | "webm" | "avi" | "mov" | "wmv" | "flv" | "m4v" | "mpg"
-        | "mpeg" | "3gp" | "vob" => "video",
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "avif" | "heic" | "heif" | "tiff"
+        | "tif" | "ico" | "icns" | "xcf" | "psd" | "raw" | "cr2" | "nef" | "arw" | "dng"
+        | "orf" | "rw2" => "image",
+        "mp3" | "flac" | "wav" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "wma" | "aiff"
+        | "ape" | "mid" | "midi" => "music",
+        "mp4" | "mkv" | "webm" | "avi" | "mov" | "wmv" | "flv" | "m4v" | "mpg" | "mpeg" | "3gp"
+        | "vob" => "video",
         // Fonts
         "ttf" | "otf" | "woff" | "woff2" | "eot" => "code",
         // Executables and installers
