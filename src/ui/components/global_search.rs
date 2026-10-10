@@ -11,6 +11,10 @@ impl FileManager {
         cx: &mut Context<Self>,
     ) -> Option<Div> {
         let picker = self.global_search.as_ref()?;
+        // The disclosure triangle folds the panel away without losing the query.
+        if !picker.expanded {
+            return None;
+        }
         let status = if picker.query.is_empty() {
             "Type a name or path; spaces separate search terms"
         } else if !picker.results.finished {

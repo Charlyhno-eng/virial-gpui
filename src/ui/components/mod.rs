@@ -2,6 +2,7 @@ mod button;
 pub(crate) mod input;
 mod modal;
 mod operations;
+pub(crate) mod scrollbar;
 mod sidebar;
 pub(super) mod titlebar;
 mod toolbar;

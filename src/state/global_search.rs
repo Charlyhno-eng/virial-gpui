@@ -19,6 +19,8 @@ pub(crate) struct GlobalSearch {
     pub pending_open: bool,
     pub task: Option<DirectorySizeTask>,
     pub scroll: gpui::UniformListScrollHandle,
+    /// Whether the results panel is expanded from the search field.
+    pub expanded: bool,
 }
 
 /// Where the "everywhere" index walks. Linux keeps the historical whole-tree
@@ -42,13 +44,31 @@ fn queued_result(picker: &GlobalSearch) -> Option<crate::domain::models::Entry> 
 
 impl FileManager {
     pub(crate) fn show_global_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.dialog.is_some() {
-            return;
+            if self.dialog.is_some() {
+                return;
+            }
+            self.search_input.read(cx).focus(window);
+            self.update_global_search(cx);
+            if let Some(picker) = self.global_search.as_mut() {
+                picker.expanded = true;
+            }
+            cx.notify();
         }
-        self.search_input.read(cx).focus(window);
-        self.update_global_search(cx);
-        cx.notify();
-    }
+
+        /// Fold or unfold the results panel from the search field's triangle,
+        /// keeping the query and the ranking intact.
+        pub(crate) fn toggle_global_search(&mut self, cx: &mut Context<Self>) {
+            match self.global_search.as_mut() {
+                Some(picker) => picker.expanded = !picker.expanded,
+                None => {
+                    self.update_global_search(cx);
+                    if let Some(picker) = self.global_search.as_mut() {
+                        picker.expanded = true;
+                    }
+                }
+            }
+            cx.notify();
+        }
 
     fn clear_global_search(&mut self, cx: &mut Context<Self>) {
         self.global_search = None;
@@ -84,18 +104,22 @@ impl FileManager {
             })
             .handle();
         let picker = self.global_search.get_or_insert_with(|| GlobalSearch {
-            query: String::new(),
-            results: SearchResults::default(),
-            selected: 0,
-            selection_moved: false,
-            pending_open: false,
-            task: None,
-            scroll: gpui::UniformListScrollHandle::new(),
-        });
+                    query: String::new(),
+                    results: SearchResults::default(),
+                    selected: 0,
+                    selection_moved: false,
+                    pending_open: false,
+                    task: None,
+                    scroll: gpui::UniformListScrollHandle::new(),
+                    expanded: false,
+                });
         if query == picker.query {
-            return;
-        }
-        picker.task = None;
+                    return;
+                }
+                // A new query reopens the panel: folding it was an explicit user
+                // gesture about the previous results, not about this one.
+                picker.expanded = true;
+                picker.task = None;
         picker.query = query.clone();
         picker.results = SearchResults::default();
         picker.selected = 0;
