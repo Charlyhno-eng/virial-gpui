@@ -25,6 +25,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   release. Le garde-fou de changelog est passé du job `merge-readiness` (qui
   tournait en double) au job `lint`, et les runs s'interromment automatiquement
   quand une nouvelle poussée arrive sur la même branche (`cancel-in-progress`).
+- **Le workflow CI ne se déclenche plus sur les tags** (`push.branches`) :
+  un tag `v*` lançait `ci.yaml` ET `release.yaml` sur le même commit, donc deux
+  compiles release complètes du même binaire sur deux runners différents.
+  `release.yaml` reste le seul chemin de publication.
 - **Clés de cache distinctes par job** : `lint` et `linux` partageant le même
   runner et le même profil debug, ils demandaient la même clé
   `actions/cache`. Le premier à la réserver la gagnait et l'autre échouait avec

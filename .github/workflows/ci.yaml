@@ -2,6 +2,11 @@ name: Tests and performance
 
 on:
   push:
+    # Branches only: a `v*` tag must not trigger this workflow — release.yaml
+    # builds the very same release profile on the same commit, so a tag would
+    # compile everything twice on two different runners.
+    branches:
+      - '**'
   pull_request:
   workflow_dispatch:
 
@@ -232,6 +237,10 @@ jobs:
           path: target/debian/*.deb
           if-no-files-found: error
       - name: Measure filesystem performance
+        # The job compiles the release profile once and shares it: these tests
+        # reuse the dependencies already built by build-deb.sh in the same
+        # workspace, so each benchmark costs ~37 s instead of a second full
+        # release build.
         shell: bash
         run: |
           set -o pipefail
