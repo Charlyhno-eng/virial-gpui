@@ -133,10 +133,11 @@ impl FileManager {
                     cx.notify();
                     return;
                 }
+                let target = path.clone();
                 view.editor_task = Some(cx.spawn(async move |view, cx| {
-                    let write = cx
-                        .background_executor()
-                        .spawn(async move { editor_io::write_atomic(&path, &editor_io::encode(&text, &format)) });
+                    let write = cx.background_executor().spawn(async move {
+                        editor_io::write_atomic(&target, &editor_io::encode(&text, &format))
+                    });
                     let result = write.await;
                     let _ = view.update(cx, |view, cx| {
                         match result {

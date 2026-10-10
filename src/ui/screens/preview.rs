@@ -393,11 +393,10 @@ impl FileManager {
                     })
                     .child(match &self.preview {
                         // The editor replaces the read-only preview entirely.
-                        Preview::Editing => self
-                            .editor
-                            .clone()
-                            .map(|editor| gpui::AnyView::from(editor))
-                            .unwrap_or_else(|| div().into_any_element()),
+                        Preview::Editing => match self.editor.clone() {
+                            Some(editor) => editor.into_any_element(),
+                            None => div().into_any_element(),
+                        },
                         Preview::Image(path, _)
                         | Preview::Pdf(crate::infrastructure::archive::Materialized {
                             path, ..

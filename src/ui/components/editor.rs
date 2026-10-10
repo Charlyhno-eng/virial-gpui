@@ -685,10 +685,10 @@ impl EntityInputHandler for CodeEditor {
             range: Option<Range<usize>>,
             text: &str,
             selected: Option<Range<usize>>,
-            window: &mut Window,
-            cx: &mut Context<Self>,
-        ) {
-            // IME preedit: insert the composed text, then place the selection the
+                            _: &mut Window,
+                            cx: &mut Context<Self>,
+                        ) {
+                            // IME preedit: insert the composed text, then place the selection the
             // IME asks for inside it. The range is relative to the inserted text.
             let document = self.editor.text();
             let target = range
@@ -696,7 +696,6 @@ impl EntityInputHandler for CodeEditor {
                 .unwrap_or_else(|| self.editor.selection());
             self.editor.replace_range(target, text);
             let caret = self.editor.cursor();
-            let start = to_utf16(&text, 0);
             if let Some(selected) = selected {
                 let from = caret - text.len() + from_utf16(text, selected.start);
                 let to = caret - text.len() + from_utf16(text, selected.end);
@@ -706,7 +705,6 @@ impl EntityInputHandler for CodeEditor {
             let _ = start;
             self.marked = Some(caret - text.len()..caret);
             self.caret_visible.store(true, Ordering::Relaxed);
-            let _ = window;
             cx.notify();
         }
     fn bounds_for_range(
