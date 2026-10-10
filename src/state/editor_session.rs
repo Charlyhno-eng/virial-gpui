@@ -15,7 +15,7 @@ const MAX_EDITABLE: u64 = 8 * 1024 * 1024;
 
 impl FileManager {
     /// Load a file into the editor, replacing any preview content.
-    pub(crate) fn open_editor(&mut self, path: PathBuf, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_editor(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let language = self.language;
         let read = cx.background_executor().spawn(async move {
             let metadata = std::fs::metadata(&path).ok()?;
@@ -31,7 +31,7 @@ impl FileManager {
                 path,
             ))
         });
-        cx.spawn(async move |view, cx| {
+        cx.spawn_in(_window, async move |view, cx| {
             let loaded = read.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 match loaded {
