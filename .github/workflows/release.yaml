@@ -101,7 +101,9 @@ jobs:
     needs: verify
     # macOS is the only runner that can compile the Metal (`macos-blade`) gpui
     # backend, so a failure here must not cancel the other two builds: the
-    # release publishes whatever this job managed to upload.
+    # release publishes whatever this job managed to upload. Expect this job
+    # to fail on branches that have not merged the macOS platform port yet
+    # (the Linux-only `libc::renameat2` call is the first thing to break).
     runs-on: macos-14
     timeout-minutes: 60
     continue-on-error: true
