@@ -1,4 +1,4 @@
-name: Publish Virial releases
+name: Build and publish releases (Linux, macOS, Windows)
 
 on:
   push:
