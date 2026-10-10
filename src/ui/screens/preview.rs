@@ -373,20 +373,31 @@ impl FileManager {
                     .flex_1()
                     .min_h_0()
                     .when(
-                        matches!(&self.preview, Preview::Text(_) | Preview::Code(_)),
+                        matches!(
+                            &self.preview,
+                            Preview::Text(_) | Preview::Code(_) | Preview::Editing
+                        ),
                         |body| body.flex().flex_col(),
                     )
-                    .when(matches!(&self.preview, Preview::Code(_)), |body| {
-                        body.overflow_hidden()
-                    })
-                    .when(!matches!(&self.preview, Preview::Code(_)), |body| {
-                        body.overflow_y_scroll()
-                    })
+                    .when(
+                        matches!(&self.preview, Preview::Code(_) | Preview::Editing),
+                        |body| body.overflow_hidden(),
+                    )
+                    .when(
+                        !matches!(&self.preview, Preview::Code(_) | Preview::Editing),
+                        |body| body.overflow_y_scroll(),
+                    )
                     .map(|mut body| {
                         body.style().restrict_scroll_to_axis = Some(true);
                         body
                     })
                     .child(match &self.preview {
+                        // The editor replaces the read-only preview entirely.
+                        Preview::Editing => self
+                            .editor
+                            .clone()
+                            .map(|editor| gpui::AnyView::from(editor))
+                            .unwrap_or_else(|| div().into_any_element()),
                         Preview::Image(path, _)
                         | Preview::Pdf(crate::infrastructure::archive::Materialized {
                             path, ..
@@ -532,9 +543,10 @@ impl FileManager {
                             .child(self.language.text("No content preview available"))
                             .into_any_element(),
                     })
-                    .when(!matches!(&self.preview, Preview::Code(_)), |body| {
-                        body.child(self.details_panel(false, cx))
-                    }),
+                    .when(
+                        !matches!(&self.preview, Preview::Code(_) | Preview::Editing),
+                        |panel| panel.child(self.details_panel(false, cx)),
+                    ),
             )
             .when(!expanded, |panel| {
                 panel.child(
