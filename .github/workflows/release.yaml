@@ -132,13 +132,14 @@ jobs:
           install -m755 target/release/virial-gpui "$app/Contents/MacOS/virial-gpui"
 
           # `iconutil` wants a namespaced iconset folder. The shipped logo is a
-          # 279x254 raster, so `-Z` fits it and `-p` pads it square before the
-          # rungs are cut from that master. Replacing assets/images with a
-          # 1024px master is the real fix for a crisp menu-bar icon.
+          # 279x254 raster, so `-Z` fits it inside a 1024 master and `-p` pads
+          # that to a square canvas (it takes height *and* width) before the
+          # rungs are cut. Replacing assets/images with a 1024px master is the
+          # real fix for a crisp menu-bar icon.
           work=$(mktemp -d)
           trap 'rm -rf "$work"' EXIT
-          sips -Z 1024 -p assets/images/virial-gpui-logo.png \
-            --out "$work/master.png" >/dev/null
+          sips -Z 1024 assets/images/virial-gpui-logo.png --out "$work/fitted.png" >/dev/null
+          sips -p 1024 1024 "$work/fitted.png" --out "$work/master.png" >/dev/null
           mkdir -p "$work/Virial.iconset"
           cut() { sips -z "$2" "$2" "$work/master.png" --out "$work/Virial.iconset/icon_$1.png" >/dev/null; }
           cut 16x16 16;        cut 16x16@2x 32
