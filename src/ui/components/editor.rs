@@ -172,7 +172,7 @@ impl CodeEditor {
             "c" | "x" if modifiers.control => {
                 let selection = self.editor.selection();
                 let text = self.editor.text_in(selection.clone());
-                cx.write_to_clipboard(ClipboardItem::new_string(text.into()));
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
                 if key == "x" && !selection.is_empty() {
                     self.editor.delete(false);
                 }
@@ -320,11 +320,11 @@ impl Render for CodeEditor {
                             )
                             .on_mouse_move(cx.listener(
                                 |view, event: &MouseMoveEvent, _, cx| {
-                                    if view.dragging {
-                                        if let Some(offset) = view.offset_at(event.position) {
-                                            view.editor.set_cursor(offset, true);
-                                            cx.notify();
-                                        }
+                                    if view.dragging
+                                        && let Some(offset) = view.offset_at(event.position)
+                                    {
+                                        view.editor.set_cursor(offset, true);
+                                        cx.notify();
                                     }
                                 },
                             ))
@@ -566,7 +566,7 @@ fn plain_run(range: Range<usize>, font: &Font, color: Option<Hsla>) -> TextRun {
     TextRun {
         len: range.end - range.start,
         font: font.clone(),
-        color: color.unwrap_or_else(|| white()),
+        color: color.unwrap_or(color(CODE_TEXT)),
         background_color: None,
         underline: None,
         strikethrough: None,

@@ -319,7 +319,7 @@ impl Editor {
     pub fn delete(&mut self, backwards: bool) {
         let selection = self.selection();
         if !selection.is_empty() {
-            self.apply_ranges(vec![selection]);
+            self.apply_ranges(selection);
             return;
         }
         let cursor = self.buffer.clamp_offset(self.cursor);
@@ -334,7 +334,7 @@ impl Editor {
                 .next_back()
                 .map(|(index, _)| index)
                 .unwrap_or(cursor - 1);
-            self.apply_ranges(vec![previous..cursor]);
+            self.apply_ranges(previous..cursor);
         } else {
             let text = self.text();
             let next = text[cursor..]
@@ -345,23 +345,17 @@ impl Editor {
             if next <= cursor {
                 return;
             }
-            self.apply_ranges(vec![cursor..next]);
+            self.apply_ranges(cursor..next);
         }
     }
 
-    /// Apply several ranges as one undoable step, back to front.
-    fn apply_ranges(&mut self, ranges: Vec<Range<usize>>) {
-        let mut ordered = ranges;
-        ordered.sort_by(|left, right| right.start.cmp(&left.start));
-        let mut cursor = None;
-        let mut changes = Vec::with_capacity(ordered.len());
-        for range in ordered {
-            let change = self.buffer.replace(range, "");
-            cursor = Some(change.range.start);
-            changes.push(change);
-        }
-        let cursor = cursor.unwrap_or(self.cursor);
-        let edit = Edit { changes };
+    /// Delete one range as a single undoable step.
+    fn apply_ranges(&mut self, range: Range<usize>) {
+        let change = self.buffer.replace(range, "");
+        let cursor = change.range.start;
+        let edit = Edit {
+            changes: vec![change],
+        };
         self.history.record(edit, false);
         self.cursor = cursor;
         self.anchor = cursor;
@@ -555,22 +549,14 @@ fn is_word(ch: char) -> bool {
 fn word_left(text: &str, cursor: usize) -> usize {
     let mut index = cursor;
     while index > 0 {
-        let previous = text[..index]
-            .char_indices()
-            .next_back()
-            .map(|(offset, ch)| (offset, ch))
-            .unwrap_or((0, ' '));
+        let previous = text[..index].char_indices().next_back().unwrap_or((0, ' '));
         if !is_word(previous.1) {
             break;
         }
         index = previous.0;
     }
     while index > 0 {
-        let previous = text[..index]
-            .char_indices()
-            .next_back()
-            .map(|(offset, ch)| (offset, ch))
-            .unwrap_or((0, ' '));
+        let previous = text[..index].char_indices().next_back().unwrap_or((0, ' '));
         if is_word(previous.1) {
             break;
         }
