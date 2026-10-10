@@ -442,7 +442,6 @@ impl Editor {
         if changes.is_empty() {
             return;
         }
-        // Every change is the same indent width, so the caret keeps its column.
         let width: usize = changes.iter().map(|change| change.after.len()).sum();
         let edit = Edit { changes };
         self.history.record(edit, false);
@@ -534,7 +533,14 @@ impl Editor {
                 }
             }
         };
-        self.set_cursor(target, extend);
+        let offset = self.buffer.clamp_offset(target);
+        if !extend {
+            self.anchor = offset;
+        }
+        self.cursor = offset;
+        if !matches!(direction, Direction::LineUp | Direction::LineDown) {
+            self.sticky_column = None;
+        }
     }
 
     /// Select the next occurrence of the current selection, as an IDE does.

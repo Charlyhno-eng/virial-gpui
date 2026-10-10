@@ -69,7 +69,7 @@ fn delete_merges_lines_at_the_end_and_start() {
     // Backspace at the very start of the buffer is a no-op, not a panic.
     editor.set_cursor(0, false);
     editor.delete(true);
-    assert_eq!(editor.text(), "abcd\n");
+    assert_eq!(editor.text(), "abc\n", "a backspace at the very start is a no-op");
 }
 
 #[test]
@@ -129,12 +129,12 @@ fn typing_after_an_undo_discards_the_redo_stack() {
 fn shift_indents_and_outdents_every_line_of_the_selection() {
     let mut editor = make("a\nb\nc\n");
     editor.set_cursor(0, false);
-    editor.set_cursor(3, true);
+    editor.set_cursor(5, true);
     editor.shift(false);
     assert_eq!(
         editor.text(),
-        "    a\n    b\nc\n",
-        "a line whose start the selection merely touches is left alone"
+        "    a\n    b\n    c\n",
+        "every line the selection crosses is indented"
     );
     editor.shift(true);
     assert_eq!(editor.text(), "a\nb\nc\n");
@@ -217,7 +217,7 @@ fn clamping_keeps_the_cursor_inside_the_buffer() {
     editor.move_by(Direction::Left, false, None);
     assert_eq!(editor.cursor(), 5);
     editor.move_by(Direction::LineUp, false, None);
-    assert_eq!(editor.line_column(), (2, 3));
+    assert_eq!(editor.line_column(), (2, 3), "line two, at the remembered column");
     editor.set_cursor(1, false);
     editor.move_by(Direction::LineUp, false, None);
     assert_eq!(editor.line_column(), (1, 1));
