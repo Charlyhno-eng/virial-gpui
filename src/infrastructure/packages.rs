@@ -300,9 +300,7 @@ pub fn contains_credential(text: &str) -> bool {
 /// icon is missing from the asset table.
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn icon_exists(name: &str) -> bool {
-    crate::ui::icons::icon_names()
-        .iter()
-        .any(|candidate| *candidate == name)
+    crate::ui::icons::icon_names().contains(&name)
 }
 
 /// The `PackageInfo` for a directory entry path, or None when the file is not

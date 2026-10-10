@@ -90,7 +90,7 @@ fn manifests_report_their_version_and_locks_do_not() {
     assert_eq!(lock.role, Role::Lock);
     // Version extraction is a pure function; the file read happens in
     // classify only for manifests, which the version_field tests cover.
-    assert_eq!(manifest.credential_files, vec![".npmrc"]);
+    assert_eq!(manifest.credential_files, vec![".npmrc", ".npmrc.auth"]);
 }
 
 #[test]
