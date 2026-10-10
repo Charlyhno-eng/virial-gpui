@@ -140,12 +140,17 @@ jobs:
         # overlap enough for the parallel default to make that lock race fail.
         run: cargo test --locked -- --test-threads=1
       - name: Build release executable
+        # A pull request does not pay a second release profile: the exe comes
+        # from the branch's latest `push` run, or the PR carries the
+        # `packaging` label to opt back in.
+        if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'packaging')
         shell: pwsh
         run: |
           cargo build --release --locked --features windows-resources
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item target/release/virial-gpui.exe dist/virial-gpui.exe
       - name: Upload Windows executable
+        if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'packaging')
         uses: actions/upload-artifact@v6
         with:
           name: virial-gpui-windows-x64
@@ -183,6 +188,9 @@ jobs:
         # files, so run serial to avoid the lock-contention flakes.
         run: cargo test --locked -- --test-threads=1
       - name: Build release binary
+        # A pull request does not pay a second release profile; the same gate
+        # as the Windows exe build.
+        if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'packaging')
         run: cargo build --release --locked
 
   # Packaging and the ignored benchmarks both need the release profile, which
