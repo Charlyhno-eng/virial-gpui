@@ -441,7 +441,8 @@ fn prepare(data: &Path, job: &Job, progress: &Progress) -> io::Result<Vec<Item>>
 /// Unknown or rotating devices use one worker; nonrotating devices can service
 /// independent files concurrently. Bound both CPU usage and outstanding I/O.
 fn workers(_directory: &Path, files: usize) -> usize {
-    #[cfg(unix)]
+    // The rotational marker lives in sysfs, which only Linux exposes.
+    #[cfg(target_os = "linux")]
     let solid = {
         let device = fs::metadata(_directory).map(|m| m.dev()).unwrap_or(0);
         let sys = PathBuf::from(format!(
@@ -457,7 +458,7 @@ fn workers(_directory: &Path, files: usize) -> usize {
         })
     };
     // Without device metadata, assume a rotating disk: keep one worker.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let solid = false;
     if !solid || files < 16 {
         1
@@ -588,9 +589,23 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
     input.seek(SeekFrom::Start(offset))?;
     output.seek(SeekFrom::Start(offset))?;
     let mut copied = offset;
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     if offset == 0 && metadata.len() >= 128 * 1024 {
         let result = unsafe { libc::ioctl(output.as_raw_fd(), libc::FICLONE, input.as_raw_fd()) };
+        if result == 0 {
+            copied = metadata.len();
+            progress.advance(copied);
+            progress.transferred(copied, 0);
+        }
+    }
+    // macOS exposes the same copy-on-write clone through clonefile().
+    #[cfg(target_os = "macos")]
+    if offset == 0 && metadata.len() >= 128 * 1024 {
+        // SAFETY: both descriptors are open for the whole call and the
+        // destination was created with create_new, so nothing is overwritten.
+        let result = unsafe {
+            libc::fclonefileat(input.as_raw_fd(), output.as_raw_fd(), std::ptr::null(), 0)
+        };
         if result == 0 {
             copied = metadata.len();
             progress.advance(copied);

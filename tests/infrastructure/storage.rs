@@ -23,6 +23,8 @@ fn symlink<P: AsRef<std::path::Path>, Q: AsRef<std::path::Path>>(
     }
 }
 
+// APFS normalizes and rejects raw non-UTF-8 filename bytes.
+#[cfg(target_os = "linux")]
 #[test]
 fn lists_directories_first_and_handles_hidden_files_and_links() {
     let root = std::env::temp_dir().join(format!("virial-test-{}", std::process::id()));

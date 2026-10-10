@@ -97,6 +97,9 @@ fn restart_worker() {
     .unwrap();
 }
 
+// A read-only parent directory on macOS blocks the rename metadata updates
+// that this test relies on; Linux honours the explicit permissions only.
+#[cfg(target_os = "linux")]
 #[test]
 fn restores_modified_times_and_permissions_and_discards_read_only_backups() {
     let root = tempfile::tempdir().unwrap();
@@ -326,6 +329,8 @@ fn damaged_backup_blocks_undo_before_any_changes() {
     assert_eq!(fs::read(root.path().join("renamed")).unwrap(), b"original");
 }
 
+// APFS normalizes and rejects raw non-UTF-8 filename bytes.
+#[cfg(target_os = "linux")]
 #[test]
 fn preserves_non_utf8_paths_and_resolves_parent_aliases() {
     let root = tempfile::tempdir().unwrap();

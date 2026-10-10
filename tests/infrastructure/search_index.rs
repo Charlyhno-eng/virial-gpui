@@ -119,6 +119,9 @@ fn prefix_fast_path_still_selects_global_best_hundred() {
     );
 }
 
+// These assertions depend on the inotify watcher reporting changes, which only
+// the Linux build has; macOS takes the timer-polling watcher.
+#[cfg(target_os = "linux")]
 #[test]
 fn notifications_refresh_creations_renames_and_removed_subtrees() {
     let fixture = tempfile::tempdir().unwrap();
@@ -126,6 +129,7 @@ fn notifications_refresh_creations_renames_and_removed_subtrees() {
     fs::create_dir_all(root.join("original/deep")).unwrap();
     fs::write(root.join("original/deep/report"), b"").unwrap();
     let mut index = inventory(root);
+    #[cfg(target_os = "linux")]
     assert!(index.watches.fd.is_some(), "inotify unavailable");
     index.begin_scan(false);
     finish(&mut index);
@@ -204,6 +208,9 @@ fn persisted_catalog_reuses_unchanged_snapshots_and_reconciles_stale_paths() {
     );
 }
 
+// APFS normalizes and rejects raw non-UTF-8 filename bytes, so this fixture is
+// only meaningfully exercisable on Linux.
+#[cfg(target_os = "linux")]
 #[test]
 fn cache_preserves_non_utf8_names_and_rejects_other_roots() {
     let fixture = tempfile::tempdir().unwrap();
@@ -250,6 +257,9 @@ fn empty_queries_and_cancellation_do_not_publish_results() {
     );
 }
 
+// The live-change half of this test waits on inotify notifications, which only
+// the Linux watcher provides.
+#[cfg(target_os = "linux")]
 #[test]
 fn background_service_streams_inventory_and_live_changes() {
     let fixture = tempfile::tempdir().unwrap();
@@ -452,6 +462,8 @@ fn compact_catalog_keeps_existing_cache_format_and_non_utf8_names() {
     );
 }
 
+// Depends on the inotify watcher, which only the Linux build has.
+#[cfg(target_os = "linux")]
 #[test]
 fn notifications_invalidate_snapshots_even_when_directory_stamp_matches() {
     let fixture = tempfile::tempdir().unwrap();

@@ -45,7 +45,13 @@ fn persists_multiple_folders_and_deduplicates_canonical_paths() {
     let saved = read(&data.0).unwrap();
     assert_eq!(saved.len(), 2);
     assert_eq!(saved[0].name, "T.A.R.S. & équipe");
-    assert_eq!(saved[0].folders, vec![one, two]);
+    // macOS resolves /var through the /private/var symlink, so compare the
+    // canonical form on both sides rather than the raw joined path.
+    let expected = vec![
+        one.canonicalize().unwrap_or(one),
+        two.canonicalize().unwrap_or(two),
+    ];
+    assert_eq!(saved[0].folders, expected);
     assert!(saved[1].folders.is_empty());
 }
 
@@ -56,17 +62,18 @@ fn removes_only_associations_and_keeps_files() {
     fs::create_dir(&folder).unwrap();
     let file = folder.join("README.md");
     fs::write(&file, "keep me").unwrap();
-    data.add("Project", Some(folder.clone()));
+    data.add("Project", Some(folder.canonicalize().unwrap()));
+    let canonical = folder.canonicalize().unwrap();
     edit(
         &data.0,
         Edit::RemoveFolder {
             name: "Project".into(),
-            folder: folder.clone(),
+            folder: canonical,
         },
     )
     .unwrap();
     assert!(read(&data.0).unwrap()[0].folders.is_empty());
-    data.add("Project", Some(folder));
+    data.add("Project", Some(folder.canonicalize().unwrap()));
     edit(&data.0, Edit::Remove("Project".into())).unwrap();
     assert!(read(&data.0).unwrap().is_empty());
     assert_eq!(fs::read_to_string(file).unwrap(), "keep me");
@@ -132,8 +139,10 @@ fn summarizes_direct_contents_with_hidden_filter_sorted_activity_and_missing_roo
             )
             .unwrap();
     }
-    data.add("Project", Some(one.clone()));
-    data.add("Project", Some(two.clone()));
+    data.add("Project", Some(one.canonicalize().unwrap()));
+    data.add("Project", Some(two.canonicalize().unwrap()));
+    let two = two.canonicalize().unwrap();
+    let one = one.canonicalize().unwrap();
     fs::remove_dir(&two).unwrap();
     let summary = summaries(&data.0, false).unwrap().remove(0);
     assert_eq!((summary.directories, summary.files), (1, 7));

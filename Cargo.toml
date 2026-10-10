@@ -49,7 +49,18 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 webp = { version = "0.3", default-features = false }
 oxipng = { version = "10.2", default-features = false }
 
+# GPUI is selected per target: Linux keeps the Wayland/X11 backends, macOS
+# needs the Metal one (`macos-blade`), Windows keeps its own default.
+# All three resolve to the same patched crate thanks to `[patch.crates-io]`.
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui = { version = "=0.2.2", features = ["wayland", "x11"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui = { version = "=0.2.2", default-features = false, features = ["macos-blade", "font-kit"] }
+
 [target.'cfg(windows)'.dependencies]
+gpui = { version = "=0.2.2", features = ["windows-manifest"] }
+
 # Free-space queries, volume discovery and journal locks, without a COM dependency.
 # The Win32_UI and Win32_System_Com features are required by the brand-identity
 # code in `platform::windows::desktop` (`SetCurrentProcessExplicitAppUserModelID`
