@@ -17,6 +17,9 @@ impl FileManager {
             })
             .flatten();
         let has_selection = selected.is_some();
+        let package = selected
+            .as_ref()
+            .and_then(|entry| crate::infrastructure::packages::inspect(&entry.path));
         let modified = self.preview_modified.clone().unwrap_or_else(|| "—".into());
         let (name, path, kind, size, symbol) = if let Some(entry) = selected {
             let kind = entry.kind();
@@ -83,6 +86,65 @@ impl FileManager {
                     .child(self.language.text("Size"))
                     .child(div().text_color(color(MUTED)).child(size)),
             )
+            .when_some(package.clone(), |panel, package| {
+                // The package-host block, styled like the image metadata one.
+                let role = self.language.text(match package.role {
+                    crate::infrastructure::packages::Role::Manifest => "Package manifest",
+                    crate::infrastructure::packages::Role::Lock => "Package lock file",
+                    crate::infrastructure::packages::Role::Credentials => "Package credentials",
+                });
+                panel
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Registry"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(file_icon(package.icon, 14.))
+                                    .child(div().text_color(color(MUTED)).child(format!(
+                                        "{} · {}",
+                                        self.language.text(package.host),
+                                        package.registry
+                                    ))),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Role"))
+                            .child(div().text_color(color(MUTED)).child(role)),
+                    )
+                    .children(package.version.as_ref().map(|version| {
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Version"))
+                            .child(div().text_color(color(MUTED)).child(version.clone()))
+                    }))
+                    .when(package.holds_credentials, |panel| {
+                        panel.child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .items_center()
+                                .text_size(px(11.))
+                                .text_color(color(ERROR))
+                                .child(icon("info", 12., ERROR))
+                                .child(
+                                    self.language
+                                        .text("This file carries an access key for the registry"),
+                                ),
+                        )
+                    })
+            })
             .when_some(
                 (!current_folder)
                     .then(|| self.preview.image_metadata())

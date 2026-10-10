@@ -184,6 +184,15 @@ impl Language {
             "New folder" => "Nouveau dossier",
             "New file" => "Nouveau fichier",
             "Copy path" => "Copier le chemin",
+            "Registry" => "Registre",
+            "Role" => "Rôle",
+            "Version" => "Version",
+            "Package manifest" => "Manifeste de paquets",
+            "Package lock file" => "Fichier de verrouillage",
+            "Package credentials" => "Identifiants du registre",
+            "This file carries an access key for the registry" => {
+                "Ce fichier contient une clé d’accès au registre"
+            }
             "Properties" => "Propriétés",
             "Path" => "Chemin",
             "Size (bytes)" => "Taille (octets)",

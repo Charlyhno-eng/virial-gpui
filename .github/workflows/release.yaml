@@ -13,7 +13,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Unit tests come first and alone: they only need the toolchain, not the
+  # native dependencies or the release builds, so a broken commit is caught
+  # before any heavy download or compilation is paid for.
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Check release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, tomllib
+          with open("Cargo.toml", "rb") as manifest:
+              version = tomllib.load(manifest)["package"]["version"]
+          if os.environ["RELEASE_TAG"] != f"v{version}":
+              raise SystemExit(f"Release tag must match Cargo.toml: v{version}")
+          PY
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run tests
+        # One thread at a time: the undo-history flock is process-wide.
+        run: cargo test --locked -- --test-threads=1
+
   debian:
+    needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
