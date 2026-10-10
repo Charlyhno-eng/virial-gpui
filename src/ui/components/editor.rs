@@ -39,10 +39,10 @@ pub struct CodeEditor {
     language: Language,
     path: std::path::PathBuf,
     /// Flipped by the blink timer; the caret is painted while true.
-        caret_visible: Arc<AtomicBool>,
-        blink: Option<Task<()>>,
-        /// Byte range of the IME preedit, which the platform underlines.
-        marked: Option<Range<usize>>,
+    caret_visible: Arc<AtomicBool>,
+    blink: Option<Task<()>>,
+    /// Byte range of the IME preedit, which the platform underlines.
+    marked: Option<Range<usize>>,
     /// Lines painted last frame, in paint order.
     rows: Vec<PaintedRow>,
     dragging: bool,
@@ -87,7 +87,6 @@ impl CodeEditor {
         self.focus.is_focused(window)
     }
 
-
     pub fn path(&self) -> &std::path::Path {
         &self.path
     }
@@ -116,7 +115,6 @@ impl CodeEditor {
     pub fn mark_saved(&mut self) {
         self.editor.mark_saved();
     }
-
 
     /// Coloring for the current revision, computed once and reused.
     fn highlighted_preview(&mut self, cx: &mut Context<Self>) -> Option<Arc<CodePreview>> {
@@ -153,7 +151,9 @@ impl CodeEditor {
             "right" => self.editor.move_by(Direction::Right, extend, None),
             "up" => self.editor.move_by(Direction::LineUp, extend, None),
             "down" => self.editor.move_by(Direction::LineDown, extend, None),
-            "home" if modifiers.control => self.editor.move_by(Direction::DocumentStart, extend, None),
+            "home" if modifiers.control => {
+                self.editor.move_by(Direction::DocumentStart, extend, None)
+            }
             "end" if modifiers.control => self.editor.move_by(Direction::DocumentEnd, extend, None),
             "home" => self.editor.move_by(Direction::LineStart, extend, None),
             "end" => self.editor.move_by(Direction::LineEnd, extend, None),
@@ -204,7 +204,8 @@ impl CodeEditor {
 
     fn scroll_to_cursor(&mut self) {
         let line = self.editor.buffer().line_of_offset(self.editor.cursor());
-        self.scroll.scroll_to_item(line, gpui::ScrollStrategy::Center);
+        self.scroll
+            .scroll_to_item(line, gpui::ScrollStrategy::Center);
     }
 
     /// Start the caret blink, shown for one full period straight away.
@@ -230,13 +231,10 @@ impl CodeEditor {
 
     /// The text offset a window point falls on, from the last paint.
     fn offset_at(&self, position: Point<Pixels>) -> Option<usize> {
-        let row = self
-            .rows
-            .iter()
-            .min_by_key(|row| {
-                let distance = f32::from(position.y - row.top).abs();
-                (distance * 1000.) as i64
-            })?;
+        let row = self.rows.iter().min_by_key(|row| {
+            let distance = f32::from(position.y - row.top).abs();
+            (distance * 1000.) as i64
+        })?;
         let start = self.editor.buffer().line_start(row.line);
         let inside = row.shape.closest_index_for_x(position.x - row.text_left);
         Some(start + inside)
@@ -309,31 +307,29 @@ impl Render for CodeEditor {
                             })
                             .on_mouse_down(
                                 MouseButton::Left,
-                                cx.listener(
-                                    |view, event: &MouseDownEvent, window, cx| {
-                                        view.focus.focus(window);
-                                        view.pointer_down(event.position, event.modifiers.shift);
-                                        cx.notify();
-                                        cx.stop_propagation();
-                                    },
-                                ),
+                                cx.listener(|view, event: &MouseDownEvent, window, cx| {
+                                    view.focus.focus(window);
+                                    view.pointer_down(event.position, event.modifiers.shift);
+                                    cx.notify();
+                                    cx.stop_propagation();
+                                }),
                             )
-                            .on_mouse_move(cx.listener(
-                                |view, event: &MouseMoveEvent, _, cx| {
-                                    if view.dragging
-                                        && let Some(offset) = view.offset_at(event.position)
-                                    {
-                                        view.editor.set_cursor(offset, true);
-                                        cx.notify();
-                                    }
-                                },
-                            ))
-                            .on_mouse_up(MouseButton::Left, cx.listener(
-                                |view, _, _, _| view.dragging = false,
-                            ))
-                            .on_mouse_up_out(MouseButton::Left, cx.listener(
-                                |view, _, _, _| view.dragging = false,
-                            ))
+                            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, cx| {
+                                if view.dragging
+                                    && let Some(offset) = view.offset_at(event.position)
+                                {
+                                    view.editor.set_cursor(offset, true);
+                                    cx.notify();
+                                }
+                            }))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _, _, _| view.dragging = false),
+                            )
+                            .on_mouse_up_out(
+                                MouseButton::Left,
+                                cx.listener(|view, _, _, _| view.dragging = false),
+                            )
                     })
                     .collect()
             }),
@@ -369,13 +365,7 @@ impl Render for CodeEditor {
                     .border_color(color(BORDER))
                     .text_size(px(11.))
                     .text_color(color(MUTED))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_ellipsis()
-                            .child(path_display),
-                    )
+                    .child(div().flex_1().min_w_0().text_ellipsis().child(path_display))
                     .child(format!("Ln {line}, Col {column}"))
                     .child(format!("{line_count} lines"))
                     .child(eol)
@@ -383,8 +373,11 @@ impl Render for CodeEditor {
                         status.child(div().text_color(color(ACCENT)).child(modified))
                     })
                     .when(view_can_undo(self), |status| {
-                        status
-                            .child(div().text_color(color(MUTED)).child(format!("{undone} · {redone}")))
+                        status.child(
+                            div()
+                                .text_color(color(MUTED))
+                                .child(format!("{undone} · {redone}")),
+                        )
                     }),
             )
     }
@@ -483,14 +476,13 @@ impl Element for EditorRow {
             }
         }
         let cursor = view.editor.cursor();
-        let caret = (cursor >= start && cursor <= start + text.len())
-            .then(|| {
-                let x = shape.x_for_index(cursor - start);
-                Bounds::new(
-                    point(bounds.left() + x, bounds.top()),
-                    size(px(1.), bounds.size.height),
-                )
-            });
+        let caret = (cursor >= start && cursor <= start + text.len()).then(|| {
+            let x = shape.x_for_index(cursor - start);
+            Bounds::new(
+                point(bounds.left() + x, bounds.top()),
+                size(px(1.), bounds.size.height),
+            )
+        });
         RowPaint {
             shape,
             selection: rects,
@@ -513,7 +505,11 @@ impl Element for EditorRow {
         let view = self.view.read(cx);
         let focus = view.focus.clone();
         // The row is the input surface: clicks and IME land here.
-        window.handle_input(&focus, ElementInputHandler::new(bounds, self.view.clone()), cx);
+        window.handle_input(
+            &focus,
+            ElementInputHandler::new(bounds, self.view.clone()),
+            cx,
+        );
         for rect in &prepaint.selection {
             window.paint_quad(fill(*rect, color(SELECTED)));
         }
@@ -523,7 +519,9 @@ impl Element for EditorRow {
         {
             window.paint_quad(fill(caret, color(ACCENT)));
         }
-        let _ = prepaint.shape.paint(bounds.origin, window.line_height(), window, cx);
+        let _ = prepaint
+            .shape
+            .paint(bounds.origin, window.line_height(), window, cx);
         let shape = prepaint.shape.clone();
         let row = PaintedRow {
             line: self.line,
@@ -537,7 +535,12 @@ impl Element for EditorRow {
 
 /// Build the color runs of one line from the preview's highlighting, filling the
 /// gaps with the default code color.
-fn highlight_runs(code: Option<&CodePreview>, line: usize, text: &str, font: &Font) -> Vec<TextRun> {
+fn highlight_runs(
+    code: Option<&CodePreview>,
+    line: usize,
+    text: &str,
+    font: &Font,
+) -> Vec<TextRun> {
     let empty = CodeLine {
         text: SharedString::default(),
         number: SharedString::default(),
@@ -670,32 +673,32 @@ impl EntityInputHandler for CodeEditor {
         cx.notify();
     }
     fn replace_and_mark_text_in_range(
-            &mut self,
-            range: Option<Range<usize>>,
-            text: &str,
-            selected: Option<Range<usize>>,
-            _: &mut Window,
-            cx: &mut Context<Self>,
-        ) {
-            // IME preedit: insert the composed text, then place the selection the
-            // IME asks for inside it. The range is relative to the inserted text.
-            let document = self.editor.text();
-            let target = range
-                .map(|range| from_utf16(&document, range.start)..from_utf16(&document, range.end))
-                .unwrap_or_else(|| self.editor.selection());
-            self.editor.replace_range(target, text);
-            let caret = self.editor.cursor();
-            let inserted = caret - text.len();
-            if let Some(selected) = selected {
-                let from = inserted + from_utf16(text, selected.start);
-                let to = inserted + from_utf16(text, selected.end);
-                self.editor.set_cursor(from, false);
-                self.editor.set_cursor(to, true);
-            }
-            self.marked = Some(inserted..caret);
-            self.caret_visible.store(true, Ordering::Relaxed);
-            cx.notify();
+        &mut self,
+        range: Option<Range<usize>>,
+        text: &str,
+        selected: Option<Range<usize>>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // IME preedit: insert the composed text, then place the selection the
+        // IME asks for inside it. The range is relative to the inserted text.
+        let document = self.editor.text();
+        let target = range
+            .map(|range| from_utf16(&document, range.start)..from_utf16(&document, range.end))
+            .unwrap_or_else(|| self.editor.selection());
+        self.editor.replace_range(target, text);
+        let caret = self.editor.cursor();
+        let inserted = caret - text.len();
+        if let Some(selected) = selected {
+            let from = inserted + from_utf16(text, selected.start);
+            let to = inserted + from_utf16(text, selected.end);
+            self.editor.set_cursor(from, false);
+            self.editor.set_cursor(to, true);
         }
+        self.marked = Some(inserted..caret);
+        self.caret_visible.store(true, Ordering::Relaxed);
+        cx.notify();
+    }
     fn bounds_for_range(
         &mut self,
         range: Range<usize>,
@@ -722,7 +725,8 @@ impl EntityInputHandler for CodeEditor {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        self.offset_at(position).map(|offset| to_utf16(&self.editor.text(), offset))
+        self.offset_at(position)
+            .map(|offset| to_utf16(&self.editor.text(), offset))
     }
 }
 

@@ -215,9 +215,7 @@ impl Language {
             "Cannot open this file in the editor" => {
                 "Impossible d’ouvrir ce fichier dans l’éditeur"
             }
-            "Save the file before closing it" => {
-                "Enregistrez le fichier avant de le fermer"
-            }
+            "Save the file before closing it" => "Enregistrez le fichier avant de le fermer",
             "Close" => "Fermer",
             "Confirm" => "Confirmer",
             "Operation failed" => "Échec de l’opération",

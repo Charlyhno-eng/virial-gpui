@@ -146,6 +146,21 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Empty Trash from the toolbar with confirmation before permanent deletion.
 - Folder sizes appear progressively, using a cancellable background scan with
   throttled filesystem work.
+- **Éditeur de texte intégré** : les fichiers texte et code s'ouvrent
+  désormais en édition (`Ctrl+E` depuis l'aperçu, ou `Entrée` sur un fichier
+  texte). Coloration syntaxique conservée à la frappe, gouttière avec numéros
+  de ligne, curseur clignotant, sélection à la souris, et barre d'état
+  (chemin, ligne/colonne, nombre de lignes, fin de ligne, indicateur
+  « Modified »). Le moteur gère undo/redo groupé (`Ctrl+Z`/`Ctrl+Y`),
+  presse-papiers, indentation par `Tab`/`Shift+Tab` sur la sélection,
+  auto-indentation après une accolade, déplacement par mots, et colonne
+  mémorisée lors des déplacements verticaux. `Ctrl+S` écrit sur le disque en
+  préservant l'encodage d'origine (UTF-8, BOM, fin de ligne CRLF/LF/CR, et
+  réécriture Latin-1 pour les fichiers historiques) via une écriture
+  atomique ; si le fichier a changé sur le disque depuis son ouverture, la
+  sauvegarde est refusée avec un message. `Échap` revient à l'aperçu
+  lecture seule. Les fichiers de plus de 8 Mio restent en aperçu.
+
 ### Corrections
 - **CI — tests instables en parallèle** : l'historique d'annulation prend un
   verrou exclusif `flock` sur `<data>/virial/undo/lock`. Les fixtures

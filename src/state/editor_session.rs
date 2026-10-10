@@ -15,7 +15,12 @@ const MAX_EDITABLE: u64 = 8 * 1024 * 1024;
 
 impl FileManager {
     /// Load a file into the editor, replacing any preview content.
-    pub(crate) fn open_editor(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_editor(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let language = self.language;
         let read = cx.background_executor().spawn(async move {
             let metadata = std::fs::metadata(&path).ok()?;
@@ -33,20 +38,18 @@ impl FileManager {
         });
         cx.spawn_in(window, async move |view, cx| {
             let loaded = read.await;
-            let _ = view.update_in(cx, |view, window, cx| {
-                match loaded {
-                    Some((text, format, fingerprint, path)) => {
-                        view.editor_disk = Some(fingerprint);
-                        view.attach_editor(Editor::new(&text, format), path, window, cx);
-                    }
-                    None => {
-                        view.error = Some(
-                            language
-                                .text("Cannot open this file in the editor")
-                                .to_string(),
-                        );
-                        cx.notify();
-                    }
+            let _ = view.update_in(cx, |view, window, cx| match loaded {
+                Some((text, format, fingerprint, path)) => {
+                    view.editor_disk = Some(fingerprint);
+                    view.attach_editor(Editor::new(&text, format), path, window, cx);
+                }
+                None => {
+                    view.error = Some(
+                        language
+                            .text("Cannot open this file in the editor")
+                            .to_string(),
+                    );
+                    cx.notify();
                 }
             });
         })
@@ -152,12 +155,10 @@ impl FileManager {
                                 );
                             }
                             Err(error) => {
-                                view.error = Some(
-                                    format!(
-                                        "{}: {error}",
-                                        view.language.text("Cannot save the file")
-                                    ),
-                                );
+                                view.error = Some(format!(
+                                    "{}: {error}",
+                                    view.language.text("Cannot save the file")
+                                ));
                             }
                         }
                         cx.notify();

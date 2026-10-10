@@ -176,10 +176,7 @@ impl Buffer {
         let head = &text[..start];
         let tail = &text[end..];
         let joined = format!("{head}{}{tail}", change.after.replace("\r\n", "\n"));
-        self.lines = joined
-            .split('\n')
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
+        self.lines = joined.split('\n').map(str::to_owned).collect::<Vec<_>>();
         self.revision = self.revision.wrapping_add(1);
         change
     }
@@ -197,10 +194,7 @@ impl Buffer {
         let head = &text[..range.start];
         let tail = &text[end..];
         let joined = format!("{head}{}{tail}", change.after.replace("\r\n", "\n"));
-        self.lines = joined
-            .split('\n')
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
+        self.lines = joined.split('\n').map(str::to_owned).collect::<Vec<_>>();
         self.revision = self.revision.wrapping_add(1);
         change
     }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::infrastructure::editor_io::{decode, DocumentFormat, LineEnding};
+use crate::infrastructure::editor_io::{DocumentFormat, LineEnding, decode};
 
 fn format() -> DocumentFormat {
     DocumentFormat {
@@ -69,7 +69,11 @@ fn delete_merges_lines_at_the_end_and_start() {
     // Backspace at the very start of the buffer is a no-op, not a panic.
     editor.set_cursor(0, false);
     editor.delete(true);
-    assert_eq!(editor.text(), "abc\n", "a backspace at the very start is a no-op");
+    assert_eq!(
+        editor.text(),
+        "abc\n",
+        "a backspace at the very start is a no-op"
+    );
 }
 
 #[test]
@@ -159,7 +163,11 @@ fn movement_covers_characters_words_lines_and_document() {
     editor.move_by(Direction::WordRight, false, None);
     assert_eq!(editor.cursor(), 6);
     editor.move_by(Direction::WordRight, false, None);
-    assert_eq!(editor.cursor(), 10, "stops on the newline, never crossing it");
+    assert_eq!(
+        editor.cursor(),
+        10,
+        "stops on the newline, never crossing it"
+    );
     editor.move_by(Direction::WordLeft, false, None);
     assert_eq!(editor.cursor(), 6);
     editor.move_by(Direction::LineEnd, false, None);
@@ -183,7 +191,11 @@ fn vertical_movement_clamps_to_a_shorter_line() {
     editor.move_by(Direction::LineDown, false, None);
     assert_eq!(editor.line_column(), (2, 3), "clamped to the short line");
     editor.move_by(Direction::LineUp, false, None);
-    assert_eq!(editor.line_column(), (1, 15), "the remembered column comes back");
+    assert_eq!(
+        editor.line_column(),
+        (1, 15),
+        "the remembered column comes back"
+    );
 }
 
 #[test]
@@ -220,7 +232,11 @@ fn clamping_keeps_the_cursor_inside_the_buffer() {
     assert_eq!(editor.line_column(), (1, 3), "line one, clamped to its end");
     editor.set_cursor(1, false);
     editor.move_by(Direction::LineUp, false, None);
-    assert_eq!(editor.line_column(), (1, 2), "LineUp on the first line stays put");
+    assert_eq!(
+        editor.line_column(),
+        (1, 2),
+        "LineUp on the first line stays put"
+    );
 }
 
 #[test]
@@ -277,7 +293,11 @@ fn decoded_text_feeds_the_editor_without_losing_bytes() {
     let mut editor = Editor::new(&text, format.clone());
     editor.set_cursor(0, false);
     editor.insert("> ");
-    assert_eq!(editor.text(), "> café\n", "the buffer normalizes the endings");
+    assert_eq!(
+        editor.text(),
+        "> café\n",
+        "the buffer normalizes the endings"
+    );
     assert_eq!(
         crate::infrastructure::editor_io::encode(&editor.text(), &format),
         b"> caf\xe9\r\n",

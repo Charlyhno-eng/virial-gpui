@@ -63,7 +63,9 @@ pub fn decode(bytes: &[u8]) -> Option<(String, DocumentFormat)> {
         // Latin-1 maps every byte to exactly one character, so a save never
         // loses data.
         Err(_) => (
-            body.iter().map(|byte| char::from(*byte)).collect::<String>(),
+            body.iter()
+                .map(|byte| char::from(*byte))
+                .collect::<String>(),
             true,
         ),
     };

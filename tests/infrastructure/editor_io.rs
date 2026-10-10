@@ -112,10 +112,7 @@ fn fingerprint_notices_a_same_length_rewrite() {
 #[test]
 fn fingerprint_records_the_modification_second() {
     let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_123);
-    assert_eq!(
-        fingerprint(b"x", Some(time)).modified,
-        Some(1_700_000_123)
-    );
+    assert_eq!(fingerprint(b"x", Some(time)).modified, Some(1_700_000_123));
     assert_eq!(fingerprint(b"x", None).modified, None);
 }
 
