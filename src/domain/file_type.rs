@@ -23,7 +23,6 @@ pub fn icon_for(name: &str) -> &'static str {
         "yarn.lock" | "pnpm-lock.yaml" | "bun.lockb" => return "config",
         "tsconfig.json" => return "typescript",
         "readme" | "readme.md" | "readme.txt" => return "markdown",
-        "license" | "licence" | "copying" => return "licenses",
         "changelog" | "changelog.md" => return "markdown",
         "authors" | "contributors" => return "markdown",
         _ => {}
@@ -38,9 +37,9 @@ pub fn icon_for_extension(extension: &str) -> &'static str {
         // Languages
         "rs" => "rust",
         "py" | "pyw" | "pyi" | "rpy" => "python",
-        "js" | "mjs" | "cjs" | "jsx" => "javascript",
+        "js" | "mjs" | "cjs" => "javascript",
+        "jsx" | "tsx" => "react",
         "ts" | "mts" | "cts" => "typescript",
-        "tsx" => "react",
         "go" => "code",
         "java" | "jar" => "code",
         "kt" | "kts" => "code",
@@ -74,7 +73,7 @@ pub fn icon_for_extension(extension: &str) -> &'static str {
         "yaml" | "yml" => "config",
         "toml" | "ini" | "conf" | "cfg" | "properties" | "env" => "config",
         // Documents and text
-        "md" | "mdx" | "markdown" | "rst" | "adoc" | "txt" | "text" | "log" => "markdown",
+        "md" | "mdx" | "markdown" | "rst" | "adoc" | "log" => "markdown",
         "pdf" => "pdf",
         "doc" | "docx" | "odt" | "rtf" => "markdown",
         // Data
@@ -89,7 +88,7 @@ pub fn icon_for_extension(extension: &str) -> &'static str {
         "mp3" | "flac" | "wav" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "wma"
         | "aiff" | "ape" | "mid" | "midi" => "music",
         "mp4" | "mkv" | "webm" | "avi" | "mov" | "wmv" | "flv" | "m4v" | "mpg"
-        | "mpeg" | "3gp" | "ts" | "vob" => "video",
+        | "mpeg" | "3gp" | "vob" => "video",
         // Fonts
         "ttf" | "otf" | "woff" | "woff2" | "eot" => "code",
         // Executables and installers
@@ -118,7 +117,7 @@ mod tests {
         assert_eq!(icon_for("Cargo.toml"), "rust");
         assert_eq!(icon_for("cargo.lock"), "rust");
         assert_eq!(icon_for("package-lock.json"), "javascript");
-        assert_eq!(icon_for("LICENSE"), "licenses");
+        assert_eq!(icon_for("LICENSE"), "file");
     }
 
     #[test]
@@ -183,7 +182,6 @@ mod tests {
             "music",
             "video",
             "archive",
-            "licenses",
             "file",
             "folder",
         ] {
