@@ -66,6 +66,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - `CHANGELOG.md` devient obligatoire pour toute PR (règle AGENTS.md).
 
 ### Corrections
+- **Curseur de défilement** : la hauteur minimale était appliquée après le
+  calcul de la course, si bien qu'une liste très longue faisait sortir le
+  curseur de sa piste (jusqu'à 23 px sur une piste de 512 px, l'écart croissant
+  avec le contenu). La course est maintenant dérivée de la hauteur effective.
+- **Curseur de défilement** : les mesures non finies (NaN, infini) n'étaient pas
+  filtrées et pouvaient atteindre le rendu ; la hauteur était silencieusement
+  réparée par `max`/`min` pendant que la position et le ratio restaient NaN.
 - **Windows — le tri de fichiers** : renommer ou déplacer un dossier échouait
   systématiquement (« Accès refusé ») car l'ouverture du handle de snapshot
   undo n'utilisait pas `FILE_FLAG_BACKUP_SEMANTICS`.
