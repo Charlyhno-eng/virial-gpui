@@ -19,6 +19,8 @@ pub(crate) struct GlobalSearch {
     pub pending_open: bool,
     pub task: Option<DirectorySizeTask>,
     pub scroll: gpui::UniformListScrollHandle,
+    /// Whether the results panel is expanded from the search field.
+    pub expanded: bool,
 }
 
 /// Where the "everywhere" index walks. Linux keeps the historical whole-tree
@@ -47,6 +49,24 @@ impl FileManager {
         }
         self.search_input.read(cx).focus(window);
         self.update_global_search(cx);
+        if let Some(picker) = self.global_search.as_mut() {
+            picker.expanded = true;
+        }
+        cx.notify();
+    }
+
+    /// Fold or unfold the results panel from the search field's triangle,
+    /// keeping the query and the ranking intact.
+    pub(crate) fn toggle_global_search(&mut self, cx: &mut Context<Self>) {
+        match self.global_search.as_mut() {
+            Some(picker) => picker.expanded = !picker.expanded,
+            None => {
+                self.update_global_search(cx);
+                if let Some(picker) = self.global_search.as_mut() {
+                    picker.expanded = true;
+                }
+            }
+        }
         cx.notify();
     }
 
@@ -91,10 +111,14 @@ impl FileManager {
             pending_open: false,
             task: None,
             scroll: gpui::UniformListScrollHandle::new(),
+            expanded: false,
         });
         if query == picker.query {
             return;
         }
+        // A new query reopens the panel: folding it was an explicit user
+        // gesture about the previous results, not about this one.
+        picker.expanded = true;
         picker.task = None;
         picker.query = query.clone();
         picker.results = SearchResults::default();

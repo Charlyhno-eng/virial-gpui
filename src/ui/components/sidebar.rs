@@ -117,34 +117,37 @@ impl FileManager {
     /// once connected — click opens the remote menu.
     fn remote_indicator(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let ssh = &self.ssh;
-        let (label, symbol_color, badge, connected_host) = match &ssh.activity {
-            crate::state::ssh::SshActivity::Idle => (None, MUTED, false, None),
-            crate::state::ssh::SshActivity::Connecting(host) => (
-                Some(self.language.text("Connecting…").to_string()),
-                ACCENT,
-                false,
-                Some(host.clone()),
-            ),
-            crate::state::ssh::SshActivity::Connected(id) => (
-                Some(format!("SSH: {id}")),
-                ACCENT,
-                true,
-                Some(id.to_string()),
-            ),
+        // The host name lives in the tooltip: printing it inline made the
+        // sidebar reflow every time a connection changed.
+        let (connected, symbol_color, badge) = match &ssh.activity {
+            crate::state::ssh::SshActivity::Idle => (false, MUTED, false),
+            crate::state::ssh::SshActivity::Connecting(_) => (false, ACCENT, false),
+            crate::state::ssh::SshActivity::Connected(_) => (true, ACCENT, true),
+        };
+        let connected_host = match &ssh.activity {
+            crate::state::ssh::SshActivity::Idle => None,
+            crate::state::ssh::SshActivity::Connecting(host) => Some(host.clone()),
+            crate::state::ssh::SshActivity::Connected(id) => Some(id.to_string()),
         };
         div()
             .id("remote-indicator")
             .flex()
             .items_center()
-            .gap_1()
-            .px_2()
-            .h(px(18.))
+            .justify_center()
+            .size(px(22.))
+            .flex_shrink_0()
             .rounded_md()
-            .text_size(px(10.))
-            .text_color(color(if badge { BACKGROUND } else { TEXT }))
-            .when(badge, |badge| badge.bg(color(ACCENT)))
+            .border_1()
+            .border_color(color(if badge { ACCENT } else { BORDER }))
+            .bg(color(if badge {
+                ACCENT
+            } else if connected {
+                HOVER
+            } else {
+                BACKGROUND
+            }))
             .cursor_pointer()
-            .hover(|style| style.bg(color(if badge { ACCENT } else { HOVER })))
+            .hover(|style| style.border_color(color(ACCENT)))
             .tooltip(move |_, cx| {
                 let hint = connected_host.clone();
                 cx.new(move |_| {
@@ -155,10 +158,9 @@ impl FileManager {
             })
             .child(icon(
                 "remote",
-                12.,
+                13.,
                 if badge { BACKGROUND } else { symbol_color },
             ))
-            .when_some(label, |badge, label| badge.child(label))
             .on_click(cx.listener(|view, _, window, cx| view.open_remote_menu(window, cx)))
     }
 

@@ -220,7 +220,26 @@ const ASSETS: &[(&str, &[u8])] = &[
         "icons/remote.svg",
         include_bytes!("../../assets/icons/remote.svg"),
     ),
+    (
+        "icons/docker.svg",
+        include_bytes!("../../assets/icons/docker.svg"),
+    ),
+    (
+        "icons/git.svg",
+        include_bytes!("../../assets/icons/git.svg"),
+    ),
 ];
+
+/// Whether the named icon is embedded in the binary. Lets callers (and the
+/// tests) fail loudly instead of rendering an empty cell for a typo.
+///
+/// Only referenced from tests today; the loader itself falls back gracefully.
+#[cfg(test)]
+pub fn has_asset(name: &str) -> bool {
+    ASSETS
+        .iter()
+        .any(|(asset, _)| *asset == format!("icons/{name}.svg"))
+}
 
 impl AssetSource for IconAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {

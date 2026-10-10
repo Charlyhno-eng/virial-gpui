@@ -11,6 +11,7 @@ fn early_enter_waits_for_exact_match_or_completed_scan() {
         pending_open: true,
         task: None,
         scroll: gpui::UniformListScrollHandle::new(),
+        expanded: true,
     };
     assert!(queued_result(&picker).is_none());
     picker.results.entries.push(Entry {

@@ -12,6 +12,15 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **Icônes de fichiers par type** : le navigateur et le panneau de détails
+  choisissent l'illustration à partir du nom exact du fichier (`Dockerfile`,
+  `.gitignore`, `Cargo.toml`, `LICENSE`, …) puis d'une table d'extensions
+  couvrant langages, web, documents, données, archives, médias, polices et
+  installeurs. Un nom inconnu retombe sur le type détecté par l'analyse, puis
+  sur le document générique.
+- **Barre de défilement latérale** : la liste de fichiers affiche un curseur
+  proportionnel sur le bord droit, dont la position et la taille sont lues
+  depuis la liste elle-même et ne peuvent donc pas diverger du contenu affiché.
 - **Identité visuelle Windows complète** : `virial-gpui.exe` embarque désormais
   l'icône multi-résolutions (16/24/32/48/64/128/256) et un manifest
   PerMonitorV2. L'icône s'affiche dans l'installeur, sur le raccourci du
@@ -57,6 +66,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - `CHANGELOG.md` devient obligatoire pour toute PR (règle AGENTS.md).
 
 ### Corrections
+- **Curseur de défilement** : la hauteur minimale était appliquée après le
+  calcul de la course, si bien qu'une liste très longue faisait sortir le
+  curseur de sa piste (jusqu'à 23 px sur une piste de 512 px, l'écart croissant
+  avec le contenu). La course est maintenant dérivée de la hauteur effective.
+- **Curseur de défilement** : les mesures non finies (NaN, infini) n'étaient pas
+  filtrées et pouvaient atteindre le rendu ; la hauteur était silencieusement
+  réparée par `max`/`min` pendant que la position et le ratio restaient NaN.
 - **Windows — le tri de fichiers** : renommer ou déplacer un dossier échouait
   systématiquement (« Accès refusé ») car l'ouverture du handle de snapshot
   undo n'utilisait pas `FILE_FLAG_BACKUP_SEMANTICS`.
@@ -83,6 +99,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   commit `5500acc`).
 
 ### Interface
+- L'indicateur de connexion distante tient dans un carré de 22 px avec un
+  cadre permanent : le nom d'hôte ne s'affiche plus en ligne (il était dans
+  l'infobulle), ce qui évitait que la barre latérale se réorganise à chaque
+  changement de connexion. La bordure s'accentue au survol et le bloc reste
+  accenté plein quand la session est établie.
 - L'indicateur remote `><` siège en tête de la ligne de pied de sidebar,
   séparé du libellé « LOCAL FILES » par un filet vertical ; la barre de statut
   séparée disparaît et la liste de fichiers descend jusqu'au bord.

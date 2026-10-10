@@ -285,7 +285,13 @@ impl FileManager {
                     )
                     .into_any_element()
             } else {
+                let scrollbar = crate::ui::components::scrollbar::render(
+                    &self.scroll,
+                    visible_count,
+                    gpui::rgba(0xff8e8aa8),
+                );
                 div().relative().flex().flex_col().flex_1().min_h_0().overflow_hidden()
+                .child(scrollbar)
                 .child(uniform_list(
                     self.location.id(),
                     visible_count,

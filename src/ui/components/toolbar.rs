@@ -138,7 +138,47 @@ impl FileManager {
                     .id("search-field")
                     .w(px(200.))
                     .max_w_full()
-                    .child(self.search_input.clone()),
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(self.search_input.clone())
+                    // Explorer-style disclosure triangle: folds the "search
+                    // everywhere" results panel away without losing the query.
+                    .child(
+                        div()
+                            .id("search-disclosure")
+                            .flex_shrink_0()
+                            .size(px(20.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_md()
+                            .cursor_pointer()
+                            .hover(|style| style.bg(color(HOVER)))
+                            .tooltip(move |_, cx| {
+                                cx.new(move |_| {
+                                    super::modal::StatusTooltip("Toggle search results".into())
+                                })
+                                .into()
+                            })
+                            .child(crate::ui::icons::icon(
+                                if self
+                                    .global_search
+                                    .as_ref()
+                                    .is_none_or(|picker| picker.expanded)
+                                {
+                                    "up"
+                                } else {
+                                    "down"
+                                },
+                                12.,
+                                MUTED,
+                            ))
+                            .on_click(cx.listener(|view, _, _, cx| {
+                                view.toggle_global_search(cx);
+                                cx.stop_propagation();
+                            })),
+                    ),
             )
             .when(window.is_fullscreen(), |bar| {
                 bar.child(
