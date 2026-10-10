@@ -300,11 +300,11 @@ impl Editor {
     /// in the history like any other.
     fn insert_range(&mut self, range: Range<usize>, text: &str, typing: bool) {
         let change = self.buffer.replace(range, text);
+        let end = change.range.start + change.after.len();
         let edit = Edit {
             changes: vec![change],
         };
         self.history.record(edit, typing);
-        let end = edit.changes[0].range.start + edit.changes[0].after.len();
         self.cursor = end;
         self.anchor = end;
     }

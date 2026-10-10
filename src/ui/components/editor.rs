@@ -27,7 +27,7 @@ struct PaintedRow {
     top: Pixels,
     /// Left edge of the text, right of the gutter.
     text_left: Pixels,
-    layout: Arc<LineLayout>,
+    shape: ShapedLine,
 }
 
 pub struct CodeEditor {
@@ -58,9 +58,6 @@ impl CodeEditor {
         cx: &mut Context<Self>,
     ) -> Self {
         let focus = cx.focus_handle();
-        // Registering the entity lets GPUI deliver IME composition through
-        // EntityInputHandler, which the row elements install when they paint.
-        cx.focus_entity(&focus);
         Self {
             editor,
             focus,
@@ -184,7 +181,7 @@ impl CodeEditor {
             "y" if modifiers.control => self.editor.redo(),
             "c" | "x" if modifiers.control => {
                 let selection = self.editor.selection();
-                let text = self.editor.text_in(selection);
+                let text = self.editor.text_in(selection.clone());
                 cx.write_to_clipboard(ClipboardItem::new_string(text.into()));
                 if key == "x" && !selection.is_empty() {
                     self.editor.delete(false);
@@ -251,7 +248,7 @@ impl CodeEditor {
                 (distance * 1000.) as i64
             })?;
         let start = self.editor.buffer().line_start(row.line);
-        let inside = row.layout.closest_index_for_x(position.x - row.text_left);
+        let inside = row.shape.closest_index_for_x(position.x - row.text_left);
         Some(start + inside)
     }
 
@@ -480,8 +477,9 @@ impl Element for EditorRow {
         let selection = view.editor.selection();
         let mut rects = Vec::new();
         if !selection.is_empty() {
-            let from = selection.start.clamp(start..start + text.len());
-            let to = selection.end.clamp(start..start + text.len());
+            let end_of_line = start + text.len();
+            let from = selection.start.clamp(start, end_of_line);
+            let to = selection.end.clamp(start, end_of_line);
             if to > from {
                 let x0 = shape.x_for_index(from - start);
                 let x1 = shape.x_for_index(to - start);
@@ -533,12 +531,12 @@ impl Element for EditorRow {
             window.paint_quad(fill(caret, color(ACCENT)));
         }
         let _ = prepaint.shape.paint(bounds.origin, window.line_height(), window, cx);
-        let layout = prepaint.shape.layout.clone();
+        let shape = prepaint.shape.clone();
         let row = PaintedRow {
             line: self.line,
             top: prepaint.top,
             text_left: prepaint.text_left,
-            layout,
+            shape,
         };
         self.view.update(cx, |view, _| view.rows.push(row));
     }
@@ -546,12 +544,7 @@ impl Element for EditorRow {
 
 /// Build the color runs of one line from the preview's highlighting, filling the
 /// gaps with the default code color.
-fn highlight_runs(
-    code: Option<&CodePreview>,
-    line: usize,
-    text: &str,
-    font: gpui::FontId,
-) -> Vec<TextRun> {
+fn highlight_runs(code: Option<&CodePreview>, line: usize, text: &str, font: Font) -> Vec<TextRun> {
     let empty = CodeLine {
         text: text.into(),
         number: String::new().into(),
@@ -576,7 +569,7 @@ fn highlight_runs(
     runs
 }
 
-fn plain_run(range: Range<usize>, font: gpui::FontId, color: Option<Hsla>) -> TextRun {
+fn plain_run(range: Range<usize>, font: Font, color: Option<Hsla>) -> TextRun {
     TextRun {
         len: range.end - range.start,
         font,
@@ -726,8 +719,8 @@ impl EntityInputHandler for CodeEditor {
         let line = self.editor.buffer().line_of_offset(start);
         let row = self.rows.iter().find(|row| row.line == line)?;
         let line_start = self.editor.buffer().line_start(line);
-        let x0 = row.layout.x_for_index(start - line_start);
-        let x1 = row.layout.x_for_index(end - line_start);
+        let x0 = row.shape.x_for_index(start - line_start);
+        let x1 = row.shape.x_for_index(end - line_start);
         Some(Bounds::from_corners(
             point(row.text_left + x0, row.top),
             point(row.text_left + x1, row.top + px(LINE_HEIGHT)),

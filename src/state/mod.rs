@@ -1,8 +1,9 @@
 pub(crate) mod actions;
 pub(crate) mod app_state;
 pub(crate) mod browser;
-mod code_preview;
+pub(crate) mod code_preview;
 pub(crate) mod editor;
+pub(crate) mod editor_session;
 pub(crate) mod devices;
 pub(crate) mod global_search;
 pub(crate) mod mouse;
