@@ -298,6 +298,7 @@ pub fn contains_credential(text: &str) -> bool {
 
 /// Artwork for a host, falling back to the generic document when the host's
 /// icon is missing from the asset table.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn icon_exists(name: &str) -> bool {
     crate::ui::icons::icon_names()
         .iter()
