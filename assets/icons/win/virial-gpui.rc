@@ -1,0 +1,15 @@
+// Windows resource script for Virial.
+// Bundles the multi-resolution .ico into the executable so the .exe
+// shows the proper icon in the installer (Explorer copy dialog), on
+// the desktop shortcut, in Alt-Tab and on the taskbar.
+//
+// The DPI-aware manifest is applied at runtime via
+// `SetProcessDpiAwarenessContext` (see `platform::windows::desktop`)
+// instead of being baked into the .exe resources: link.exe adds a
+// default manifest of its own when no RT_MANIFEST resource is
+// present, which means shipping one through winres duplicates the
+// resource and CVTRES rejects the build with CVT1100.
+//
+// IDs:
+//   1 = main application icon (PNG-encoded .ico with 16,24,32,48,64,128,256)
+1 ICON "virial-gpui.ico"

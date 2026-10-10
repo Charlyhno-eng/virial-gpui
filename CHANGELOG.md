@@ -12,6 +12,26 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **Identité visuelle Windows complète** : `virial-gpui.exe` embarque désormais
+  l'icône multi-résolutions (16/24/32/48/64/128/256) et un manifest
+  PerMonitorV2. L'icône s'affiche dans l'installeur, sur le raccourci du
+  bureau, dans Alt-Tab et sur la barre des tâches ; la fenêtre ne montre
+  plus de console derrière le GUI au lancement. Activation via la feature
+  Cargo `windows-resources` (active dans le job `windows` et le workflow
+  de release, désactivée par défaut pour ne pas imposer `winres` aux builds
+  Linux/macOS).
+- **AppUserModelID au runtime** : `SetCurrentProcessExplicitAppUserModelID`
+  est appelé à chaque lancement (`DeamonDev888.Virial.GPUI.1`), donc même
+  un `virial-gpui.exe` lancé depuis un terminal se regroupe correctement
+  dans la barre des tâches au lieu de prendre l'identité générique.
+- **Associations de fichiers texte sous Windows** : `virial-gpui.exe
+  --install-desktop` enregistre `Virial.GPUI.TextFile` comme ProgID +
+  `DefaultIcon` pour `.env`, `.gitignore`, `.toml`, `.lock`, `.cfg`,
+  `.ini` et `.properties` (sous `HKCU\Software\Classes`, sans droits
+  admin). Les fichiers apparaissent avec l'icône Virial dans l'Explorateur
+  et peuvent être ouverts via « Ouvrir avec → Virial » même si un autre
+  éditeur est le défaut actuel ; une fonction `uninstall()` est disponible
+  côté code pour nettoyer en un `reg delete`.
 - **Qualité obligatoire en CI** : nouveau job `lint` sur chaque PR —
   `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D
   warnings` (tests compris, zéro warning toléré) et vérification qu'une
