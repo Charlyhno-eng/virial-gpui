@@ -20,6 +20,10 @@ impl FileManager {
         let package = selected
             .as_ref()
             .and_then(|entry| crate::infrastructure::packages::inspect(&entry.path));
+        let harness = selected
+            .as_ref()
+            .filter(|entry| entry.directory)
+            .and_then(|entry| crate::infrastructure::harness::inspect(&entry.path));
         let modified = self.preview_modified.clone().unwrap_or_else(|| "—".into());
         let (name, path, kind, size, symbol) = if let Some(entry) = selected {
             let kind = entry.kind();
@@ -142,6 +146,82 @@ impl FileManager {
                                     self.language
                                         .text("This file carries an access key for the registry"),
                                 ),
+                        )
+                    })
+            })
+            .when_some(harness.clone(), |panel, harness| {
+                // The harness block: which agentic CLI owns this folder, its
+                // home, its system prompt and its credential files.
+                let role = self.language.text(match harness.role {
+                    crate::infrastructure::harness::Role::Home => "Harness home",
+                    crate::infrastructure::harness::Role::Folder => "Harness folder",
+                });
+                panel
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Harness"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(file_icon(harness.icon, 14.))
+                                    .child(
+                                        div().text_color(color(MUTED)).child(harness.name),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Role"))
+                            .child(div().text_color(color(MUTED)).child(role)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Home"))
+                            .child(
+                                div()
+                                    .text_color(color(MUTED))
+                                    .text_ellipsis()
+                                    .child(harness.home.display().to_string()),
+                            ),
+                    )
+                    .children(harness.prompt.as_ref().map(|prompt| {
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Prompt"))
+                            .child(
+                                div()
+                                    .text_color(color(MUTED))
+                                    .text_ellipsis()
+                                    .child(prompt.display().to_string()),
+                            )
+                    }))
+                    .when(!harness.credentials.is_empty(), |panel| {
+                        panel.child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .items_center()
+                                .text_size(px(11.))
+                                .text_color(color(MUTED))
+                                .child(icon("info", 12., ACCENT))
+                                .child(format!(
+                                    "{}: {}",
+                                    self.language.text("Credentials"),
+                                    harness.credentials.join(", ")
+                                )),
                         )
                     })
             })

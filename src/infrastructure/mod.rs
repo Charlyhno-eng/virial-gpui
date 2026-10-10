@@ -65,7 +65,8 @@ pub(crate) fn try_lock_exclusive(file: &File, busy: &'static str) -> io::Result<
 
 // Freedesktop-trash module: Linux only; a portable stub serves other targets.
 #[cfg(unix)]
-pub(crate) mod trash;
+pub(crate) mod git_url;
+pub(crate) mod harness;
 #[cfg(not(unix))]
 pub(crate) mod trash_stub {
     use crate::domain::models::Entry;
