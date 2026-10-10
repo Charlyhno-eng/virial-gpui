@@ -28,16 +28,12 @@ impl FileManager {
         });
         cx.spawn(async move |view, cx| {
             let loaded = read.await;
-            let _ = view.update(cx, |view, window, cx| {
+            let _ = view.update(cx, |view, cx| {
                 match loaded {
                     Some((text, format, fingerprint)) => {
                         view.editor_disk = Some(fingerprint);
-                        view.attach_editor(
-                            Editor::new(&text, format),
-                            path,
-                            window,
-                            cx,
-                        );
+                        let _ = &window;
+                        view.attach_editor(Editor::new(&text, format), path, cx);
                     }
                     None => {
                         view.error = Some(
@@ -61,7 +57,7 @@ impl FileManager {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let mut view = cx.new(|cx| CodeEditor::new(editor, path, window, cx));
+        let view = cx.new(|cx| CodeEditor::new(editor, path, window, cx));
         view.update(cx, |view, _| view.set_language(self.language));
         self.editor = Some(view.clone());
         self.preview = crate::state::preview::Preview::Editing;

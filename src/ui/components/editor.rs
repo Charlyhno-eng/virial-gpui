@@ -54,7 +54,7 @@ impl CodeEditor {
     pub fn new(
         editor: Editor,
         path: std::path::PathBuf,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let focus = cx.focus_handle();
@@ -288,7 +288,7 @@ impl Render for CodeEditor {
         let body = uniform_list(
             ("editor", generation),
             line_count,
-            cx.processor(|view, range: Range<usize>, window, cx| {
+            cx.processor(|view, range: Range<usize>, _, cx| {
                 // The preview is recomputed here so it is ready before any
                 // row shapes its text, and cached on the view.
                 let code = view.highlighted_preview(cx);
@@ -685,10 +685,10 @@ impl EntityInputHandler for CodeEditor {
             range: Option<Range<usize>>,
             text: &str,
             selected: Option<Range<usize>>,
-                            _: &mut Window,
-                            cx: &mut Context<Self>,
-                        ) {
-                            // IME preedit: insert the composed text, then place the selection the
+            _: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            // IME preedit: insert the composed text, then place the selection the
             // IME asks for inside it. The range is relative to the inserted text.
             let document = self.editor.text();
             let target = range
@@ -696,14 +696,14 @@ impl EntityInputHandler for CodeEditor {
                 .unwrap_or_else(|| self.editor.selection());
             self.editor.replace_range(target, text);
             let caret = self.editor.cursor();
+            let inserted = caret - text.len();
             if let Some(selected) = selected {
-                let from = caret - text.len() + from_utf16(text, selected.start);
-                let to = caret - text.len() + from_utf16(text, selected.end);
+                let from = inserted + from_utf16(text, selected.start);
+                let to = inserted + from_utf16(text, selected.end);
                 self.editor.set_cursor(from, false);
                 self.editor.set_cursor(to, true);
             }
-            let _ = start;
-            self.marked = Some(caret - text.len()..caret);
+            self.marked = Some(inserted..caret);
             self.caret_visible.store(true, Ordering::Relaxed);
             cx.notify();
         }
