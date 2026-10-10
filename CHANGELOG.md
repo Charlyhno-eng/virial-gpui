@@ -25,9 +25,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   release. Le garde-fou de changelog est passé du job `merge-readiness` (qui
   tournait en double) au job `lint`, et les runs s'interromment automatiquement
   quand une nouvelle poussée arrive sur la même branche (`cancel-in-progress`).
-- **Noms de tests de benchmark corrigés** : le filtre `cargo test` du job de
-  performance pointait sur `infrastructure::search::index::tests::…`, le chemin
-  réel du module de test, et non sur le nom de fichier `search_index.rs`.
+- **Clés de cache distinctes par job** : `lint` et `linux` partageant le même
+  runner et le même profil debug, ils demandaient la même clé
+  `actions/cache`. Le premier à la réserver la gagnait et l'autre échouait avec
+  « Unable to reserve cache », donc sans cache du tout. Chaque job porte maintenant
+  le sien dans la clé.
 
 ### Ajouts
 - **Section d'installation dans le README** : un tableau des quatre archives

@@ -33,12 +33,14 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
       - name: Restore cargo and build artefacts
-        # Only the dependency artefacts and the registry are cached. The test
-        # binary itself and the debug symbols are rewritten by every run and
-        # would push the archive towards the 10 GB cache limit: target/debug
-        # measured 8.5 GB on a Linux runner of which the reusable `.rlib` and
-        # `.rmeta` are the bulk, and everything else is rebuilt cheaply once
-        # the dependencies are present.
+        # The key carries the job name: `lint` and `linux` share the same runner
+        # and the same debug profile, so an identical key would let only one of
+        # them reserve the cache ("Unable to reserve cache ... another job may be
+        # creating this cache") and the loser would silently rebuild everything.
+        # Only the dependency artefacts are cached. The test binary and the debug
+        # symbols are rewritten by every run and would push the archive towards
+        # the 10 GB cache limit: target/debug measured 8.5 GB on a Linux runner
+        # of which the reusable `.rlib` and `.rmeta` are the bulk.
         uses: actions/cache@v4
         with:
           path: |
@@ -46,9 +48,9 @@ jobs:
             ~/.cargo/git
             target/debug/deps
             target/debug/build
-          key: ci-debug-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: ci-debug-lint-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-debug-${{ runner.os }}-
+            ci-debug-lint-${{ runner.os }}-
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Lint (clippy, tests included)
@@ -90,9 +92,9 @@ jobs:
             ~/.cargo/git
             target/debug/deps
             target/debug/build
-          key: ci-debug-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: ci-debug-linux-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-debug-${{ runner.os }}-
+            ci-debug-linux-${{ runner.os }}-
       - name: Run tests
         # Serial like the macOS job: the undo history takes an exclusive lock
         # on `<data>/virial/undo/lock`, and the suite's filesystem fixtures
@@ -124,9 +126,9 @@ jobs:
             ~/.cargo/git
             target/debug/deps
             target/debug/build
-          key: ci-debug-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: ci-debug-windows-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-debug-${{ runner.os }}-
+            ci-debug-windows-${{ runner.os }}-
       - name: Run tests
         # Serial like the macOS job: the undo history takes an exclusive lock
         # on `<data>/virial/undo/lock`, and the suite's filesystem fixtures
@@ -168,9 +170,9 @@ jobs:
             ~/.cargo/git
             target/debug/deps
             target/debug/build
-          key: ci-debug-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: ci-debug-macos-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-debug-${{ runner.os }}-
+            ci-debug-macos-${{ runner.os }}-
       - name: Run tests
         # macOS file operations are slower and the suite shares per-process lock
         # files, so run serial to avoid the lock-contention flakes.
