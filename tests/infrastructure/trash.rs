@@ -116,6 +116,8 @@ fn rejects_invalid_metadata_and_non_trash_sources() {
     );
 }
 
+// APFS normalizes and rejects raw non-UTF-8 filename bytes.
+#[cfg(target_os = "linux")]
 #[test]
 fn restores_a_selection_as_one_undoable_action_with_non_utf8_names() {
     use std::os::unix::ffi::OsStringExt;

@@ -257,6 +257,9 @@ fn empty_queries_and_cancellation_do_not_publish_results() {
     );
 }
 
+// The live-change half of this test waits on inotify notifications, which only
+// the Linux watcher provides.
+#[cfg(target_os = "linux")]
 #[test]
 fn background_service_streams_inventory_and_live_changes() {
     let fixture = tempfile::tempdir().unwrap();
