@@ -12,6 +12,15 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **Reconnaissance des hébergeurs de paquets** : les fichiers manifestes,
+  lock et identifiants des principaux registres (npm, pnpm, Yarn, Bun, Deno,
+  crates.io, PyPI, RubyGems, Packagist, NuGet, Go modules, Maven Central,
+  Gradle, Hex, Pub, Swift Package Manager, Hackage, CPAN) sont reconnus par
+  leur nom de fichier. Le panneau de détails affiche l'hébergeur avec son
+  artwork, son registre, le rôle du fichier, la version déclarée par un
+  manifeste, et un avertissement quand un fichier d'identifiants contient une
+  clé d'accès — la présence est signalée, la valeur n'est jamais lue ni
+  affichée.
 - Empty Trash from the context menu, with the same confirmation as the toolbar.
 - Empty Trash from the toolbar with confirmation before permanent deletion.
 - Folder sizes appear progressively, using a cancellable background scan with

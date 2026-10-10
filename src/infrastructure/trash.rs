@@ -125,9 +125,8 @@ pub(super) fn reserve(
     candidates.sort_by_key(|(root, _)| {
         (
             root != &home,
-            root.parent().is_none_or(|parent| {
-                parent.file_name().is_none_or(|name| name != ".Trash")
-            }),
+            root.parent()
+                .is_none_or(|parent| parent.file_name().is_none_or(|name| name != ".Trash")),
         )
     });
     for (root, mount) in candidates {

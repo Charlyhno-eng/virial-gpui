@@ -64,7 +64,13 @@ fn case_is_ignored_like_the_icon_table() {
 
 #[test]
 fn everyday_files_are_not_recognized() {
-    for name in ["main.rs", "notes.txt", "photo.png", "Makefile", "Dockerfile"] {
+    for name in [
+        "main.rs",
+        "notes.txt",
+        "photo.png",
+        "Makefile",
+        "Dockerfile",
+    ] {
         assert_eq!(classify(name), None, "{name}");
     }
 }
