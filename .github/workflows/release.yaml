@@ -235,6 +235,14 @@ jobs:
             exit 1
           }
           Write-Host "PE subsystem: $subsystem (GUI) on $exe"
+          # The version resource must carry the product name, not the crate
+          # name: Explorer's details pane reads it.
+          $info = (Get-Item $exe).VersionInfo
+          if ($info.ProductName -ne "Virial") {
+            Write-Error "Expected ProductName 'Virial', found '$($info.ProductName)'"
+            exit 1
+          }
+          Write-Host "ProductName: $($info.ProductName)"
       - name: Assemble the zip
         shell: pwsh
         run: |
