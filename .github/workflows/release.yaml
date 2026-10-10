@@ -148,7 +148,15 @@ jobs:
           cut 256x256 256;     cut 256x256@2x 512
           cut 512x512 512;     cut 512x512@2x 1024
           iconutil -c icns "$work/Virial.iconset"
-          mv "$work/Virial.iconset/Virial.icns" "$app/Contents/Resources/virial-gpui.icns"
+          # `iconutil` writes the .icns *next to* the .iconset folder, not
+          # inside it, so look in both places rather than assume one.
+          icns=$(find "$work" -maxdepth 2 -name '*.icns' -print -quit)
+          if [ -z "$icns" ]; then
+            echo "::error::iconutil produced no .icns from Virial.iconset"
+            find "$work" -maxdepth 2 -type f | sed 's/^/  /'
+            exit 1
+          fi
+          install -m644 "$icns" "$app/Contents/Resources/virial-gpui.icns"
 
           cat > "$app/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
