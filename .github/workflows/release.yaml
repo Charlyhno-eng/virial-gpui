@@ -1,9 +1,12 @@
-name: Publish Virial releases
+name: Build and publish releases (Linux, macOS, Windows)
 
 on:
   push:
     tags:
       - 'v*'
+  # Manual run: checks the builders and uploads artifacts for inspection.
+  # Nothing reaches a release unless the tag push triggered the workflow.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,28 +16,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  debian:
+  # Single source of truth for the tag/version agreement, checked once instead
+  # of in every builder. Bumping `Cargo.toml` is the deliberate release step.
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Read the manifest version
+        id: read
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python3 - <<'PY'
+          import tomllib
+          with open("Cargo.toml", "rb") as manifest:
+              print(tomllib.load(manifest)["package"]["version"])
+          PY
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Cargo.toml declares v$version"
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "::notice::Manual run: skipping the tag/version gate."
+            exit 0
+          fi
+          if [ "${{ github.ref_name }}" != "v$version" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match Cargo.toml v$version."
+            echo "::error::Bump the version in Cargo.toml, commit, then tag v$version."
+            exit 1
+          fi
+
+  linux:
+    needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    permissions:
-      contents: write
     env:
       CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Check release version
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          python3 - <<'PY'
-          import os, tomllib
-          with open("Cargo.toml", "rb") as manifest:
-              version = tomllib.load(manifest)["package"]["version"]
-          if os.environ["RELEASE_TAG"] != f"v{version}":
-              raise SystemExit(f"Release tag must match Cargo.toml: v{version}")
-          PY
       - name: Install native dependencies
         run: |
           sudo apt-get update
@@ -43,55 +68,141 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Build Debian package
+      - name: Build the Debian package
         run: |
           desktop-file-validate packaging/virial-gpui.desktop
           ./build-deb.sh
           dpkg-deb --info target/debian/*.deb
-      - name: Upload Debian package
+      - name: Assemble the standalone archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.verify.outputs.version }}"
+          staging="dist/virial-gpui-$version-linux-x86_64"
+          mkdir -p "$staging"
+          install -Dm755 target/release/virial-gpui "$staging/virial-gpui"
+          strip --strip-unneeded "$staging/virial-gpui"
+          install -Dm644 packaging/virial-gpui.desktop "$staging/virial-gpui.desktop"
+          install -Dm644 assets/images/virial-gpui-logo.png "$staging/virial-gpui.png"
+          install -Dm644 LICENSE "$staging/LICENSE"
+          install -Dm644 README.md "$staging/README.md"
+          tar czf "dist/virial-gpui-$version-linux-x86_64.tar.gz" -C dist "$(basename "$staging")"
+          rm -rf "$staging"
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: virial-gpui-deb-ubuntu-24.04-amd64
-          path: target/debian/*.deb
+          name: virial-gpui-linux
+          path: |
+            target/debian/*.deb
+            dist/*.tar.gz
           if-no-files-found: error
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" target/debian/*.deb --clobber
-          else
-            gh release create "$RELEASE_TAG" target/debian/*.deb --verify-tag --generate-notes --title "Virial $RELEASE_TAG"
-          fi
 
-  # Runs after `debian` so the GitHub Release already exists and the exe is
-  # attached to the same release with --clobber.
-  windows:
-    needs: debian
-    runs-on: windows-latest
-    timeout-minutes: 45
-    permissions:
-      contents: write
+  macos:
+    needs: verify
+    # macOS is the only runner that can compile the Metal (`macos-blade`) gpui
+    # backend, so a failure here must not cancel the other two builds: the
+    # release publishes whatever this job managed to upload. Expect this job
+    # to fail on branches that have not merged the macOS platform port yet
+    # (the Linux-only `libc::renameat2` call is the first thing to break).
+    runs-on: macos-14
+    timeout-minutes: 60
+    continue-on-error: true
     env:
       CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Check release version
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        shell: pwsh
+      - name: Install Rust stable
         run: |
-          $match = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
-            Select-Object -First 1
-          $version = $match.Matches[0].Groups[1].Value
-          if ("v$version" -ne $env:RELEASE_TAG) {
-            Write-Error "Release tag must match Cargo.toml: v$version"
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Build the release binary
+        run: cargo build --release --locked
+      - name: Assemble the application bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.verify.outputs.version }}"
+          # Runner architecture moves between Apple Silicon and Intel
+          # generations; name the artifact after what actually built it.
+          arch=$(uname -m)
+          app="dist/Virial.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          install -m755 target/release/virial-gpui "$app/Contents/MacOS/virial-gpui"
+
+          # `iconutil` wants a namespaced iconset folder. The shipped logo is a
+          # 279x254 raster, so `-Z` fits it inside a 1024 master and `-p` pads
+          # that to a square canvas (it takes height *and* width) before the
+          # rungs are cut. Replacing assets/images with a 1024px master is the
+          # real fix for a crisp menu-bar icon.
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          sips -Z 1024 assets/images/virial-gpui-logo.png --out "$work/fitted.png" >/dev/null
+          sips -p 1024 1024 "$work/fitted.png" --out "$work/master.png" >/dev/null
+          mkdir -p "$work/Virial.iconset"
+          cut() { sips -z "$2" "$2" "$work/master.png" --out "$work/Virial.iconset/icon_$1.png" >/dev/null; }
+          cut 16x16 16;        cut 16x16@2x 32
+          cut 32x32 32;        cut 32x32@2x 64
+          cut 128x128 128;     cut 128x128@2x 256
+          cut 256x256 256;     cut 256x256@2x 512
+          cut 512x512 512;     cut 512x512@2x 1024
+          iconutil -c icns "$work/Virial.iconset"
+          # `iconutil` writes the .icns *next to* the .iconset folder, not
+          # inside it, so look in both places rather than assume one.
+          icns=$(find "$work" -maxdepth 2 -name '*.icns' -print -quit)
+          if [ -z "$icns" ]; then
+            echo "::error::iconutil produced no .icns from Virial.iconset"
+            find "$work" -maxdepth 2 -type f | sed 's/^/  /'
             exit 1
-          }
+          fi
+          install -m644 "$icns" "$app/Contents/Resources/virial-gpui.icns"
+
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Virial</string>
+            <key>CFBundleDisplayName</key><string>Virial</string>
+            <key>CFBundleIdentifier</key><string>io.github.charlyhno.virial-gpui</string>
+            <key>CFBundleExecutable</key><string>virial-gpui</string>
+            <key>CFBundleIconFile</key><string>virial-gpui</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSHumanReadableCopyright</key><string>Licensed under the terms in LICENSE.</string>
+          </dict>
+          </plist>
+          PLIST
+          printf 'APPL????' > "$app/Contents/PkgInfo"
+
+          # Ad-hoc signature: no certificate here, but a signed bundle is a
+          # structurally valid one and the check below fails loudly instead of
+          # shipping something Gatekeeper rejects outright.
+          codesign --force --sign - --timestamp=none "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          plutil -lint "$app/Contents/Info.plist"
+          tar czf "dist/Virial-$version-macos-$arch.app.tar.gz" -C dist Virial.app
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: virial-gpui-macos
+          path: dist/*.app.tar.gz
+          if-no-files-found: error
+
+  windows:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Install NASM
         shell: pwsh
         run: |
@@ -101,23 +212,154 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Build release executable
+      - name: Build the release executable
         shell: pwsh
         run: |
           cargo build --release --locked --features windows-resources
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item target/release/virial-gpui.exe dist/virial-gpui.exe
-      - name: Upload Windows executable
-        uses: actions/upload-artifact@v6
-        with:
-          name: virial-gpui-windows-x64
-          path: dist/virial-gpui.exe
-          if-no-files-found: error
-      - name: Attach Windows executable to the GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          # `src/main.rs` sets `windows_subsystem = "windows"` behind
+          # `not(debug_assertions)`, so a release build must report
+          # IMAGE_SUBSYSTEM_WINDOWS_GUI. Catching it here means a console
+          # window can never flash on launch.
+          $exe = (Resolve-Path dist/virial-gpui.exe).Path
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          $pe = [System.BitConverter]::ToInt32($bytes, 0x3C)
+          if ([System.BitConverter]::ToUInt16($bytes, $pe + 24) -ne 0x20B) {
+            Write-Error "Expected a PE32+ image at the header offset"
+            exit 1
+          }
+          $subsystem = [System.BitConverter]::ToUInt16($bytes, $pe + 0x5C)
+          if ($subsystem -ne 2) {
+            Write-Error "Expected IMAGE_SUBSYSTEM_WINDOWS_GUI (2), found $subsystem"
+            exit 1
+          }
+          Write-Host "PE subsystem: $subsystem (GUI) on $exe"
+          # The version resource must carry the product name, not the crate
+          # name: Explorer's details pane reads it.
+          $info = (Get-Item $exe).VersionInfo
+          if ($info.ProductName -ne "Virial") {
+            Write-Error "Expected ProductName 'Virial', found '$($info.ProductName)'"
+            exit 1
+          }
+          Write-Host "ProductName: $($info.ProductName)"
+      - name: Assemble the zip
         shell: pwsh
         run: |
-          gh release upload "$env:RELEASE_TAG" dist/virial-gpui.exe --clobber
+          $version = "${{ needs.verify.outputs.version }}"
+          Copy-Item README.md dist/README.md -ErrorAction SilentlyContinue
+          Copy-Item LICENSE dist/LICENSE -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist/* -DestinationPath "dist/virial-gpui-$version-windows-x86_64.zip" -Force
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: virial-gpui-windows
+          path: |
+            dist/virial-gpui.exe
+            dist/*.zip
+          if-no-files-found: error
+
+  # One job creates the release and attaches everything, so the three builders
+  # never race each other with `gh release create` / `--clobber`.
+  publish:
+    needs: [verify, linux, macos, windows]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Collect every artifact
+        uses: actions/download-artifact@v6
+        with:
+          pattern: virial-gpui-*
+          path: out
+          merge-multiple: true
+      - name: Build the checksum file
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd out
+          sha256sum ./* | sed 's|\./||' > SHA256SUMS
+          cat SHA256SUMS
+      - name: Create the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" out/* --clobber
+            gh release edit "$tag" --title "Virial $tag"
+          else
+            gh release create "$tag" out/* --verify-tag \
+              --generate-notes --title "Virial $tag"
+          fi
+      - name: Report the published files
+        if: always()
+        shell: bash
+        run: |
+          gh release view "${{ github.ref_name }}" \
+            --json assets --jq '.assets[] | "\(.name)  \(.size) bytes"'
+
+  # crates.io only accepts library crates, so this job refuses to publish a
+  # binary-only manifest instead of failing with an opaque 400 from the API.
+  # `cargo publish --dry-run` is the real check: it runs the same validation
+  # the registry does, including `Cargo.toml` metadata and the packaged file
+  # list, without needing a token.
+  cratesio:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Never publishes on its own: it reports what crates.io would accept, so a
+    # binary-only crate surfaces as a clear message rather than a failed run on
+    # the tag you were about to ship.
+    continue-on-error: true
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev
+      - name: Refuse a binary-only manifest
+        id: shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f src/lib.rs ]; then
+            echo "shape=library" >> "$GITHUB_OUTPUT"
+            echo "src/lib.rs present: this is a library crate."
+          else
+            echo "shape=binary" >> "$GITHUB_OUTPUT"
+            echo "::warning::No src/lib.rs: virial-gpui is a binary crate."
+            echo "::warning::crates.io only stores libraries, so there is nothing to publish."
+            echo "::warning::Ship the applications through GitHub Releases (the publish job)."
+            echo "::notice::If a library target is added later, set CARGO_REGISTRY_TOKEN and"
+            echo "::notice::this job will dry-run and then publish from the tag."
+          fi
+      - name: Validate the packaging (dry run)
+        if: steps.shape.outputs.shape == 'library'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `--allow-dirty` only for a checkout that CI itself generated; a
+          # developer running this locally should not need it.
+          cargo publish --dry-run --locked --allow-dirty
+      - name: Confirm the crate contents
+        if: steps.shape.outputs.shape == 'library'
+        shell: bash
+        run: |
+          set -euo pipefail
+          crate=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["name"])')
+          cargo package --list --allow-dirty --locked | head -40
+          echo "crate: $crate"
