@@ -93,58 +93,57 @@ impl FileManager {
                     crate::infrastructure::packages::Role::Lock => "Package lock file",
                     crate::infrastructure::packages::Role::Credentials => "Package credentials",
                 });
-                panel.child(
-                    div()
-                        .flex()
-                        .justify_between()
-                        .text_size(px(11.))
-                        .child(self.language.text("Registry"))
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .child(file_icon(package.icon, 14.))
-                                .child(
-                                    div().text_color(color(MUTED)).child(format!(
+                panel
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Registry"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(file_icon(package.icon, 14.))
+                                    .child(div().text_color(color(MUTED)).child(format!(
                                         "{} · {}",
                                         self.language.text(package.host),
                                         package.registry
-                                    )),
-                                ),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .justify_between()
-                        .text_size(px(11.))
-                        .child(self.language.text("Role"))
-                        .child(div().text_color(color(MUTED)).child(role)),
-                )
-                .children(package.version.as_ref().map(|version| {
-                    div()
-                        .flex()
-                        .justify_between()
-                        .text_size(px(11.))
-                        .child(self.language.text("Version"))
-                        .child(div().text_color(color(MUTED)).child(version.clone()))
-                }))
-                .when(package.holds_credentials, |panel| {
-                    panel.child(
-                        div()
-                            .flex()
-                            .gap_1()
-                            .items_center()
-                            .text_size(px(11.))
-                            .text_color(color(ERROR))
-                            .child(icon("info", 12., ERROR))
-                            .child(
-                                self.language
-                                    .text("This file carries an access key for the registry"),
+                                    ))),
                             ),
                     )
-                })
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Role"))
+                            .child(div().text_color(color(MUTED)).child(role)),
+                    )
+                    .children(package.version.as_ref().map(|version| {
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Version"))
+                            .child(div().text_color(color(MUTED)).child(version.clone()))
+                    }))
+                    .when(package.holds_credentials, |panel| {
+                        panel.child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .items_center()
+                                .text_size(px(11.))
+                                .text_color(color(ERROR))
+                                .child(icon("info", 12., ERROR))
+                                .child(
+                                    self.language
+                                        .text("This file carries an access key for the registry"),
+                                ),
+                        )
+                    })
             })
             .when_some(
                 (!current_folder)
