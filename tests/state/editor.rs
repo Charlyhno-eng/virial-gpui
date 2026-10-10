@@ -217,7 +217,7 @@ fn clamping_keeps_the_cursor_inside_the_buffer() {
     editor.move_by(Direction::Left, false, None);
     assert_eq!(editor.cursor(), 5);
     editor.move_by(Direction::LineUp, false, None);
-    assert_eq!(editor.line_column(), (2, 3), "line two, at the remembered column");
+    assert_eq!(editor.line_column(), (1, 3), "line one, clamped to its end");
     editor.set_cursor(1, false);
     editor.move_by(Direction::LineUp, false, None);
     assert_eq!(editor.line_column(), (1, 1));

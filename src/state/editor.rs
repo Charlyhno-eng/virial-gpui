@@ -442,12 +442,12 @@ impl Editor {
         if changes.is_empty() {
             return;
         }
-        let width: usize = changes.iter().map(|change| change.after.len()).sum();
         let edit = Edit { changes };
         self.history.record(edit, false);
-        let anchor = self.buffer.clamp_offset(selection.start);
-        self.cursor = (anchor + width).min(self.buffer.text().len());
-        self.anchor = self.cursor;
+        // The selection follows the lines it touched, as in every IDE, so a
+        // shift cycle acts on the same block twice.
+        self.anchor = self.buffer.line_start(first);
+        self.cursor = self.buffer.line_start(last) + self.buffer.line(last).len();
     }
 
     pub fn undo(&mut self) {
