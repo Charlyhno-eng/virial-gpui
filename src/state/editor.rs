@@ -106,6 +106,7 @@ impl Buffer {
         self.lines.get(index).map_or("", String::as_str)
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn lines(&self) -> &[String] {
         &self.lines
     }
@@ -245,6 +246,7 @@ impl Editor {
         self.anchor.min(self.cursor)..self.anchor.max(self.cursor)
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn has_selection(&self) -> bool {
         self.anchor != self.cursor
     }
@@ -510,6 +512,7 @@ impl Editor {
     }
 
     /// Select the next occurrence of the current selection, as an IDE does.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn select_word_at(&mut self, offset: usize) {
         let offset = self.buffer.clamp_offset(offset);
         let text = self.text();

@@ -87,13 +87,6 @@ impl CodeEditor {
         self.focus.is_focused(window)
     }
 
-    pub fn editor(&self) -> &Editor {
-        &self.editor
-    }
-
-    pub fn editor_mut(&mut self) -> &mut Editor {
-        &mut self.editor
-    }
 
     pub fn path(&self) -> &std::path::Path {
         &self.path
@@ -124,9 +117,6 @@ impl CodeEditor {
         self.editor.mark_saved();
     }
 
-    pub fn line_column(&self) -> (usize, usize) {
-        self.editor.line_column()
-    }
 
     /// Coloring for the current revision, computed once and reused.
     fn highlighted_preview(&mut self, cx: &mut Context<Self>) -> Option<Arc<CodePreview>> {

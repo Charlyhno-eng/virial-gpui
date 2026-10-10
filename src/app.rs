@@ -568,26 +568,25 @@ impl FileManager {
             // Unhandled keys must reach GPUI's text input handler for typing and IME.
             return;
         }
-        // A focused editor owns the keyboard; save is handled here because it
-        // touches the disk, not the buffer.
+        // A focused editor owns the keyboard; save and escape are handled here
+        // because they touch the session, not the buffer.
         if let Some(editor) = self.editor.clone()
             && editor.read(cx).is_focused(window)
         {
-            if event.keystroke.key == "s" && event.keystroke.modifiers.control {
+            let save = (event.keystroke.key == "s"
+                && (event.keystroke.modifiers.control || event.keystroke.modifiers.platform))
+                || event.keystroke.key == "f2";
+            if save {
                 self.save_editor(cx);
                 cx.stop_propagation();
                 return;
             }
-            if event.keystroke.key == "s"
-                && event.keystroke.modifiers.platform
-            {
-                self.save_editor(cx);
+            if event.keystroke.key == "escape" {
+                self.close_editor(window, cx);
                 cx.stop_propagation();
                 return;
             }
-            // Other keys reach the editor through its own focus handle; only
-            // the ones the file manager owns are handled below.
-            if matches!(event.keystroke.key.as_str(), "escape" | "f11") {
+            if event.keystroke.key == "f11" {
                 return;
             }
         }
