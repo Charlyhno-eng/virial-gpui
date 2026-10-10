@@ -104,6 +104,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Folder sizes appear progressively, using a cancellable background scan with
   throttled filesystem work.
 ### Corrections
+- **CI — tests instables en parallèle** : l'historique d'annulation prend un
+  verrou exclusif `flock` sur `<data>/virial/undo/lock`. Les fixtures
+  d'archives se recouvrent assez pour que l'exécution parallèle fasse perdre la
+  course à
+  `undoes_zip_edits_and_transfers_between_local_files_and_archives`, qui échouait
+  avec « undo history is active in another window ». Les jobs Linux et Windows
+  sérialisent maintenant leurs tests comme le job macOS le faisait déjà.
 - **Curseur de défilement** : la hauteur minimale était appliquée après le
   calcul de la course, si bien qu'une liste très longue faisait sortir le
   curseur de sa piste (jusqu'à 23 px sur une piste de 512 px, l'écart croissant
