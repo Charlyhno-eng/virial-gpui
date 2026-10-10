@@ -8,6 +8,7 @@ pub(crate) mod image_edit;
 pub(crate) mod layout;
 pub(crate) mod media;
 pub(crate) mod operations;
+pub(crate) mod packages;
 pub(crate) mod progress;
 pub(crate) mod queue;
 pub(crate) mod recent;
