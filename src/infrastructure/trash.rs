@@ -11,22 +11,24 @@ fn roots(data: &Path) -> Vec<(PathBuf, Option<PathBuf>)> {
     // Linux exposes the mount table here. macOS has no equivalent file, so only
     // the home Trash is scanned there and mounted volumes are not listed.
     #[cfg(target_os = "linux")]
-    let uid = unsafe { libc::getuid() };
-    if let Ok(mounts) = fs::read_to_string("/proc/self/mountinfo") {
-        for line in mounts.lines() {
-            if let Some(mount) = line.split_whitespace().nth(4) {
-                let mount = PathBuf::from(
-                    mount
-                        .replace("\\040", " ")
-                        .replace("\\011", "\t")
-                        .replace("\\134", "\\"),
-                );
-                roots.push((mount.join(format!(".Trash-{uid}")), Some(mount.clone())));
-                let shared = mount.join(".Trash");
-                if fs::symlink_metadata(&shared)
-                    .is_ok_and(|m| !m.file_type().is_symlink() && m.is_dir())
-                {
-                    roots.push((shared.join(uid.to_string()), Some(mount)));
+    {
+        let uid = unsafe { libc::getuid() };
+        if let Ok(mounts) = fs::read_to_string("/proc/self/mountinfo") {
+            for line in mounts.lines() {
+                if let Some(mount) = line.split_whitespace().nth(4) {
+                    let mount = PathBuf::from(
+                        mount
+                            .replace("\\040", " ")
+                            .replace("\\011", "\t")
+                            .replace("\\134", "\\"),
+                    );
+                    roots.push((mount.join(format!(".Trash-{uid}")), Some(mount.clone())));
+                    let shared = mount.join(".Trash");
+                    if fs::symlink_metadata(&shared)
+                        .is_ok_and(|m| !m.file_type().is_symlink() && m.is_dir())
+                    {
+                        roots.push((shared.join(uid.to_string()), Some(mount)));
+                    }
                 }
             }
         }
