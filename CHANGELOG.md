@@ -12,6 +12,19 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **Section d'installation dans le README** : un tableau des quatre archives
+  publiées (archive autonome Linux, `.deb`, `Virial.app`, zip Windows), la
+  commande `--install-desktop` et ce qu'elle enregistre, la vérification des
+  sommes SHA-256, et l'avertissement Gatekeeper attendu sur le bundle macOS.
+- **Job `cratesio` dans le workflow de publication** : il vérifie si le crate
+  expose une cible `src/lib.rs` et lance `cargo publish --dry-run` le cas
+  échéant. crates.io ne publie que des bibliothèques — virial-gpui est un
+  binaire — donc le job le signale explicitement au lieu d'échouer sur une
+  erreur opaque de l'API, et devient une vraie publication le jour où une cible
+  `lib` est ajoutée.
+- Métadonnées de manifeste complète pour un enregistrement éventuel :
+  `repository`, `homepage`, `readme`, `keywords` (5, le maximum accepté) et
+  `categories`.
 - **Publication automatique** : un tag `v*` déclenche la construction et la
   publication des trois systèmes depuis un seul workflow. Chaque cible sort un
   paquet natif — `.deb` + archive `.tar.gz` pour Linux, `Virial.app` signé et

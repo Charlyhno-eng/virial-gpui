@@ -2,7 +2,7 @@
 
 # Virial
 
-Virial is a Linux file manager for local and remote files. Browse folders, mounted drives, recent files, ZIP archives, and SSH/SFTP hosts in one place. Persistent workspaces, fast search, rich previews, and recoverable file operations make everyday file management easier and safer.
+Virial is a file manager for local and remote files on Linux, macOS and Windows. Browse folders, mounted drives, recent files, ZIP archives, and SSH/SFTP hosts in one place. Persistent workspaces, fast search, rich previews, and recoverable file operations make everyday file management easier and safer.
 
 ## Features
 
@@ -11,6 +11,32 @@ Virial is a Linux file manager for local and remote files. Browse folders, mount
 - **Find files quickly:** Search by name or path across accessible locations, or filter a folder by file extension. A local index provides progressive results and keeps itself up to date.
 - **Preview and organize:** Preview images, PDFs, audio, video, and text or code files. Edit ZIP archives, convert common image formats, remove image backgrounds, and group folders into workspaces.
 - **Use Linux devices:** Browse and manage removable drives, including mount, unmount, and safe eject through UDisks2. The interface follows the system language when available and otherwise uses English.
+
+## Install
+
+Every release ships one archive per platform. Download the one that matches your
+system, then follow the platform notes below.
+
+| Platform | Asset | Notes |
+| --- | --- | --- |
+| Linux x86_64 | `virial-gpui-<version>-linux-x86_64.tar.gz` | Standalone: binary, desktop entry and icon |
+| Linux x86_64 (Debian/Ubuntu) | `virial-gpui_<version>_amd64.deb` | Installs to `/usr/bin`, adds a launcher |
+| macOS | `Virial-<version>-macos-<arch>.app.tar.gz` | Untar, then drag `Virial.app` to Applications |
+| Windows x86_64 | `virial-gpui-<version>-windows-x86_64.zip` | No console window; `virial-gpui.exe` runs on its own |
+
+On Windows, `virial-gpui.exe --install-desktop` registers the launcher, the taskbar
+identity and the `.env` / `.gitignore` / `.toml` file associations. Pass
+`--uninstall-desktop` to remove them. Virial registers itself under *Open with*
+without replacing an editor you already assigned.
+
+Each release also carries a `SHA256SUMS` file:
+
+```sh
+sha256sum --check SHA256SUMS
+```
+
+The macOS bundle is ad-hoc signed, so Gatekeeper shows a warning on the first
+launch until macOS records the exception (right-click, *Open*).
 
 ## See Virial in action
 

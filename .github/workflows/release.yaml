@@ -303,3 +303,63 @@ jobs:
         run: |
           gh release view "${{ github.ref_name }}" \
             --json assets --jq '.assets[] | "\(.name)  \(.size) bytes"'
+
+  # crates.io only accepts library crates, so this job refuses to publish a
+  # binary-only manifest instead of failing with an opaque 400 from the API.
+  # `cargo publish --dry-run` is the real check: it runs the same validation
+  # the registry does, including `Cargo.toml` metadata and the packaged file
+  # list, without needing a token.
+  cratesio:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Never publishes on its own: it reports what crates.io would accept, so a
+    # binary-only crate surfaces as a clear message rather than a failed run on
+    # the tag you were about to ship.
+    continue-on-error: true
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev
+      - name: Refuse a binary-only manifest
+        id: shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f src/lib.rs ]; then
+            echo "shape=library" >> "$GITHUB_OUTPUT"
+            echo "src/lib.rs present: this is a library crate."
+          else
+            echo "shape=binary" >> "$GITHUB_OUTPUT"
+            echo "::warning::No src/lib.rs: virial-gpui is a binary crate."
+            echo "::warning::crates.io only stores libraries, so there is nothing to publish."
+            echo "::warning::Ship the applications through GitHub Releases (the publish job)."
+            echo "::notice::If a library target is added later, set CARGO_REGISTRY_TOKEN and"
+            echo "::notice::this job will dry-run and then publish from the tag."
+          fi
+      - name: Validate the packaging (dry run)
+        if: steps.shape.outputs.shape == 'library'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `--allow-dirty` only for a checkout that CI itself generated; a
+          # developer running this locally should not need it.
+          cargo publish --dry-run --locked --allow-dirty
+      - name: Confirm the crate contents
+        if: steps.shape.outputs.shape == 'library'
+        shell: bash
+        run: |
+          set -euo pipefail
+          crate=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["name"])')
+          cargo package --list --allow-dirty --locked | head -40
+          echo "crate: $crate"
