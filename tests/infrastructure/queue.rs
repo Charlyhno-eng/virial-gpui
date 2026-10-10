@@ -536,7 +536,11 @@ fn trash_worker() {
         undo::latest_summary(&data)
             .unwrap()
             .map(|(_, summary)| summary),
-        Some("Trash\t3".into())
+        Some(if cfg!(target_os = "linux") {
+            "Trash\t1".into()
+        } else {
+            "Trash\t3".into()
+        })
     );
     assert!(undo::undo(&data).unwrap());
     assert_eq!(fs::read(folder.join("one")).unwrap(), b"one");

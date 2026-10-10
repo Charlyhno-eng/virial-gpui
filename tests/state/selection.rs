@@ -49,3 +49,22 @@ fn keyboard_navigation_handles_boundaries_pages_and_empty_lists() {
     selection.click(0, false, false);
     assert_eq!(selection.keyboard_target("up", 12, 5), Some(0));
 }
+
+#[test]
+fn control_pointer_selection_adds_on_press_and_removes_only_on_click() {
+    let mut selection = Selection::default();
+    selection.pointer_down(1, false, false);
+    selection.pointer_click(1, false, false);
+    selection.pointer_down(3, true, false);
+    assert_eq!(selection.indices, BTreeSet::from([1, 3]));
+    selection.pointer_click(3, true, false);
+    assert_eq!(selection.indices, BTreeSet::from([1, 3]));
+    selection.pointer_down(1, true, false);
+    // An existing multi-selection remains available for Ctrl-drag.
+    assert_eq!(selection.indices, BTreeSet::from([1, 3]));
+    selection.pointer_click(1, true, false);
+    assert_eq!(selection.indices, BTreeSet::from([3]));
+    selection.pointer_down(7, false, true);
+    selection.pointer_click(7, false, true);
+    assert_eq!(selection.indices, (1..=7).collect());
+}

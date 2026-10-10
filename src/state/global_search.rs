@@ -47,6 +47,7 @@ impl FileManager {
         if self.dialog.is_some() {
             return;
         }
+        self.search_open = true;
         self.search_input.read(cx).focus(window);
         self.update_global_search(cx);
         if let Some(picker) = self.global_search.as_mut() {
@@ -55,19 +56,18 @@ impl FileManager {
         cx.notify();
     }
 
-    /// Fold or unfold the results panel from the search field's triangle,
-    /// keeping the query and the ranking intact.
-    pub(crate) fn toggle_global_search(&mut self, cx: &mut Context<Self>) {
-        match self.global_search.as_mut() {
-            Some(picker) => picker.expanded = !picker.expanded,
-            None => {
-                self.update_global_search(cx);
-                if let Some(picker) = self.global_search.as_mut() {
-                    picker.expanded = true;
-                }
+    /// Hide the search field and results together, retaining the query.
+    pub(crate) fn toggle_global_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_open {
+            self.search_open = false;
+            if let Some(picker) = &mut self.global_search {
+                picker.expanded = false;
             }
+            self.focus.focus(window);
+            cx.notify();
+        } else {
+            self.show_global_search(window, cx);
         }
-        cx.notify();
     }
 
     fn clear_global_search(&mut self, cx: &mut Context<Self>) {
@@ -79,6 +79,7 @@ impl FileManager {
     }
 
     pub(crate) fn close_global_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_open = false;
         self.clear_global_search(cx);
         self.focus.focus(window);
         cx.notify();
@@ -250,6 +251,11 @@ impl FileManager {
         if self.search_input.read(cx).is_focused(window) {
             self.update_global_search(cx);
             if self.global_search.is_none() {
+                if event.keystroke.key == "escape" {
+                    self.close_global_search(window, cx);
+                    cx.stop_propagation();
+                    return true;
+                }
                 if event.keystroke.key == "enter" {
                     cx.stop_propagation();
                     return true;

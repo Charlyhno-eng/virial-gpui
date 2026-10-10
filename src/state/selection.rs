@@ -6,6 +6,7 @@ pub(crate) struct Selection {
     pub(crate) indices: BTreeSet<usize>,
     pub(crate) focus: Option<usize>,
     pub(crate) anchor: Option<usize>,
+    pending_control_toggle: Option<usize>,
 }
 
 impl Selection {
@@ -35,6 +36,28 @@ impl Selection {
             self.anchor = Some(index);
         }
         self.focus = Some(index);
+    }
+
+    /// Add a Ctrl-clicked item immediately, but retain an existing selection
+    /// until release so Ctrl-drag can still copy the whole selection.
+    pub(crate) fn pointer_down(&mut self, index: usize, control: bool, shift: bool) {
+        self.pending_control_toggle = None;
+        if control && !shift && self.indices.contains(&index) {
+            self.pending_control_toggle = Some(index);
+        } else if shift || !self.indices.contains(&index) {
+            self.click(index, control, shift);
+        }
+    }
+
+    pub(crate) fn pointer_click(&mut self, index: usize, control: bool, shift: bool) {
+        let pending = self.pending_control_toggle.take();
+        if control && !shift {
+            if pending == Some(index) {
+                self.click(index, true, false);
+            }
+        } else if !control && !shift {
+            self.click(index, false, false);
+        }
     }
 
     pub(crate) fn keyboard_target(&self, key: &str, count: usize, page: usize) -> Option<usize> {

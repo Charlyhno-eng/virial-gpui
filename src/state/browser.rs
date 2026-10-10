@@ -12,6 +12,13 @@ pub(crate) fn matches_extension(entry: &Entry, extension: &str) -> bool {
             .is_some_and(|value| value.to_lowercase() == extension)
 }
 
+/// Match names or extensions in the current local listing.
+pub(crate) fn matches_file_filter(entry: &Entry, query: &str) -> bool {
+    query.is_empty()
+        || entry.name.to_lowercase().contains(query)
+        || matches_extension(entry, query.trim_start_matches('.')) && !entry.directory
+}
+
 pub(crate) fn sort_entries(entries: &mut [Entry], selection: &mut Selection, descending: bool) {
     let paths: std::collections::HashSet<_> = selection
         .indices

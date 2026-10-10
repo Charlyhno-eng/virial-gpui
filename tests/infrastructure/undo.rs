@@ -214,7 +214,7 @@ fn undoes_folder_copy_and_batch_move_with_links_and_descendants() {
 }
 
 #[test]
-fn refuses_later_edits_and_name_collisions_without_losing_history() {
+fn preserves_rename_edits_and_refuses_name_collisions_without_losing_history() {
     let root = tempfile::tempdir().unwrap();
     let data = root.path().join("data");
     let file = root.path().join("original");
@@ -228,15 +228,24 @@ fn refuses_later_edits_and_name_collisions_without_losing_history() {
     )
     .unwrap();
     fs::write(root.path().join("renamed"), "edited").unwrap();
-    assert!(undo(&data).is_err());
-    assert_eq!(fs::read(root.path().join("renamed")).unwrap(), b"edited");
-    fs::write(root.path().join("renamed"), "original").unwrap();
+    #[cfg(not(target_os = "linux"))]
+    {
+        assert!(undo(&data).is_err());
+        fs::write(root.path().join("renamed"), "original").unwrap();
+    }
     symlink("missing", &file).unwrap();
     assert!(undo(&data).is_err());
     assert_eq!(fs::read_link(&file).unwrap(), Path::new("missing"));
     fs::remove_file(&file).unwrap();
     assert!(undo(&data).unwrap());
-    assert_eq!(fs::read(file).unwrap(), b"original");
+    assert_eq!(
+        fs::read(file).unwrap(),
+        if cfg!(target_os = "linux") {
+            b"edited".as_slice()
+        } else {
+            b"original".as_slice()
+        }
+    );
 }
 
 #[test]
@@ -314,19 +323,11 @@ fn damaged_backup_blocks_undo_before_any_changes() {
     let data = root.path().join("data");
     let file = root.path().join("original");
     fs::write(&file, "original").unwrap();
-    execute(
-        &data,
-        Operation::Rename {
-            source: file.clone(),
-            name: "renamed".into(),
-        },
-    )
-    .unwrap();
+    record(&data, vec![file.clone()], || fs::write(&file, "changed")).unwrap();
     let (_, directory) = entries(&data.join("virial/undo")).unwrap().pop().unwrap();
     fs::write(directory.join("0"), "damaged").unwrap();
     assert!(undo(&data).is_err());
-    assert!(!file.exists());
-    assert_eq!(fs::read(root.path().join("renamed")).unwrap(), b"original");
+    assert_eq!(fs::read(&file).unwrap(), b"changed");
 }
 
 // APFS normalizes and rejects raw non-UTF-8 filename bytes.
@@ -587,4 +588,38 @@ fn moves_and_undoes_many_files_with_durable_snapshots() {
     assert!(undo(&data).unwrap());
     assert_eq!(fingerprint(&source).unwrap(), before);
     assert!(!destination.join("source").exists());
+}
+
+#[test]
+fn undo_removes_zip_and_duplicate_without_changing_sources() {
+    use crate::infrastructure::compression::{ArchiveFormat, destination};
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let source = root.path().join("file.txt");
+    let duplicate = root.path().join("file (copy 1).txt");
+    fs::write(&source, "original").unwrap();
+    execute(
+        &data,
+        Operation::Duplicate {
+            source: source.clone(),
+            destination: duplicate.clone(),
+        },
+    )
+    .unwrap();
+    assert!(duplicate.exists());
+    assert!(undo(&data).unwrap());
+    assert!(!duplicate.exists());
+    execute(
+        &data,
+        Operation::CompressAs {
+            path: source.clone(),
+            format: ArchiveFormat::Zip,
+        },
+    )
+    .unwrap();
+    let archive = destination(&source, ArchiveFormat::Zip).unwrap();
+    assert!(archive.exists());
+    assert!(undo(&data).unwrap());
+    assert!(!archive.exists());
+    assert_eq!(fs::read_to_string(source).unwrap(), "original");
 }

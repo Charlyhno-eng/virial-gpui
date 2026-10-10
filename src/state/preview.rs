@@ -285,12 +285,12 @@ impl FileManager {
         let entry = entry.cloned();
         self.preview_path = path;
         self.preview_modified = None;
-        self.directory_sizes = None;
         self.preview_media_updates = None;
         // A cache scoped to the current preview releases decoded pixels and GPU
         // textures when switching files, instead of retaining every opened image.
         self.preview_image_cache = gpui::RetainAllImageCache::new(cx);
         self.preview_line = 0;
+        self.code_preview_scroll = gpui::UniformListScrollHandle::new();
         self.preview_focused = false;
         self.preview_task = None;
         self.preview_expanded = false;
@@ -376,7 +376,6 @@ impl FileManager {
         self.preview_modified = None;
         self.preview_task = None;
         self.preview = Preview::Unavailable;
-        self.directory_sizes = None;
         self.preview_media_updates = None;
         self.preview_image_cache = gpui::RetainAllImageCache::new(cx);
         cx.notify();

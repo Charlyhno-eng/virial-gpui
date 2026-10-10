@@ -175,6 +175,10 @@ impl Language {
             "Rename…" => "Renommer…",
             "Move to Trash…" => "Déplacer à la corbeille…",
             "Compress (.tar.gz)" => "Compresser (.tar.gz)",
+            "Compress" => "Compresser",
+            "Duplicate" => "Dupliquer",
+            "Copy absolute path" => "Copier le chemin absolu",
+            "Add to workspace…" => "Ajouter à un espace…",
             "New folder…" => "Nouveau dossier…",
             "New file…" => "Nouveau fichier…",
             "New folder" => "Nouveau dossier",
@@ -185,6 +189,14 @@ impl Language {
             "Size (bytes)" => "Taille (octets)",
             "Permissions" => "Permissions",
             "Modified" => "Modifié le",
+            "MODIFIED" => "MODIFIÉ LE",
+            "Filter files" => "Filtrer les fichiers",
+            "Filter by name or extension…" => "Filtrer par nom ou extension…",
+            "Empty Trash…" => "Vider la corbeille…",
+            "Empty Trash failed" => "Échec du vidage de la corbeille",
+            "Permanently delete all items in the Trash? This cannot be undone." => {
+                "Supprimer définitivement tous les éléments de la corbeille ? Cette action est irréversible."
+            }
             "Link target" => "Cible du lien",
             "Cancel" => "Annuler",
             "Minimize" => "Réduire",

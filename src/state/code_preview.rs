@@ -52,9 +52,20 @@ fn syntax_color(value: u32) -> Color {
     }
 }
 
-pub(crate) struct CodePreview {
+pub(crate) struct CodeLine {
     pub(crate) text: SharedString,
+    pub(crate) number: SharedString,
+    pub(crate) highlights: Vec<(Range<usize>, HighlightStyle)>,
+}
+
+pub(crate) struct CodePreview {
+    pub(crate) lines: Vec<CodeLine>,
+    pub(crate) widest_line: usize,
+    #[cfg(test)]
+    pub(crate) text: SharedString,
+    #[cfg(test)]
     pub(crate) line_numbers: SharedString,
+    #[cfg(test)]
     pub(crate) highlights: Vec<(Range<usize>, HighlightStyle)>,
 }
 
@@ -134,14 +145,56 @@ impl CodePreview {
             }
             offset += line.len();
         }
+        #[cfg(test)]
         let line_numbers = (1..=text.split('\n').count())
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n")
             .into();
+        // Split the worker-produced spans once, instead of scanning the entire
+        // document for every rendered line on each keyboard event.
+        let mut offset = 0;
+        let mut span = 0;
+        let lines: Vec<_> = text
+            .split('\n')
+            .enumerate()
+            .map(|(index, line)| {
+                let start = offset;
+                let end = start + line.len();
+                offset = end + 1;
+                while span < highlights.len() && highlights[span].0.end <= start {
+                    span += 1;
+                }
+                let colors = highlights[span..]
+                    .iter()
+                    .take_while(|(range, _)| range.start < end)
+                    .filter_map(|(range, style)| {
+                        let from = range.start.max(start);
+                        let to = range.end.min(end);
+                        (from < to).then_some((from - start..to - start, *style))
+                    })
+                    .collect();
+                CodeLine {
+                    text: line.to_owned().into(),
+                    number: (index + 1).to_string().into(),
+                    highlights: colors,
+                }
+            })
+            .collect();
+        let widest_line = lines
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, line)| line.text.chars().count())
+            .map(|(index, _)| index)
+            .unwrap_or(0);
         Some(Self {
+            lines,
+            widest_line,
+            #[cfg(test)]
             text: text.into(),
+            #[cfg(test)]
             line_numbers,
+            #[cfg(test)]
             highlights,
         })
     }

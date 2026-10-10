@@ -169,3 +169,31 @@ fn unknown_and_plain_text_files_keep_the_plain_preview() {
     assert!(CodePreview::new(Path::new("notes.txt"), "hello\nworld").is_none());
     assert!(CodePreview::new(Path::new("notes.unknown"), "hello\nworld").is_none());
 }
+
+#[test]
+fn prepared_lines_preserve_utf8_colors_blank_lines_and_trailing_newline() {
+    let code = CodePreview::new(
+        Path::new("main.rs"),
+        "/* café\ncontinued */\n\nlet café = \"été\";\n",
+    )
+    .unwrap();
+    assert_eq!(code.lines.len(), 5);
+    assert_eq!(code.lines[2].text.as_ref(), "");
+    assert_eq!(code.lines[4].text.as_ref(), "");
+    assert_eq!(code.lines[4].number.as_ref(), "5");
+    let mut offset = 0;
+    for line in &code.lines {
+        for (range, style) in &line.highlights {
+            assert!(line.text.is_char_boundary(range.start));
+            assert!(line.text.is_char_boundary(range.end));
+            let original = code
+                .highlights
+                .iter()
+                .find(|(span, _)| span.contains(&(offset + range.start)))
+                .unwrap();
+            assert_eq!(style.color, original.1.color);
+        }
+        offset += line.text.len() + 1;
+    }
+    assert_eq!(code.widest_line, 3);
+}

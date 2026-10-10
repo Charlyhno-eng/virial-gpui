@@ -385,3 +385,86 @@ fn accelerated_copy_preserves_sparse_contents_permissions_and_independence() {
     assert!(copy_with_progress(&source, &destination, Some(&progress)).is_err());
     assert_eq!(fs::read(&destination).unwrap(), copied);
 }
+
+#[test]
+fn zip_compression_preserves_nested_files_and_refuses_overwrite() {
+    use crate::infrastructure::compression::{ArchiveFormat, destination};
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("folder");
+    fs::create_dir_all(source.join("nested/empty")).unwrap();
+    fs::write(source.join("nested/café.txt"), "hello").unwrap();
+    execute(Operation::CompressAs {
+        path: source.clone(),
+        format: ArchiveFormat::Zip,
+    })
+    .unwrap();
+    let target = destination(&source, ArchiveFormat::Zip).unwrap();
+    let bytes = fs::read(&target).unwrap();
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&target).unwrap()).unwrap();
+    assert_eq!(archive.by_name("folder/nested/café.txt").unwrap().size(), 5);
+    assert!(archive.by_name("folder/nested/empty/").unwrap().is_dir());
+    assert!(
+        execute(Operation::CompressAs {
+            path: source,
+            format: ArchiveFormat::Zip
+        })
+        .is_err()
+    );
+    assert_eq!(fs::read(target).unwrap(), bytes);
+}
+
+#[test]
+fn duplicate_copies_a_directory_and_refuses_existing_destination() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("folder");
+    let destination = root.path().join("folder (copy 1)");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("file.txt"), "original").unwrap();
+    execute(Operation::Duplicate {
+        source: source.clone(),
+        destination: destination.clone(),
+    })
+    .unwrap();
+    fs::write(source.join("file.txt"), "changed").unwrap();
+    assert_eq!(
+        fs::read_to_string(destination.join("file.txt")).unwrap(),
+        "original"
+    );
+    assert!(
+        execute(Operation::Duplicate {
+            source,
+            destination: destination.clone()
+        })
+        .is_err()
+    );
+    assert_eq!(
+        fs::read_to_string(destination.join("file.txt")).unwrap(),
+        "original"
+    );
+}
+
+#[test]
+fn tar_formats_create_readable_archives() {
+    use crate::infrastructure::compression::{ArchiveFormat, destination};
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("--source.txt");
+    fs::write(&source, "hello").unwrap();
+    for format in [
+        ArchiveFormat::TarGz,
+        ArchiveFormat::TarXz,
+        ArchiveFormat::TarBz2,
+    ] {
+        execute(Operation::CompressAs {
+            path: source.clone(),
+            format,
+        })
+        .unwrap();
+        let output = std::process::Command::new("tar")
+            .arg("-xOf")
+            .arg(destination(&source, format).unwrap())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{format:?}");
+        assert_eq!(output.stdout, b"hello");
+    }
+}

@@ -11,8 +11,8 @@ impl FileManager {
         cx: &mut Context<Self>,
     ) -> Option<Div> {
         let picker = self.global_search.as_ref()?;
-        // The disclosure triangle folds the panel away without losing the query.
-        if !picker.expanded {
+        // The toolbar search icon hides the field and its results together.
+        if !self.search_open || !picker.expanded {
             return None;
         }
         let status = if picker.query.is_empty() {
@@ -24,7 +24,7 @@ impl FileManager {
         } else {
             "Best 100 matches · ↑/↓ select · Enter opens · Escape closes"
         };
-        let top = if window.is_fullscreen() { 42. } else { 74. };
+        let top = if window.is_fullscreen() { 102. } else { 134. };
         let available = (f32::from(window.viewport_size().height) - top - 8.).max(100.);
         Some(
             div().absolute().right_3().top(px(top)).max_w_full().child(

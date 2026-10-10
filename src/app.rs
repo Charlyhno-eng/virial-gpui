@@ -40,6 +40,7 @@ impl FileManager {
             device_generation: 0,
             home,
             entries: Vec::new(),
+            entry_modified: Default::default(),
             workspaces: Vec::new(),
             folder_count: 0,
             loading: false,
@@ -65,12 +66,16 @@ impl FileManager {
             queue_failed: false,
             queue_background: false,
             verify_transfers: false,
+            filter_open: false,
+            search_open: false,
             extension_filter: String::new(),
             extension_input: cx.new(|cx| {
                 let mut input =
                     crate::ui::components::input::NameInput::new_unfocused(String::new(), cx);
                 input.compact = true;
-                input.placeholder = Language::system().text("Extension (e.g. pdf)…").into();
+                input.placeholder = Language::system()
+                    .text("Filter by name or extension…")
+                    .into();
                 input
             }),
             search_input: cx.new(|cx| {
@@ -97,6 +102,7 @@ impl FileManager {
             preview: crate::state::preview::Preview::Unavailable,
             preview_line: 0,
             preview_scroll: gpui::ScrollHandle::new(),
+            code_preview_scroll: gpui::UniformListScrollHandle::new(),
             preview_focused: false,
             preview_task: None,
             preview_media_image: None,
@@ -197,6 +203,7 @@ impl FileManager {
         let descending = self.name_descending;
         let ssh_store = self.ssh.store.clone();
         let ssh_runtime = self.ssh.runtime.handle().clone();
+        let local_metadata = !matches!(requested, Location::Remote { .. });
         let read = cx.background_executor().spawn(async move {
             let listed: std::io::Result<Vec<Entry>> = match requested {
                 Location::Directory(path) => read_directory(&path, hidden),
@@ -221,14 +228,29 @@ impl FileManager {
                 Location::Trash => crate::infrastructure::trash::read(&data),
                 Location::Workspaces => {
                     return crate::infrastructure::workspaces::summaries(&data, hidden)
-                        .map(|summaries| (Vec::new(), summaries));
+                        .map(|summaries| (Vec::new(), summaries, Default::default()));
                 }
             };
             listed.map(|mut entries: Vec<Entry>| {
                 // Directory, ZIP and Trash readers already sort by name.
                 // Apply the direction on the worker before restoring selection.
                 crate::state::browser::apply_name_direction(&mut entries, descending);
-                (entries, Vec::new())
+                let modified = if local_metadata {
+                    entries
+                        .iter()
+                        .filter_map(|entry| {
+                            let modified = std::fs::metadata(&entry.path).ok()?.modified().ok()?;
+                            let date = chrono::DateTime::<chrono::Local>::from(modified);
+                            Some((
+                                entry.path.clone(),
+                                date.format("%Y-%m-%d %H:%M").to_string(),
+                            ))
+                        })
+                        .collect()
+                } else {
+                    Default::default()
+                };
+                (entries, Vec::new(), modified)
             })
         });
         // Replacing this task cancels the UI update from an outdated request.
@@ -240,12 +262,22 @@ impl FileManager {
             let _ = view.update(cx, |view, cx| {
                 view.loading = false;
                 match result {
-                    Ok((mut entries, workspaces)) => {
+                    Ok((mut entries, workspaces, modified)) => {
                         if descending != view.name_descending {
                             crate::state::browser::apply_name_direction(&mut entries, true);
                         }
                         entries.retain(|entry| {
-                            crate::state::browser::matches_extension(entry, &view.extension_filter)
+                            if local_metadata {
+                                crate::state::browser::matches_file_filter(
+                                    entry,
+                                    &view.extension_filter,
+                                )
+                            } else {
+                                crate::state::browser::matches_extension(
+                                    entry,
+                                    &view.extension_filter,
+                                )
+                            }
                         });
                         view.workspaces = workspaces;
                         let selected_paths: std::collections::HashSet<_> =
@@ -287,6 +319,8 @@ impl FileManager {
                         view.location = location;
                         view.folder_count = entries.iter().filter(|entry| entry.directory).count();
                         view.entries = entries;
+                        view.entry_modified = modified;
+                        view.load_directory_sizes(cx);
                         view.preview_path = None;
                         view.preview_task = None;
                     }
@@ -305,31 +339,54 @@ impl FileManager {
     }
 
     pub(crate) fn load_directory_sizes(&mut self, cx: &mut Context<Self>) {
-        let Some(entry) = self
-            .selection
-            .primary()
-            .and_then(|index| self.entries.get(index))
-            .filter(|entry| self.details_open && entry.directory && entry.bytes.is_none())
-        else {
+        if self.directory_sizes.is_some()
+            || self.busy
+            || self.queue_running
+            || matches!(
+                self.location,
+                Location::Remote { .. } | Location::Workspaces
+            )
+        {
             return;
-        };
-        let path = entry.path.clone();
+        }
+        let paths: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|entry| entry.directory && entry.bytes.is_none())
+            .map(|entry| entry.path.clone())
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();
-        // Browsing Home or a drive must not recursively read every child tree.
-        let read = cx
-            .background_executor()
-            .spawn(async move { (directory_size(&path, &worker_cancelled), path) });
+        let generation = self.navigation_generation;
         let task = cx.spawn(async move |view, cx| {
-            let (result, path) = read.await;
-            if let Ok(bytes) = result {
-                let _ = view.update(cx, |view, cx| {
-                    // Sorting may have changed row indices while the scan ran.
-                    if let Some(entry) = view.entries.iter_mut().find(|entry| entry.path == path) {
-                        entry.bytes = Some(bytes);
-                        cx.notify();
-                    }
-                });
+            // One scan at a time, yielding between folders. Results appear
+            // progressively, and navigating away cancels filesystem work.
+            for path in paths {
+                if worker_cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                let token = worker_cancelled.clone();
+                let read = cx
+                    .background_executor()
+                    .spawn(async move { (directory_size(&path, &token), path) });
+                let (result, path) = read.await;
+                if let Ok(bytes) = result {
+                    let _ = view.update(cx, |view, cx| {
+                        if view.navigation_generation == generation
+                            && let Some(entry) =
+                                view.entries.iter_mut().find(|entry| entry.path == path)
+                        {
+                            entry.bytes = Some(bytes);
+                            cx.notify();
+                        }
+                    });
+                }
+                cx.background_executor()
+                    .timer(Duration::from_millis(30))
+                    .await;
             }
         });
         self.directory_sizes = Some(DirectorySizeTask {
@@ -527,6 +584,10 @@ impl FileManager {
             return;
         }
         if self.extension_input.read(cx).is_focused(window) {
+            if event.keystroke.key == "escape" {
+                self.filter_open = false;
+                cx.notify();
+            }
             if matches!(event.keystroke.key.as_str(), "enter" | "escape") {
                 self.focus.focus(window);
                 cx.stop_propagation();
@@ -548,10 +609,15 @@ impl FileManager {
         {
             let line_count = match &self.preview {
                 crate::state::preview::Preview::Text(text) => text.split('\n').count(),
-                crate::state::preview::Preview::Code(code) => code.text.split('\n').count(),
+                crate::state::preview::Preview::Code(code) => code.lines.len(),
                 _ => 1,
             };
-            let page = (f32::from(self.preview_scroll.bounds().size.height) / 18.).floor() as usize;
+            let viewport = if matches!(self.preview, crate::state::preview::Preview::Code(_)) {
+                self.code_preview_scroll.0.borrow().base_handle.bounds()
+            } else {
+                self.preview_scroll.bounds()
+            };
+            let page = (f32::from(viewport.size.height) / 18.).floor() as usize;
             self.preview_line = match key {
                 "up" => self.preview_line.saturating_sub(1),
                 "down" => (self.preview_line + 1).min(line_count - 1),

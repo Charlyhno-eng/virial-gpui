@@ -2,7 +2,10 @@
 use crate::domain::models::Entry;
 use std::{
     fs, io,
-    os::unix::{ffi::OsStringExt, fs::MetadataExt},
+    os::unix::{
+        ffi::{OsStrExt, OsStringExt},
+        fs::MetadataExt,
+    },
     path::{Path, PathBuf},
 };
 
@@ -48,7 +51,7 @@ fn valid_root(root: &Path) -> bool {
         })
 }
 
-fn original(info: &Path, mount: Option<&Path>) -> io::Result<PathBuf> {
+pub(super) fn original(info: &Path, mount: Option<&Path>) -> io::Result<PathBuf> {
     let text = fs::read_to_string(info)?;
     let mut in_section = false;
     let encoded = text
@@ -101,6 +104,121 @@ fn original(info: &Path, mount: Option<&Path>) -> io::Result<PathBuf> {
     }
 }
 
+/// Reserve freedesktop metadata before an atomic, same-device trash move.
+/// Other devices/platforms retain the existing desktop-service fallback.
+#[cfg(target_os = "linux")]
+pub(super) fn reserve(
+    data: &Path,
+    source: &Path,
+) -> io::Result<Option<(PathBuf, tempfile::NamedTempFile)>> {
+    use std::{
+        io::Write,
+        os::unix::fs::{DirBuilderExt, PermissionsExt},
+    };
+    let device = fs::symlink_metadata(source)?.dev();
+    let home = data.join("Trash");
+    let mut candidates = if fs::metadata(data).is_ok_and(|metadata| metadata.dev() == device) {
+        vec![(home.clone(), None)]
+    } else {
+        roots(data)
+    };
+    candidates.sort_by_key(|(root, _)| {
+        (
+            root != &home,
+            !root
+                .parent()
+                .is_some_and(|parent| parent.file_name().is_some_and(|name| name == ".Trash")),
+        )
+    });
+    for (root, mount) in candidates {
+        let parent = root.parent().ok_or(io::ErrorKind::InvalidInput)?;
+        if mount
+            .as_ref()
+            .is_some_and(|mount| !source.starts_with(mount))
+            || !fs::metadata(parent).is_ok_and(|metadata| metadata.dev() == device)
+            || root.starts_with(source)
+        {
+            continue;
+        }
+        if parent.file_name().is_some_and(|name| name == ".Trash")
+            && !fs::symlink_metadata(parent).is_ok_and(|metadata| {
+                metadata.is_dir()
+                    && !metadata.is_symlink()
+                    && metadata.permissions().mode() & 0o1000 != 0
+            })
+        {
+            continue;
+        }
+        // Never follow an existing root/subdirectory link or alter its permissions.
+        let prepare = || -> io::Result<()> {
+            for directory in [&root, &root.join("files"), &root.join("info")] {
+                match fs::DirBuilder::new().mode(0o700).create(directory) {
+                    Ok(()) => super::sync_directory(directory.parent().unwrap())?,
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                    Err(error) => return Err(error),
+                }
+                let metadata = fs::symlink_metadata(directory)?;
+                if !metadata.is_dir()
+                    || metadata.is_symlink()
+                    || metadata.uid() != unsafe { libc::getuid() }
+                    // The private root prevents other users from reaching its
+                    // children. Desktop tools can create files/info as 0775;
+                    // those modes do not make a 0700 Trash root accessible.
+                    || (directory == &root && metadata.permissions().mode() & 0o077 != 0)
+                    || metadata.dev() != device
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Invalid Trash directory",
+                    ));
+                }
+            }
+            Ok(())
+        };
+        if prepare().is_err() {
+            continue;
+        }
+        let root = root.canonicalize()?;
+        let location = mount
+            .as_ref()
+            .and_then(|mount| source.strip_prefix(mount).ok())
+            .unwrap_or(source);
+        let mut encoded = String::new();
+        for byte in location.as_os_str().as_bytes() {
+            if byte.is_ascii_alphanumeric() || b"/-._~".contains(byte) {
+                encoded.push(*byte as char);
+            } else {
+                use std::fmt::Write;
+                write!(&mut encoded, "%{byte:02X}").unwrap();
+            }
+        }
+        loop {
+            let mut info = tempfile::Builder::new()
+                .prefix("virial-")
+                .suffix(".trashinfo")
+                .tempfile_in(root.join("info"))?;
+            let name = info.path().file_name().unwrap().as_bytes();
+            let destination = root.join("files").join(std::ffi::OsString::from_vec(
+                name[..name.len() - ".trashinfo".len()].to_vec(),
+            ));
+            match fs::symlink_metadata(&destination) {
+                Ok(_) => continue,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+            writeln!(
+                info,
+                "[Trash Info]\nPath={encoded}\nDeletionDate={}",
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S")
+            )?;
+            info.as_file().sync_all()?;
+            super::sync_directory(&root.join("info"))?;
+            return Ok(Some((destination, info)));
+        }
+    }
+    Ok(None)
+}
+
 pub fn read(data: &Path) -> io::Result<Vec<Entry>> {
     let mut entries = Vec::new();
     for (root, mount) in roots(data) {
@@ -141,6 +259,61 @@ pub fn read(data: &Path) -> io::Result<Vec<Entry>> {
     }
     entries.sort_by_cached_key(|e| (!e.directory, e.name.to_lowercase(), e.path.clone()));
     Ok(entries)
+}
+
+/// Empty owned Trash roots, including entries with missing restoration metadata.
+pub fn empty(data: &Path) -> io::Result<()> {
+    let mut first_error = None;
+    for (root, _) in roots(data) {
+        if valid_root(&root)
+            && let Err(error) = empty_root(&root)
+        {
+            first_error.get_or_insert(error);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+fn empty_root(root: &Path) -> io::Result<()> {
+    if !valid_root(root) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Invalid Trash directory",
+        ));
+    }
+    // Never follow links to their targets, and retain restoration metadata
+    // for any item whose deletion fails.
+    let mut first_error = None;
+    for file in fs::read_dir(root.join("files"))? {
+        let file = file?;
+        if let Err(error) = super::operations::remove(&file.path()) {
+            first_error.get_or_insert(error);
+            continue;
+        }
+        let mut name = file.file_name();
+        name.push(".trashinfo");
+        if let Err(error) = fs::remove_file(root.join("info").join(name))
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            first_error.get_or_insert(error);
+        }
+    }
+    // Remove orphan metadata as well, without touching surviving items.
+    for info in fs::read_dir(root.join("info"))? {
+        let info = info?;
+        let name = info.file_name();
+        if let Some(name) = name.as_bytes().strip_suffix(b".trashinfo")
+            && fs::symlink_metadata(
+                root.join("files")
+                    .join(std::ffi::OsString::from_vec(name.to_vec())),
+            )
+            .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+            && let Err(error) = fs::remove_file(info.path())
+        {
+            first_error.get_or_insert(error);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 pub fn restore(data: &Path, paths: &[PathBuf]) -> io::Result<()> {
@@ -184,6 +357,10 @@ pub fn restore(data: &Path, paths: &[PathBuf]) -> io::Result<()> {
         batch.push((path.clone(), info, destination));
     }
     if batch.is_empty() {
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    if super::undo::restore_trash_moves(data, &batch)? {
         return Ok(());
     }
     let affected = batch

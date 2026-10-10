@@ -236,13 +236,13 @@ impl FileManager {
                         .child(self.language.text("NAME"))
                         .child(icon(if self.name_descending { "down" } else { "up" }, 11., MUTED))
                         .on_click(cx.listener(|view, _, _, cx| view.toggle_name_sort(cx))))
-                    .child(div().w(px(104.)).child(self.language.text("KIND")))
                     .child(
                         div()
                             .w(px(76.))
                             .text_right()
                             .child(self.language.text("SIZE")),
-                    ),
+                    )
+                    .child(div().w(px(150.)).flex_shrink_0().child(self.language.text("MODIFIED"))),
             )
             .child(if visible_count == 0 {
                 let (heading, description) = if self.loading {
@@ -384,14 +384,6 @@ impl FileManager {
                                     .child(name)
                                     .child(
                                         div()
-                                            .w(px(104.))
-                                            .flex_shrink_0()
-                                            .text_size(px(11.))
-                                            .text_color(color(MUTED))
-                                            .child(view.language.text(entry.kind())),
-                                    )
-                                    .child(
-                                        div()
                                             .w(px(76.))
                                             .flex_shrink_0()
                                             .text_right()
@@ -399,6 +391,8 @@ impl FileManager {
                                             .text_color(color(MUTED))
                                             .child(view.language.size(entry.bytes)),
                                     )
+                                    .child(div().w(px(150.)).flex_shrink_0().text_size(px(10.)).text_color(color(MUTED))
+                                        .child(view.entry_modified.get(&entry.path).cloned().unwrap_or_else(|| "—".into())))
                                     .on_mouse_down(gpui::MouseButton::Right, {
                                         let entry = entry.clone();
                                         cx.listener(
@@ -418,18 +412,15 @@ impl FileManager {
                                     })
                                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(
                                         move |view, event: &gpui::MouseDownEvent, window, cx| {
+                                            cx.stop_propagation();
                                             if view.busy || view.loading || renaming { return; }
                                             view.focus.focus(window);
                                             view.cancel_pending_preview();
-                                            view.details_open = false;
-                                            view.preview_expanded = false;
-                                            // Defer Ctrl toggles until release so Ctrl-drag
-                                            // can copy an existing multiple selection.
-                                            if event.modifiers.shift || (!event.modifiers.control
-                                                && !view.selection.indices.contains(&index))
-                                            {
-                                                view.selection.click(index, event.modifiers.control, event.modifiers.shift);
+                                            if !event.modifiers.control && !event.modifiers.shift {
+                                                view.details_open = false;
+                                                view.preview_expanded = false;
                                             }
+                                            view.selection.pointer_down(index, event.modifiers.control, event.modifiers.shift);
                                             cx.notify();
                                         },
                                     ))
@@ -455,18 +446,22 @@ impl FileManager {
                                                 if click_count != 1 {
                                                     view.cancel_pending_preview();
                                                 }
-                                                view.details_open = false;
-                                                view.preview_expanded = false;
-                                                let modifiers = event.modifiers();
-                                                if modifiers.control && !modifiers.shift {
-                                                    view.selection.click(index, true, false);
-                                                } else if !modifiers.control && !modifiers.shift {
-                                                    view.selection.click(index, false, false);
+                                                cx.stop_propagation();
+                                                // Use the modifiers from button-down, even when
+                                                // Ctrl is released before the mouse button.
+                                                let modifiers = match event {
+                                                    gpui::ClickEvent::Mouse(event) => event.down.modifiers,
+                                                    gpui::ClickEvent::Keyboard(_) => gpui::Modifiers::default(),
+                                                };
+                                                view.selection.pointer_click(index, modifiers.control, modifiers.shift);
+                                                if !modifiers.control && !modifiers.shift {
+                                                    view.details_open = false;
+                                                    view.preview_expanded = false;
                                                     if click_count >= 2 {
                                                         view.open(entry.clone(), cx);
                                                     }
                                                 }
-                                                if click_count == 1 {
+                                                if click_count == 1 && !modifiers.control && !modifiers.shift && view.selection.indices.len() == 1 {
                                                     view.defer_preview(cx);
                                                 }
                                                 cx.notify();

@@ -21,6 +21,28 @@ use url::Url;
 static LOCK: Mutex<()> = Mutex::new(());
 const LIMIT: usize = 20;
 
+#[cfg(target_os = "linux")]
+#[path = "undo_moves.rs"]
+mod moves;
+
+#[cfg(target_os = "linux")]
+pub(super) fn restore_trash_moves(
+    data: &Path,
+    batch: &[(PathBuf, PathBuf, PathBuf)],
+) -> io::Result<bool> {
+    moves::restore(data, batch)
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn trash_moves(
+    data: &Path,
+    id: &str,
+    sources: &[PathBuf],
+    progress: &super::progress::Progress,
+) -> io::Result<bool> {
+    moves::trash(data, Some(id), sources, Some(progress))
+}
+
 struct Record {
     path: PathBuf,
     before: String,
@@ -115,11 +137,14 @@ fn affected(operation: &Operation) -> io::Result<Vec<PathBuf>> {
                 paths.push(mutation_path(source)?);
             }
         }
-        Operation::Compress(source) => {
-            let mut name = source.file_name().ok_or_else(invalid)?.to_os_string();
-            name.push(".tar.gz");
-            paths.push(normalized(&source.with_file_name(name))?);
-        }
+        Operation::Duplicate { destination, .. } => paths.push(mutation_path(destination)?),
+        Operation::Compress(source) => paths.push(normalized(&super::compression::destination(
+            source,
+            super::compression::ArchiveFormat::TarGz,
+        )?)?),
+        Operation::CompressAs { path, format } => paths.push(normalized(
+            &super::compression::destination(path, *format)?,
+        )?),
     }
     paths.sort();
     paths.dedup();
@@ -864,6 +889,19 @@ pub fn execute_with_progress(
     if matches!(operation, Operation::Launch { .. }) {
         return operations::execute(operation);
     }
+    #[cfg(target_os = "linux")]
+    if let Operation::Rename { source, name } = &operation
+        && !archive::is_member(source)
+    {
+        return moves::rename(data, source, name, progress).map(|_| None);
+    }
+    #[cfg(target_os = "linux")]
+    if let Operation::Trash(sources) = &operation
+        && !sources.iter().any(|source| archive::is_member(source))
+        && moves::trash(data, None, sources, progress)?
+    {
+        return Ok(None);
+    }
     let paths = affected(&operation)?;
     if progress.is_some() {
         record_with_progress(data, paths, progress, || {
@@ -1005,6 +1043,11 @@ fn undo_impl(data: &Path, expected: Option<&str>) -> io::Result<bool> {
     };
     if expected.is_some_and(|expected| entry_key(&directory).map_or(true, |key| key != expected)) {
         return Err(io::Error::other("Undo history changed; press Ctrl+Z again"));
+    }
+    #[cfg(target_os = "linux")]
+    if moves::undo(&directory)? {
+        discard_entry(&directory)?;
+        return Ok(true);
     }
     let records = load(&directory)?;
     // Check the entire batch and its backups before restoring any item.

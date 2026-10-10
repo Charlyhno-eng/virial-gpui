@@ -951,6 +951,27 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
     File::open(journal(data, &job)?)?;
     validate(&job)?;
     progress.configure_verification(job.verify);
+    #[cfg(target_os = "linux")]
+    if job.directory.is_none() && job.plan.is_none() {
+        let sources = job
+            .sources
+            .iter()
+            .map(|source| path(source))
+            .collect::<io::Result<Vec<_>>>()?;
+        match undo::trash_moves(data, &job.id, &sources, progress) {
+            Ok(true) => {
+                forget_unlocked(data, &job)?;
+                return Ok(());
+            }
+            Err(error) => {
+                if error.kind() == io::ErrorKind::Interrupted {
+                    forget_unlocked(data, &job)?;
+                }
+                return Err(error);
+            }
+            Ok(false) => {}
+        }
+    }
     if job.plan.is_none() {
         let plan = match prepare(data, &job, progress) {
             Ok(plan) => plan,

@@ -1,6 +1,30 @@
 use super::*;
 use std::os::unix::{ffi::OsStrExt, fs::symlink};
 
+#[cfg(target_os = "linux")]
+#[test]
+fn reserve_requires_a_private_root_and_rejects_linked_subdirectories() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path().join("data");
+    let root = data.join("Trash");
+    fs::create_dir_all(root.join("files")).unwrap();
+    fs::create_dir(root.join("info")).unwrap();
+    let source = temp.path().join("source");
+    fs::write(&source, b"preserved").unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(reserve(&data, &source).unwrap().is_none());
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::remove_dir(root.join("files")).unwrap();
+    let outside = temp.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    symlink(&outside, root.join("files")).unwrap();
+    assert!(reserve(&data, &source).unwrap().is_none());
+    assert!(fs::read_dir(outside).unwrap().next().is_none());
+    assert!(fs::read_dir(root.join("info")).unwrap().next().is_none());
+    assert_eq!(fs::read(source).unwrap(), b"preserved");
+}
+
 fn item(data: &Path, name: &str, original: &Path) -> PathBuf {
     let root = data.join("Trash");
     fs::create_dir_all(root.join("files")).unwrap();
@@ -93,6 +117,28 @@ fn directory_symlink_and_batch_conflicts() {
     assert!(!target.exists());
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn aliased_destinations_are_rejected_before_restoring_a_batch() {
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path().join("data");
+    let parent = temp.path().join("parent");
+    let alias = temp.path().join("alias");
+    fs::create_dir(&parent).unwrap();
+    symlink(&parent, &alias).unwrap();
+    let first = item(&data, "first", &parent.join("original"));
+    let second = item(&data, "second", &alias.join("original"));
+    assert_eq!(
+        restore(&data, &[first.clone(), second.clone()])
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    assert!(first.exists() && second.exists());
+    assert!(!parent.join("original").exists());
+    assert!(!super::super::undo::undo(&data).unwrap());
+}
+
 #[test]
 fn rejects_invalid_metadata_and_non_trash_sources() {
     let temp = tempfile::tempdir().unwrap();
@@ -134,4 +180,46 @@ fn restores_a_selection_as_one_undoable_action_with_non_utf8_names() {
     assert!(super::super::undo::undo(&data).unwrap());
     assert!(first.exists() && second.exists());
     assert!(!destination.exists() && !second_destination.exists());
+}
+
+#[test]
+fn empty_trash_removes_contents_and_orphans_without_following_links() {
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path().join("data");
+    let outside = temp.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("keep"), "preserved").unwrap();
+    let source = item(&data, "folder", &outside);
+    fs::remove_file(&source).unwrap();
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("nested"), "deleted").unwrap();
+    symlink(&outside, source.join("link")).unwrap();
+    let root = data.join("Trash");
+    symlink(&outside, root.join("files/outside-link")).unwrap();
+    fs::write(root.join("files/missing-info"), "deleted").unwrap();
+    fs::write(root.join("info/orphan.trashinfo"), "invalid").unwrap();
+    empty_root(&root).unwrap();
+    assert_eq!(fs::read_dir(root.join("files")).unwrap().count(), 0);
+    assert_eq!(fs::read_dir(root.join("info")).unwrap().count(), 0);
+    assert_eq!(
+        fs::read_to_string(outside.join("keep")).unwrap(),
+        "preserved"
+    );
+    empty_root(&root).unwrap();
+}
+
+#[test]
+fn empty_trash_rejects_a_symlinked_files_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("Trash");
+    let outside = temp.path().join("outside");
+    fs::create_dir_all(root.join("info")).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("keep"), "preserved").unwrap();
+    symlink(&outside, root.join("files")).unwrap();
+    assert_eq!(
+        empty_root(&root).unwrap_err().kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    assert!(outside.join("keep").exists());
 }

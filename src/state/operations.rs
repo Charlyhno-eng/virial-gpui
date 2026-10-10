@@ -47,6 +47,11 @@ impl FileManager {
         // Serialize preparation without performing any filesystem I/O on the UI.
         self.busy = true;
         self.error = None;
+        if matches!(operation, Operation::Trash(_)) {
+            // Give mutations priority over speculative recursive size scans.
+            self.directory_sizes = None;
+            self.cancel_pending_preview();
+        }
         let data = self.data_home.clone();
         let verify = self.verify_transfers;
         let task = cx
@@ -65,6 +70,7 @@ impl FileManager {
                 };
                 view.start_queued_operation(false, cx);
                 if let Some(error) = error {
+                    view.load_directory_sizes(cx);
                     view.error = Some(format!(
                         "{}: {error}",
                         view.language.text("Operation failed")

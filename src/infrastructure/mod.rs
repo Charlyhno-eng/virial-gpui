@@ -76,6 +76,13 @@ pub(crate) mod trash_stub {
         ))
     }
 
+    pub(crate) fn empty(_data: &Path) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Emptying Trash is not supported on this platform yet",
+        ))
+    }
+
     pub(crate) fn restore(_data: &Path, _paths: &[PathBuf]) -> io::Result<()> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -124,3 +131,5 @@ pub(crate) fn sync_file(file: &std::path::Path) -> io::Result<()> {
         fs::OpenOptions::new().write(true).open(file)?.sync_all()
     }
 }
+
+pub mod compression;

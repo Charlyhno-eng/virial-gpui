@@ -98,6 +98,7 @@ pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
     let mut pending = vec![fs::canonicalize(path)?];
     let mut visited = HashSet::new();
     let mut total = 0u64;
+    let mut scanned = 0usize;
     while let Some(path) = pending.pop() {
         check_cancelled(cancelled)?;
         let metadata = fs::symlink_metadata(&path)?;
@@ -112,6 +113,12 @@ pub fn directory_size(path: &Path, cancelled: &AtomicBool) -> io::Result<u64> {
         }
         for item in fs::read_dir(path)? {
             check_cancelled(cancelled)?;
+            scanned += 1;
+            if scanned.is_multiple_of(128) {
+                // Bound background I/O pressure while keeping the UI executor free.
+                std::thread::sleep(std::time::Duration::from_millis(2));
+                check_cancelled(cancelled)?;
+            }
             let item = item?;
             let kind = item.file_type()?;
             if kind.is_dir() {

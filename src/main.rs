@@ -12,6 +12,12 @@ mod platform;
 mod state;
 mod ui;
 
+// Run the vendored GPU lifetime regression tests without GPUI's optional
+// test platform, so they are covered by the application's normal test suite.
+#[cfg(all(test, target_os = "linux"))]
+#[path = "../vendor/gpui/src/platform/blade/retired_resources.rs"]
+mod retired_resources;
+
 use app::FileManager;
 use gpui::{
     App, Application, Bounds, WindowBackgroundAppearance, WindowDecorations, WindowOptions,

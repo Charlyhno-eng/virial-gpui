@@ -12,6 +12,36 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- Empty Trash from the context menu, with the same confirmation as the toolbar.
+- Empty Trash from the toolbar with confirmation before permanent deletion.
+- Folder sizes appear progressively, using a cancellable background scan with
+  throttled filesystem work.
+
+### Corrections
+- Suppress the harmless `dpkg-shlibdeps` warning for libc6's merged-`/usr` loader diversion
+  when building `.deb` packages.
+- Prepare code preview lines once and render only visible rows for responsive keyboard navigation.
+- Keep preview textures alive until GPU rendering completes when switching files
+  or opening a context menu, and cancel delayed previews on right-click.
+- Keep large Linux Trash moves fast with desktop-created subdirectory permissions
+  inside a private Trash root, and pause folder size scans during deletion.
+- Revert the recent search memory changes and idle index unloading.
+- Restore same-device Linux Trash items with persistent undo without copying or
+  hashing their contents.
+- Linux renames and same-device Trash moves keep persistent undo without copying
+  or hashing file contents; undo preserves edits and refuses replaced items or
+  occupied names.
+- Ctrl-click uses the modifiers held at mouse-down and keeps multiple selection
+  visible without opening the preview.
+
+### Interface
+- Group context actions with separators, shorten workspace labels, remove Refresh,
+  and add Duplicate and a compression submenu for ZIP, TAR.GZ, TAR.XZ and TAR.BZ2.
+- Replace the file kind column with a final modification date and time column.
+- Compact search and filter icons reveal separate input fields below the toolbar;
+  local filtering supports names and extensions.
+
+### Ajouts
 - **Icônes de fichiers par type** : le navigateur et le panneau de détails
   choisissent l'illustration à partir du nom exact du fichier (`Dockerfile`,
   `.gitignore`, `Cargo.toml`, `LICENSE`, …) puis d'une table d'extensions

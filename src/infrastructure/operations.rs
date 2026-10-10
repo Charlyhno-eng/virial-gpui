@@ -33,6 +33,14 @@ pub enum Operation {
     },
     Trash(Vec<PathBuf>),
     Compress(PathBuf),
+    CompressAs {
+        path: PathBuf,
+        format: super::compression::ArchiveFormat,
+    },
+    Duplicate {
+        source: PathBuf,
+        destination: PathBuf,
+    },
     ImageExport {
         source: PathBuf,
         name: String,
@@ -296,7 +304,7 @@ pub(super) fn remove(source: &Path) -> io::Result<()> {
     }
 }
 
-fn command(command: &mut Command) -> io::Result<()> {
+pub(super) fn command(command: &mut Command) -> io::Result<()> {
     let output = command.output()?;
     if output.status.success() {
         Ok(())
@@ -537,35 +545,14 @@ pub(super) fn execute_with_progress(
         Operation::Launch { desktop, file } => {
             return launch(&desktop, &file);
         }
+        Operation::Duplicate {
+            source,
+            destination,
+        } => copy(&source, &destination),
         Operation::Compress(path) => {
-            let name = path
-                .file_name()
-                .ok_or_else(|| io::Error::other("No file name"))?;
-            let mut archive = name.to_os_string();
-            archive.push(".tar.gz");
-            let archive = path.with_file_name(archive);
-            let file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&archive)?;
-            let result = command(
-                Command::new("tar")
-                    .arg("-czf")
-                    .arg("-")
-                    .arg("-C")
-                    .arg(
-                        path.parent()
-                            .ok_or_else(|| io::Error::other("No parent directory"))?,
-                    )
-                    .arg("--")
-                    .arg(name)
-                    .stdout(file),
-            );
-            if result.is_err() {
-                let _ = fs::remove_file(archive);
-            }
-            result
+            super::compression::compress(&path, super::compression::ArchiveFormat::TarGz)
         }
+        Operation::CompressAs { path, format } => super::compression::compress(&path, format),
     }
     .map(|_| None)
 }

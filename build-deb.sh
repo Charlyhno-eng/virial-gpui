@@ -45,7 +45,22 @@ for notice in "$project_dir"/assets/icons/licenses/*.txt; do
 done
 
 cp "$project_dir/packaging/control" "$staging/debian/control"
-dependencies=$(cd "$staging" && dpkg-shlibdeps -O -e"$package_dir/usr/bin/virial-gpui")
+shlibdeps_log="$staging/shlibdeps.log"
+if ! dependencies=$(cd "$staging" && LC_ALL=C dpkg-shlibdeps -O -e"$package_dir/usr/bin/virial-gpui" 2>"$shlibdeps_log"); then
+    cat "$shlibdeps_log" >&2
+    exit 1
+fi
+awk '
+    /^dpkg-shlibdeps: warning: diversions involved - output may be incorrect$/ {
+        if (getline diversion > 0 && diversion ~ /^ diversion by libc6 (from: \/lib(64)?\/ld-linux-[[:alnum:]_.-]+[.]so[.][0-9]+|to: \/lib(64)?\/ld-linux-[[:alnum:]_.-]+[.]so[.][0-9]+[.]usr-is-merged)$/) {
+            next
+        }
+        print
+        if (diversion != "") print diversion
+        next
+    }
+    { print }
+' "$shlibdeps_log" >&2
 dependencies=${dependencies#shlibs:Depends=}
 [ -n "$dependencies" ] || { echo "Cannot determine shared-library dependencies." >&2; exit 1; }
 installed_size=$(du -sk "$package_dir/usr" | cut -f1)

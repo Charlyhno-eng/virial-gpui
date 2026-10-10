@@ -10,6 +10,10 @@ use etagere::BucketedAtlasAllocator;
 use parking_lot::Mutex;
 use std::{borrow::Cow, ops, sync::Arc};
 
+#[path = "retired_resources.rs"]
+mod retired_resources;
+use retired_resources::RetiredResources;
+
 pub(crate) struct BladeAtlas(Mutex<BladeAtlasState>);
 
 struct PendingUpload {
@@ -25,6 +29,8 @@ struct BladeAtlasState {
     tiles_by_key: FxHashMap<AtlasKey, AtlasTile>,
     initializations: Vec<AtlasTextureId>,
     uploads: Vec<PendingUpload>,
+    last_submission: Option<gpu::SyncPoint>,
+    retired: RetiredResources<BladeAtlasTexture, gpu::SyncPoint>,
 }
 
 #[cfg(gles)]
@@ -32,6 +38,8 @@ unsafe impl Send for BladeAtlasState {}
 
 impl BladeAtlasState {
     fn destroy(&mut self) {
+        self.retired
+            .release_completed(|_| true, |mut texture| texture.destroy(&self.gpu));
         self.storage.destroy(&self.gpu);
         self.upload_belt.destroy(&self.gpu);
     }
@@ -54,6 +62,8 @@ impl BladeAtlas {
             tiles_by_key: Default::default(),
             initializations: Vec::new(),
             uploads: Vec::new(),
+            last_submission: None,
+            retired: RetiredResources::default(),
         }))
     }
 
@@ -63,12 +73,18 @@ impl BladeAtlas {
 
     pub fn before_frame(&self, gpu_encoder: &mut gpu::CommandEncoder) {
         let mut lock = self.0.lock();
+        let gpu = lock.gpu.clone();
+        lock.retired.release_completed(
+            |submission| gpu.wait_for(submission, 0),
+            |mut texture| texture.destroy(&gpu),
+        );
         lock.flush(gpu_encoder);
     }
 
     pub fn after_frame(&self, sync_point: &gpu::SyncPoint) {
         let mut lock = self.0.lock();
         lock.upload_belt.flush(sync_point);
+        lock.last_submission = Some(sync_point.clone());
     }
 
     pub fn get_texture_info(&self, id: AtlasTextureId) -> BladeTextureInfo {
@@ -115,10 +131,17 @@ impl PlatformAtlas for BladeAtlas {
         if let Some(mut texture) = texture_slot.take() {
             texture.decrement_ref_count();
             if texture.is_unreferenced() {
+                // Discard uploads that have not been submitted, before this slot
+                // can be reused for a different texture.
+                lock.initializations.retain(|pending| *pending != id);
+                lock.uploads.retain(|pending| pending.id != id);
                 lock.storage[id.kind]
                     .free_list
                     .push(texture.id.index as usize);
-                texture.destroy(&lock.gpu);
+                // The previously presented frame may still be executing. Vulkan
+                // does not retain resources after destroy_texture/destroy_view.
+                let submission = lock.last_submission.clone();
+                lock.retired.retire(texture, submission);
             } else {
                 *texture_slot = Some(texture);
             }
@@ -333,8 +356,8 @@ impl BladeAtlasTexture {
     }
 
     fn destroy(&mut self, gpu: &gpu::Context) {
-        gpu.destroy_texture(self.raw);
         gpu.destroy_texture_view(self.raw_view);
+        gpu.destroy_texture(self.raw);
     }
 
     fn bytes_per_pixel(&self) -> u8 {

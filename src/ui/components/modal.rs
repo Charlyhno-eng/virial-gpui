@@ -48,6 +48,7 @@ impl FileManager {
                 Dialog::Name { .. } => "New file…",
                 Dialog::Applications { .. } => "Open with…",
                 Dialog::Trash(_) => "Move to Trash…",
+                Dialog::EmptyTrash => "Empty Trash…",
                 Dialog::Undo { .. } => "Restore deleted items?",
                 Dialog::Properties { .. } => "Properties",
             };
@@ -129,6 +130,8 @@ impl FileManager {
                         self.language
                             .text("Selected items will be moved to the desktop Trash"),
                     ),
+                Dialog::EmptyTrash => content
+                    .child(self.language.text("Permanently delete all items in the Trash? This cannot be undone.")),
                 Dialog::Undo { summary, .. } => {
                     let count = summary.split('\t').nth(1).unwrap_or("?");
                     content.child(format!("{} {count}", self.language.text("Deleted items:")))
@@ -191,6 +194,7 @@ impl FileManager {
                 dialog,
                 Dialog::Name { .. }
                     | Dialog::Trash(_)
+                    | Dialog::EmptyTrash
                     | Dialog::ImageExport { .. }
                     | Dialog::Undo { .. }
             );
@@ -231,71 +235,101 @@ impl FileManager {
         let archive_entry = entry
             .as_ref()
             .is_some_and(|entry| crate::infrastructure::archive::is_member(&entry.path));
-        let mut actions = Vec::new();
+        let mut groups: Vec<Vec<Action>> = Vec::new();
         let trash = self.location == crate::domain::location::Location::Trash;
-        let remote = self.location.remote().cloned();
-        if remote.is_some() {
-            // Remote locations expose a reduced action set: open/rename/delete
-            // map to SFTP operations; no clipboard, trash or archive support.
-            if entry.is_some() {
-                actions.push(Action::Open);
-                if self.selection.indices.len() == 1 {
-                    actions.push(Action::Rename);
-                    actions.push(Action::Trash);
-                }
-            } else {
-                actions.push(Action::NewFolder);
-            }
-            actions.push(Action::Refresh);
-        } else if trash {
-            if entry.is_some() {
-                actions.push(Action::Restore);
-            }
-        } else if let Some(entry) = &entry {
-            actions.push(Action::Open);
-            if self.selection.indices.len() == 1 {
-                if !entry.directory {
-                    actions.push(Action::OpenWith);
-                }
-                actions.push(Action::Rename);
-                if !archive_entry {
-                    actions.push(Action::Compress);
-                }
-                actions.push(Action::Properties);
-            }
-            actions.extend([Action::Cut, Action::Copy]);
-            if !archive_entry {
-                actions.push(Action::Trash);
-            }
-            actions.push(Action::CopyPath);
-        } else if self.location.directory().is_some() {
-            actions.extend([Action::NewFolder, Action::NewFile]);
-        }
-        if !trash
+        let remote = self.location.remote().is_some();
+        let single = self.selection.indices.len() == 1;
+        let paste = !trash
+            && !remote
             && self.clipboard.is_some()
             && (entry.as_ref().is_some_and(|entry| entry.browsable())
-                || self.location.directory().is_some())
-        {
-            actions.push(Action::Paste);
-        }
-        if !trash
+                || self.location.directory().is_some());
+        let workspace = !trash
+            && !remote
             && (entry
                 .as_ref()
                 .is_some_and(|entry| entry.directory && !archive_entry)
                 || (entry.is_none()
-                    && self
-                        .location
-                        .directory()
-                        .is_some_and(|path| crate::infrastructure::archive::split(path).is_none())))
-        {
-            actions.push(Action::AddWorkspace);
+                    && self.location.directory().is_some_and(|path| {
+                        crate::infrastructure::archive::split(path).is_none()
+                    })));
+        if remote {
+            if entry.is_some() {
+                groups.push(vec![Action::Open]);
+                if single {
+                    groups.push(vec![Action::Rename]);
+                    groups.push(vec![Action::Trash]);
+                }
+            } else {
+                groups.push(vec![Action::NewFolder]);
+            }
+        } else if trash {
+            if entry.is_some() {
+                groups.push(vec![Action::Restore]);
+            }
+            groups.push(vec![Action::EmptyTrash]);
+        } else if let Some(item) = &entry {
+            let mut open = vec![Action::Open];
+            if single && !item.directory {
+                open.push(Action::OpenWith);
+            }
+            groups.push(open);
+            let mut edit = vec![Action::Copy, Action::Cut];
+            if paste {
+                edit.push(Action::Paste);
+            }
+            if single {
+                if !archive_entry {
+                    edit.push(Action::Duplicate);
+                }
+                edit.push(Action::Rename);
+            }
+            groups.push(edit);
+            if workspace {
+                groups.push(vec![Action::AddWorkspace]);
+            }
+            if single && !archive_entry {
+                groups.push(vec![Action::Compress]);
+            }
+            if !archive_entry {
+                groups.push(vec![Action::Trash]);
+            }
+            groups.push(vec![Action::CopyPath]);
+            if single {
+                groups.push(vec![Action::Properties]);
+            }
+        } else {
+            if self.location.directory().is_some() {
+                groups.push(vec![Action::NewFolder, Action::NewFile]);
+            }
+            if paste {
+                groups.push(vec![Action::Paste]);
+            }
+            if workspace {
+                groups.push(vec![Action::AddWorkspace]);
+            }
+            if self.location == crate::domain::location::Location::Workspaces {
+                groups.push(vec![Action::NewWorkspace]);
+            }
         }
-        if self.location == crate::domain::location::Location::Workspaces {
-            actions.push(Action::NewWorkspace);
+        let mut actions = Vec::new();
+        for group in groups {
+            if !actions.is_empty() {
+                actions.push(None);
+            }
+            actions.extend(group.into_iter().map(Some));
         }
-        actions.push(Action::Refresh);
         let bounds = window.viewport_size();
-        let height = actions.len() as f32 * 28. + 9.;
+        let height = actions
+            .iter()
+            .map(|action| if action.is_some() { 28. } else { 9. })
+            .sum::<f32>()
+            + 10.;
+        let compression_top = actions
+            .iter()
+            .take_while(|action| **action != Some(Action::Compress))
+            .map(|action| if action.is_some() { 28. } else { 9. })
+            .sum::<f32>();
         let x = menu.position.x.min(bounds.width - px(220.)).max(px(0.));
         let y = menu.position.y.min(bounds.height - px(height)).max(px(0.));
         let panel = div()
@@ -312,6 +346,15 @@ impl FileManager {
             .border_color(color(BORDER))
             .shadow_md()
             .children(actions.into_iter().enumerate().map(|(index, action)| {
+                let Some(action) = action else {
+                    return div()
+                        .h(px(9.))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .child(div().w_full().h(px(1.)).bg(color(BORDER)))
+                        .into_any_element();
+                };
                 let entry = entry.clone();
                 div()
                     .id(("context-action", index))
@@ -322,12 +365,88 @@ impl FileManager {
                     .rounded_sm()
                     .cursor_pointer()
                     .hover(|style| style.bg(color(HOVER)))
-                    .child(icon(action.icon(), 14., MUTED))
-                    .child(div().ml_2().child(self.language.text(action.label())))
-                    .on_click(cx.listener(move |view, _, window, cx| {
-                        view.action(action, entry.clone(), window, cx)
+                    .on_hover(cx.listener(move |view, hovered, _, cx| {
+                        if *hovered && let Some(menu) = view.menu.as_mut() {
+                            let open = action == Action::Compress;
+                            if menu.compression_open != open {
+                                menu.compression_open = open;
+                                cx.notify();
+                            }
+                        }
                     }))
+                    .child(icon(action.icon(), 14., MUTED))
+                    .child(
+                        div()
+                            .ml_2()
+                            .flex_1()
+                            .min_w_0()
+                            .text_ellipsis()
+                            .child(self.language.text(action.label())),
+                    )
+                    .when(action == Action::Compress, |row| {
+                        row.child(icon("forward", 12., MUTED))
+                    })
+                    .on_click(cx.listener(move |view, _, window, cx| {
+                        if action == Action::Compress {
+                            if let Some(menu) = view.menu.as_mut() {
+                                menu.compression_open = true;
+                            }
+                            cx.notify();
+                        } else {
+                            view.action(action, entry.clone(), window, cx);
+                        }
+                    }))
+                    .into_any_element()
             }));
+        let submenu = menu.compression_open.then(|| {
+            let width = px(190.);
+            let submenu_x = if x + px(220.) + width <= bounds.width {
+                x + px(220.)
+            } else {
+                (x - width).max(px(0.))
+            };
+            let submenu_y =
+                (y + px(compression_top + 4.)).min((bounds.height - px(122.)).max(px(0.)));
+            div()
+                .id("compression-submenu")
+                .occlude()
+                .absolute()
+                .left(submenu_x)
+                .top(submenu_y)
+                .w(width)
+                .p_1()
+                .rounded_md()
+                .bg(color(SURFACE))
+                .border_1()
+                .border_color(color(BORDER))
+                .shadow_md()
+                .children(
+                    crate::infrastructure::compression::ArchiveFormat::ALL
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, format)| {
+                            let entry = entry.clone();
+                            div()
+                                .id(("compression-format", index))
+                                .h(px(28.))
+                                .px_3()
+                                .flex()
+                                .items_center()
+                                .rounded_sm()
+                                .cursor_pointer()
+                                .hover(|style| style.bg(color(HOVER)))
+                                .child(format.label())
+                                .on_click(cx.listener(move |view, _, window, cx| {
+                                    view.action(
+                                        Action::CompressAs(format),
+                                        entry.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                }))
+                        }),
+                )
+        });
         Some(
             div()
                 .absolute()
@@ -353,7 +472,8 @@ impl FileManager {
                             }),
                         ),
                 )
-                .child(reveal(panel, "menu-reveal")),
+                .child(reveal(panel, "menu-reveal"))
+                .children(submenu),
         )
     }
 }
@@ -362,17 +482,17 @@ impl Action {
     fn icon(self) -> &'static str {
         match self {
             Self::Restore => "restore",
+            Self::EmptyTrash => "trash",
             Self::Open | Self::OpenWith => "open",
-            Self::Copy | Self::CopyPath => "copy",
+            Self::Copy | Self::CopyPath | Self::Duplicate => "copy",
             Self::Cut => "cut",
             Self::Paste => "paste",
             Self::Rename => "edit",
             Self::Trash => "trash",
-            Self::Compress => "archive",
+            Self::Compress | Self::CompressAs(_) => "compress",
             Self::NewFolder | Self::AddWorkspace => "folder",
             Self::NewFile => "file",
             Self::Properties => "info",
-            Self::Refresh => "refresh",
             Self::NewWorkspace => "folder-plus",
         }
     }

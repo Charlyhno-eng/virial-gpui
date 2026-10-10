@@ -9,6 +9,7 @@ use crate::{
 };
 use gpui::{
     App, Bounds, Context, Div, Pixels, SharedString, StyledText, Window, div, img, prelude::*, px,
+    uniform_list,
 };
 use std::sync::OnceLock;
 
@@ -77,6 +78,18 @@ fn code_font(cx: &App) -> SharedString {
 
 impl FileManager {
     pub(crate) fn scroll_preview_to_line(&self) {
+        if matches!(self.preview, Preview::Code(_)) {
+            let strategy = if px(self.preview_line as f32 * 18.)
+                < -self.code_preview_scroll.0.borrow().base_handle.offset().y
+            {
+                gpui::ScrollStrategy::Top
+            } else {
+                gpui::ScrollStrategy::Bottom
+            };
+            self.code_preview_scroll
+                .scroll_to_item(self.preview_line, strategy);
+            return;
+        }
         let scroll = &self.preview_scroll;
         if let Some(line) = scroll.bounds_for_item(self.preview_line) {
             let mut offset = scroll.offset();
@@ -437,96 +450,76 @@ impl FileManager {
                                 .children(lines)
                                 .into_any_element()
                         }
-                        Preview::Code(code) => {
-                            let mut offset = 0;
-                            let lines = code
-                                .text
-                                .split('\n')
-                                .zip(code.line_numbers.split('\n'))
-                                .enumerate()
-                                .map(|(index, (line, line_number))| {
-                                    let start = offset;
-                                    offset += line.len() + 1;
-                                    let end = start + line.len();
-                                    let highlights =
-                                        code.highlights.iter().filter_map(|(range, style)| {
-                                            let from = range.start.max(start);
-                                            let to = range.end.min(end);
-                                            (from < to).then(|| (from - start..to - start, *style))
-                                        });
-                                    div()
-                                        .flex()
-                                        .flex_shrink_0()
-                                        .w_full()
-                                        .h(px(18.))
-                                        .when(
-                                            self.preview_focused && self.preview_line == index,
-                                            |line| line.bg(color(SELECTED)),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex_shrink_0()
-                                                .w(px(44.))
-                                                .pr_3()
-                                                .text_right()
-                                                .text_color(color(CODE_GUTTER))
-                                                .child(line_number.to_owned()),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex_shrink_0()
-                                                .pr_3()
-                                                .text_color(color(CODE_TEXT))
-                                                .child(
-                                                    StyledText::new(line.to_owned())
-                                                        .with_highlights(highlights),
-                                                ),
-                                        )
-                                        .on_mouse_down(
-                                            gpui::MouseButton::Left,
-                                            cx.listener(move |view, _, window, cx| {
-                                                view.preview_focused = true;
-                                                view.preview_line = index;
-                                                view.focus.focus(window);
-                                                cx.notify();
-                                                cx.stop_propagation();
-                                            }),
-                                        )
-                                });
-                            div()
-                                .id(if expanded {
-                                    "expanded-code-preview"
-                                } else {
-                                    "code-preview"
-                                })
-                                .flex_1()
-                                .min_h_0()
-                                .py_3()
-                                .overflow_y_scroll()
-                                .overflow_x_scroll()
-                                .track_scroll(&self.preview_scroll)
-                                .map(|mut code| {
-                                    code.style().restrict_scroll_to_axis = Some(true);
-                                    code
-                                })
-                                .font_family(code_font(cx))
-                                .text_size(px(12.))
-                                .line_height(px(18.))
-                                .whitespace_nowrap()
-                                .flex()
-                                .flex_col()
-                                .children(lines)
-                                .on_mouse_down(
-                                    gpui::MouseButton::Left,
-                                    cx.listener(|view, _, window, cx| {
-                                        view.preview_focused = true;
-                                        view.focus.focus(window);
-                                        cx.notify();
-                                        cx.stop_propagation();
-                                    }),
-                                )
-                                .into_any_element()
-                        }
+                        Preview::Code(code) => uniform_list(
+                            if expanded {
+                                "expanded-code-preview"
+                            } else {
+                                "code-preview"
+                            },
+                            code.lines.len(),
+                            cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
+                                let Preview::Code(code) = &view.preview else {
+                                    return Vec::new();
+                                };
+                                range
+                                    .map(|index| {
+                                        let line = &code.lines[index];
+                                        div()
+                                            .flex()
+                                            .flex_shrink_0()
+                                            .w_full()
+                                            .h(px(18.))
+                                            .when(
+                                                view.preview_focused && view.preview_line == index,
+                                                |line| line.bg(color(SELECTED)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_shrink_0()
+                                                    .w(px(44.))
+                                                    .pr_3()
+                                                    .text_right()
+                                                    .text_color(color(CODE_GUTTER))
+                                                    .child(line.number.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_shrink_0()
+                                                    .pr_3()
+                                                    .text_color(color(CODE_TEXT))
+                                                    .child(
+                                                        StyledText::new(line.text.clone())
+                                                            .with_highlights(
+                                                                line.highlights.iter().cloned(),
+                                                            ),
+                                                    ),
+                                            )
+                                            .on_mouse_down(
+                                                gpui::MouseButton::Left,
+                                                cx.listener(move |view, _, window, cx| {
+                                                    view.preview_focused = true;
+                                                    view.preview_line = index;
+                                                    view.focus.focus(window);
+                                                    cx.notify();
+                                                    cx.stop_propagation();
+                                                }),
+                                            )
+                                    })
+                                    .collect()
+                            }),
+                        )
+                        .with_width_from_item(Some(code.widest_line))
+                        .with_horizontal_sizing_behavior(
+                            gpui::ListHorizontalSizingBehavior::Unconstrained,
+                        )
+                        .track_scroll(self.code_preview_scroll.clone())
+                        .flex_1()
+                        .min_h_0()
+                        .font_family(code_font(cx))
+                        .text_size(px(12.))
+                        .line_height(px(18.))
+                        .whitespace_nowrap()
+                        .into_any_element(),
                         Preview::Loading => div()
                             .p_3()
                             .text_color(color(MUTED))

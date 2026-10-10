@@ -35,7 +35,7 @@ roxmltree = "0.20"
 url = "2.5"
 zbus = "5.19"
 futures-lite = "2.6"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 unicode-segmentation = "1.13"
 # The onig engine bundles PowerShell, JSX and other grammars the fancy-regex
 # variant lacks (strict superset of the fancy syntax set).

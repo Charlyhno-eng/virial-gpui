@@ -12,6 +12,7 @@ use std::{fs, path::PathBuf};
 pub struct Menu {
     pub position: Point<Pixels>,
     pub entry: Option<Entry>,
+    pub compression_open: bool,
 }
 pub(crate) struct InlineRename {
     pub(crate) source: PathBuf,
@@ -52,6 +53,7 @@ pub enum Dialog {
         loading: bool,
     },
     Trash(Vec<Entry>),
+    EmptyTrash,
     Undo {
         summary: String,
         entry: String,
@@ -61,9 +63,10 @@ pub enum Dialog {
         details: String,
     },
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Restore,
+    EmptyTrash,
     Open,
     OpenWith,
     Copy,
@@ -72,11 +75,12 @@ pub enum Action {
     Rename,
     Trash,
     Compress,
+    CompressAs(crate::infrastructure::compression::ArchiveFormat),
+    Duplicate,
     NewFolder,
     NewFile,
     CopyPath,
     Properties,
-    Refresh,
     AddWorkspace,
     NewWorkspace,
 }
@@ -84,6 +88,7 @@ impl Action {
     pub fn label(self) -> &'static str {
         match self {
             Self::Restore => "Restore",
+            Self::EmptyTrash => "Empty Trash…",
             Self::Open => "Open",
             Self::OpenWith => "Open with…",
             Self::Copy => "Copy",
@@ -91,13 +96,14 @@ impl Action {
             Self::Paste => "Paste",
             Self::Rename => "Rename…",
             Self::Trash => "Move to Trash…",
-            Self::Compress => "Compress (.tar.gz)",
+            Self::Compress => "Compress",
+            Self::CompressAs(format) => format.label(),
+            Self::Duplicate => "Duplicate",
             Self::NewFolder => "New folder…",
             Self::NewFile => "New file…",
-            Self::CopyPath => "Copy path",
+            Self::CopyPath => "Copy absolute path",
             Self::Properties => "Properties",
-            Self::Refresh => "Refresh",
-            Self::AddWorkspace => "Add folder to workspace",
+            Self::AddWorkspace => "Add to workspace…",
             Self::NewWorkspace => "New workspace…",
         }
     }
@@ -113,6 +119,8 @@ impl FileManager {
         if self.busy || self.dialog.is_some() {
             return;
         }
+        self.cancel_pending_preview();
+        self.preview_focused = false;
         if let Some(index) = entry
             .as_ref()
             .and_then(|entry| self.entries.iter().position(|item| item.path == entry.path))
@@ -124,7 +132,11 @@ impl FileManager {
             self.selection.clear();
         }
         self.focus.focus(window);
-        self.menu = Some(Menu { position, entry });
+        self.menu = Some(Menu {
+            position,
+            entry,
+            compression_open: false,
+        });
         cx.notify();
     }
     pub(crate) fn action(
@@ -142,7 +154,7 @@ impl FileManager {
         if self.location == crate::domain::location::Location::Trash {
             match action {
                 Action::Restore => self.restore_trash(cx),
-                Action::Refresh => self.refresh(cx),
+                Action::EmptyTrash => self.request_empty_trash(window, cx),
                 _ => {}
             }
             return;
@@ -158,7 +170,6 @@ impl FileManager {
                 })
         {
             match action {
-                Action::Refresh => self.refresh(cx),
                 Action::NewFolder => {
                     let input = cx.new(|cx| {
                         NameInput::new(self.language.text("New folder").to_string(), window, cx)
@@ -205,7 +216,11 @@ impl FileManager {
             .as_ref()
             .is_some_and(|entry| crate::infrastructure::archive::is_member(&entry.path));
         if (archive_context && matches!(action, Action::AddWorkspace))
-            || (archive_entry && matches!(action, Action::Trash | Action::Compress))
+            || (archive_entry
+                && matches!(
+                    action,
+                    Action::Trash | Action::Compress | Action::CompressAs(_) | Action::Duplicate
+                ))
         {
             cx.notify();
             return;
@@ -230,7 +245,12 @@ impl FileManager {
                     }
                     return;
                 }
-                Action::Rename | Action::OpenWith | Action::Compress | Action::Properties
+                Action::Rename
+                | Action::Duplicate
+                | Action::OpenWith
+                | Action::Compress
+                | Action::CompressAs(_)
+                | Action::Properties
                     if selected.len() > 1 =>
                 {
                     return;
@@ -239,7 +259,6 @@ impl FileManager {
             }
         }
         match action {
-            Action::Refresh => self.refresh(cx),
             Action::AddWorkspace => {
                 if let Some(directory) = directory {
                     self.workspace_dialog(Some(directory), window, cx);
@@ -307,6 +326,57 @@ impl FileManager {
                             }
                         }
                         Action::Compress => self.run_operation(Operation::Compress(entry.path), cx),
+                        Action::CompressAs(format) => self.run_operation(
+                            Operation::CompressAs {
+                                path: entry.path,
+                                format,
+                            },
+                            cx,
+                        ),
+                        Action::Duplicate => {
+                            let Some(parent) = entry.path.parent() else {
+                                return;
+                            };
+                            let stem = if entry.directory {
+                                entry.path.file_name()
+                            } else {
+                                entry.path.file_stem()
+                            }
+                            .unwrap_or_default();
+                            let extension = if entry.directory {
+                                None
+                            } else {
+                                entry.path.extension()
+                            };
+                            let mut number = 1;
+                            let destination = loop {
+                                let mut name = stem.to_os_string();
+                                name.push(format!(" (copy {number})"));
+                                if let Some(extension) = extension {
+                                    name.push(".");
+                                    name.push(extension);
+                                }
+                                let candidate = parent.join(name);
+                                match fs::symlink_metadata(&candidate) {
+                                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                                        break candidate;
+                                    }
+                                    Err(error) => {
+                                        self.error = Some(error.to_string());
+                                        cx.notify();
+                                        return;
+                                    }
+                                    Ok(_) => number += 1,
+                                }
+                            };
+                            self.run_operation(
+                                Operation::Duplicate {
+                                    source: entry.path,
+                                    destination,
+                                },
+                                cx,
+                            );
+                        }
                         Action::OpenWith => {
                             self.dialog = Some(Dialog::Applications {
                                 entry: entry.clone(),
@@ -471,6 +541,11 @@ impl FileManager {
             self.edit_workspace(edit, cx);
             return;
         }
+        if matches!(self.dialog, Some(Dialog::EmptyTrash)) {
+            self.close_dialog(window, cx);
+            self.empty_trash(cx);
+            return;
+        }
         let operation = match &self.dialog {
             Some(Dialog::ImageExport {
                 source,
@@ -567,6 +642,50 @@ impl FileManager {
         self.enqueue_operation(operation, cx);
     }
 
+    pub(crate) fn request_empty_trash(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy
+            || self.loading
+            || self.active_operation.is_some()
+            || self.location != crate::domain::location::Location::Trash
+        {
+            return;
+        }
+        self.menu = None;
+        self.error = None;
+        self.dialog = Some(Dialog::EmptyTrash);
+        self.focus.focus(window);
+        cx.notify();
+    }
+
+    fn empty_trash(&mut self, cx: &mut Context<Self>) {
+        if self.busy
+            || self.active_operation.is_some()
+            || self.location != crate::domain::location::Location::Trash
+        {
+            return;
+        }
+        self.busy = true;
+        self.directory_sizes = None;
+        let data = self.data_home.clone();
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::infrastructure::trash::empty(&data) });
+        cx.spawn(async move |view, cx| {
+            let result = task.await;
+            let _ = view.update(cx, |view, cx| {
+                view.busy = false;
+                view.refresh(cx);
+                view.error = result
+                    .err()
+                    .map(|error| format!("{}: {error}", view.language.text("Empty Trash failed")));
+                view.start_queued_operation(false, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
     pub(crate) fn restore_trash(&mut self, cx: &mut Context<Self>) {
         let paths = self.selected_paths();
         if self.busy
@@ -577,6 +696,8 @@ impl FileManager {
             return;
         }
         self.busy = true;
+        self.directory_sizes = None;
+        self.cancel_pending_preview();
         self.error = None;
         let data = self.data_home.clone();
         let task = cx

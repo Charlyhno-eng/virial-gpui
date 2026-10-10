@@ -62,3 +62,25 @@ fn extension_filter_matches_exact_final_extension_and_keeps_folders() {
     assert!(matches_extension(&entry("folder", true), "pdf"));
     assert!(matches_extension(&entry("README", false), ""));
 }
+
+#[test]
+fn local_filter_matches_names_extensions_and_folders() {
+    let entry = |name: &str, directory| Entry {
+        path: format!("/test/{name}").into(),
+        name: name.into(),
+        directory,
+        bytes: None,
+    };
+    assert!(matches_file_filter(
+        &entry("Annual REPORT.PDF", false),
+        "report"
+    ));
+    assert!(matches_file_filter(
+        &entry("Annual REPORT.PDF", false),
+        ".pdf"
+    ));
+    assert!(matches_file_filter(&entry("Reports", true), "report"));
+    assert!(!matches_file_filter(&entry("Photos", true), "pdf"));
+    assert!(!matches_file_filter(&entry("notes.txt", false), "report"));
+    assert!(matches_file_filter(&entry("anything", true), ""));
+}

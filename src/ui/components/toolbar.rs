@@ -4,9 +4,11 @@ use gpui::{Context, Div, Window, div, prelude::*, px};
 
 impl FileManager {
     pub(crate) fn toolbar(&self, window: &Window, cx: &mut Context<Self>) -> Div {
+        let filter_label = self.language.text("Filter files");
+        let search_label = self.language.text("Search everywhere · Ctrl+P");
         let breadcrumbs = self.location.breadcrumbs(&self.home, self.language);
         let hidden_count = breadcrumbs.len().saturating_sub(2);
-        div()
+        let navigation = div()
             .flex()
             .flex_wrap()
             .items_center()
@@ -110,11 +112,26 @@ impl FileManager {
                 self.location != crate::domain::location::Location::Workspaces,
                 |bar| {
                     bar.child(
-                        div()
-                            .id("extension-filter")
-                            .w(px(150.))
-                            .max_w_full()
-                            .child(self.extension_input.clone()),
+                        toolbar_button(
+                            "toggle-filter",
+                            "filter",
+                            "",
+                            true,
+                            self.filter_open || !self.extension_filter.is_empty(),
+                        )
+                        .tooltip(move |_, cx| {
+                            cx.new(|_| super::modal::StatusTooltip(filter_label.into()))
+                                .into()
+                        })
+                        .on_click(cx.listener(|view, _, window, cx| {
+                            view.filter_open = !view.filter_open;
+                            if view.filter_open {
+                                view.extension_input.read(cx).focus(window);
+                            } else {
+                                view.focus.focus(window);
+                            }
+                            cx.notify();
+                        })),
                     )
                 },
             )
@@ -133,51 +150,31 @@ impl FileManager {
                     )
                 },
             )
+            .when(
+                self.location == crate::domain::location::Location::Trash,
+                |bar| {
+                    bar.child(
+                        toolbar_button(
+                            "empty-trash",
+                            "trash",
+                            self.language.text("Empty Trash…"),
+                            !self.busy && !self.loading,
+                            false,
+                        )
+                        .on_click(
+                            cx.listener(|view, _, window, cx| view.request_empty_trash(window, cx)),
+                        ),
+                    )
+                },
+            )
             .child(
-                div()
-                    .id("search-field")
-                    .w(px(200.))
-                    .max_w_full()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(self.search_input.clone())
-                    // Explorer-style disclosure triangle: folds the "search
-                    // everywhere" results panel away without losing the query.
-                    .child(
-                        div()
-                            .id("search-disclosure")
-                            .flex_shrink_0()
-                            .size(px(20.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded_md()
-                            .cursor_pointer()
-                            .hover(|style| style.bg(color(HOVER)))
-                            .tooltip(move |_, cx| {
-                                cx.new(move |_| {
-                                    super::modal::StatusTooltip("Toggle search results".into())
-                                })
-                                .into()
-                            })
-                            .child(crate::ui::icons::icon(
-                                if self
-                                    .global_search
-                                    .as_ref()
-                                    .is_none_or(|picker| picker.expanded)
-                                {
-                                    "up"
-                                } else {
-                                    "down"
-                                },
-                                12.,
-                                MUTED,
-                            ))
-                            .on_click(cx.listener(|view, _, _, cx| {
-                                view.toggle_global_search(cx);
-                                cx.stop_propagation();
-                            })),
+                toolbar_button("toggle-search", "search", "", true, self.search_open)
+                    .tooltip(move |_, cx| {
+                        cx.new(|_| super::modal::StatusTooltip(search_label.into()))
+                            .into()
+                    })
+                    .on_click(
+                        cx.listener(|view, _, window, cx| view.toggle_global_search(window, cx)),
                     ),
             )
             .when(window.is_fullscreen(), |bar| {
@@ -195,6 +192,70 @@ impl FileManager {
                         cx.stop_propagation();
                     }),
                 )
-            })
+            });
+        div()
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .child(navigation)
+            .when(
+                self.search_open
+                    || (self.filter_open
+                        && self.location != crate::domain::location::Location::Workspaces),
+                |bar| {
+                    bar.child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .items_start()
+                            .h(px(60.))
+                            .gap_3()
+                            .px_4()
+                            .py_2()
+                            .bg(translucent(SURFACE, 0.2))
+                            .border_b_1()
+                            .border_color(color(BORDER))
+                            .when(
+                                self.filter_open
+                                    && self.location
+                                        != crate::domain::location::Location::Workspaces,
+                                |row| {
+                                    row.child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_1()
+                                            .w(px(230.))
+                                            .min_w_0()
+                                            .child(
+                                                div()
+                                                    .text_size(px(10.))
+                                                    .text_color(color(MUTED))
+                                                    .child(self.language.text("Filter files")),
+                                            )
+                                            .child(self.extension_input.clone()),
+                                    )
+                                },
+                            )
+                            .when(self.search_open, |row| {
+                                row.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .w(px(280.))
+                                        .min_w_0()
+                                        .child(
+                                            div()
+                                                .text_size(px(10.))
+                                                .text_color(color(MUTED))
+                                                .child(self.language.text("Search everywhere")),
+                                        )
+                                        .child(self.search_input.clone()),
+                                )
+                            }),
+                    )
+                },
+            )
     }
 }
