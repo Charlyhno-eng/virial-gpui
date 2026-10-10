@@ -1,7 +1,9 @@
-use super::*;
+// Tests for the editable code view's status-bar behavior, driven through the
+// same buffer API the key handler uses. Explicit imports: a glob would pull
+// gpui's own `test` attribute macro over the standard one.
 
-// The widget is exercised through the same buffer API the key handler drives,
-// so these tests pin the behavior the status bar reports.
+use crate::infrastructure::editor_io::{DocumentFormat, LineEnding};
+use crate::state::editor::Editor;
 
 #[test]
 fn the_status_bar_counts_lines_columns_and_the_modified_flag() {
@@ -31,9 +33,9 @@ fn a_save_resets_the_modified_flag_without_touching_the_buffer() {
     assert_eq!(editor.text(), "hello!\n");
 }
 
-fn test_format() -> crate::infrastructure::editor_io::DocumentFormat {
-    crate::infrastructure::editor_io::DocumentFormat {
-        line_ending: crate::infrastructure::editor_io::LineEnding::Lf,
+fn test_format() -> DocumentFormat {
+    DocumentFormat {
+        line_ending: LineEnding::Lf,
         bom: false,
         latin1_fallback: false,
     }

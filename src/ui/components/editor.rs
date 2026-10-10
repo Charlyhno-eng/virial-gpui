@@ -562,17 +562,16 @@ fn highlight_runs(code: Option<&CodePreview>, line: usize, text: &str, font: &Fo
     runs
 }
 
-fn plain_run(range: Range<usize>, font: &Font, color: Option<Hsla>) -> TextRun {
+fn plain_run(range: Range<usize>, font: &Font, tint: Option<Hsla>) -> TextRun {
     TextRun {
         len: range.end - range.start,
         font: font.clone(),
-        color: color.unwrap_or(color(CODE_TEXT)),
+        color: tint.unwrap_or(color(CODE_TEXT)),
         background_color: None,
         underline: None,
         strikethrough: None,
     }
 }
-
 /// The monospace family used by the code preview, resolved once per process.
 fn code_font(cx: &App) -> SharedString {
     static FONT: std::sync::OnceLock<SharedString> = std::sync::OnceLock::new();
