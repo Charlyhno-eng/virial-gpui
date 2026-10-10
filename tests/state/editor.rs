@@ -65,7 +65,7 @@ fn delete_merges_lines_at_the_end_and_start() {
     assert_eq!(editor.text(), "abcd\n");
     editor.set_cursor(4, false);
     editor.delete(true);
-    assert_eq!(editor.text(), "ab\n");
+    assert_eq!(editor.text(), "abc\n");
     // Backspace at the very start of the buffer is a no-op, not a panic.
     editor.set_cursor(0, false);
     editor.delete(true);
@@ -131,7 +131,11 @@ fn shift_indents_and_outdents_every_line_of_the_selection() {
     editor.set_cursor(0, false);
     editor.set_cursor(3, true);
     editor.shift(false);
-    assert_eq!(editor.text(), "    a\n    b\n    c\n", "all lines in the selection");
+    assert_eq!(
+        editor.text(),
+        "    a\n    b\nc\n",
+        "a line whose start the selection merely touches is left alone"
+    );
     editor.shift(true);
     assert_eq!(editor.text(), "a\nb\nc\n");
 }
@@ -167,7 +171,7 @@ fn movement_covers_characters_words_lines_and_document() {
     editor.move_by(Direction::LineUp, false, None);
     assert_eq!(editor.line_column(), (1, 1));
     editor.move_by(Direction::DocumentEnd, false, None);
-    assert_eq!(editor.cursor(), text.len() - 1);
+    assert_eq!(editor.cursor(), text.len(), "at the very end of the buffer");
     editor.move_by(Direction::DocumentStart, false, None);
     assert_eq!(editor.cursor(), 0);
 }
@@ -191,7 +195,7 @@ fn movement_never_splits_a_multibyte_character() {
     editor.move_by(Direction::Right, false, None);
     assert_eq!(editor.cursor(), 3);
     editor.move_by(Direction::DocumentEnd, false, None);
-    assert_eq!(editor.cursor(), "héllo 👋\n".len() - 1, "on the final newline");
+    assert_eq!(editor.cursor(), "héllo 👋\n".len(), "at the very end");
 }
 
 #[test]
@@ -207,11 +211,13 @@ fn select_word_and_select_all_cover_the_expected_spans() {
 fn clamping_keeps_the_cursor_inside_the_buffer() {
     let mut editor = make("ab\ncd\n");
     editor.set_cursor(999, false);
-    assert_eq!(editor.line_column(), (3, 1), "the trailing newline of the last line");
+    assert_eq!(editor.line_column(), (3, 1), "after the final newline");
     editor.move_by(Direction::Right, false, None);
-    assert_eq!(editor.cursor(), 5, "stays put at the end");
+    assert_eq!(editor.cursor(), 6, "stays put at the very end");
+    editor.move_by(Direction::Left, false, None);
+    assert_eq!(editor.cursor(), 5);
     editor.move_by(Direction::LineUp, false, None);
-    assert_eq!(editor.line_column(), (1, 3));
+    assert_eq!(editor.line_column(), (2, 3));
     editor.set_cursor(1, false);
     editor.move_by(Direction::LineUp, false, None);
     assert_eq!(editor.line_column(), (1, 1));

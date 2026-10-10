@@ -528,7 +528,6 @@ impl Editor {
                         let wanted = *self.sticky_column.get_or_insert(current);
                         let target_text = self.buffer.line(target_line);
                         let offset = byte_index(target_text, wanted).min(target_text.len());
-                        self.sticky_column = Some(char_count(&target_text[..offset]));
                         self.buffer.line_start(target_line) + offset
                     }
                     None => cursor,
@@ -581,12 +580,19 @@ fn is_word(ch: char) -> bool {
 
 fn word_left(text: &str, cursor: usize) -> usize {
     let mut index = cursor;
+    let mut moved = false;
     while index > 0 {
         let previous = text[..index].char_indices().next_back().unwrap_or((0, ' '));
         if !is_word(previous.1) {
             break;
         }
         index = previous.0;
+        moved = true;
+    }
+    // From the end of a word the motion stops at its start; from a separator
+    // it continues across the separators to the previous word's start.
+    if moved {
+        return index;
     }
     while index > 0 {
         let previous = text[..index].char_indices().next_back().unwrap_or((0, ' '));
