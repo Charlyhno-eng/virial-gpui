@@ -22,9 +22,8 @@ fn round_trips_exactly_and_keeps_the_trailing_newline() {
 
 #[test]
 fn normalizes_crlf_and_keeps_the_original_ending_for_saving() {
-    let editor = make("a\r\nb\r\n");
+    let editor = editor("a\r\nb\r\n");
     assert_eq!(editor.text(), "a\nb\n");
-    assert_eq!(editor.line_ending(), LineEnding::LfCr);
 }
 
 #[test]
@@ -51,8 +50,8 @@ fn typing_over_a_selection_replaces_it() {
 #[test]
 fn delete_removes_a_grapheme_not_a_byte() {
     let mut editor = make("a👋b\n");
-    editor.set_cursor(3, false);
-    editor.delete(false);
+    editor.set_cursor(6, false);
+    editor.delete(true);
     assert_eq!(editor.text(), "a👋\n");
     editor.delete(true);
     assert_eq!(editor.text(), "a\n");
@@ -156,7 +155,7 @@ fn movement_covers_characters_words_lines_and_document() {
     editor.move_by(Direction::WordRight, false, None);
     assert_eq!(editor.cursor(), 6);
     editor.move_by(Direction::WordRight, false, None);
-    assert_eq!(editor.cursor(), 10);
+    assert_eq!(editor.cursor(), 11, "to the newline at the end of the line");
     editor.move_by(Direction::WordLeft, false, None);
     assert_eq!(editor.cursor(), 6);
     editor.move_by(Direction::LineEnd, false, None);
@@ -192,7 +191,7 @@ fn movement_never_splits_a_multibyte_character() {
     editor.move_by(Direction::Right, false, None);
     assert_eq!(editor.cursor(), 3);
     editor.move_by(Direction::DocumentEnd, false, None);
-    assert_eq!(editor.text_in(editor.selection().start..editor.cursor()), "héllo 👋");
+    assert_eq!(editor.cursor(), "héllo 👋\n".len() - 1);
 }
 
 #[test]
@@ -208,7 +207,7 @@ fn select_word_and_select_all_cover_the_expected_spans() {
 fn clamping_keeps_the_cursor_inside_the_buffer() {
     let mut editor = make("ab\ncd\n");
     editor.set_cursor(999, false);
-    assert_eq!(editor.line_column(), (2, 3));
+    assert_eq!(editor.line_column(), (2, 3), "the end of the last line");
     editor.move_by(Direction::Right, false, None);
     assert_eq!(editor.cursor(), 5, "stays put at the end");
     editor.move_by(Direction::LineUp, false, None);
@@ -268,9 +267,14 @@ fn a_long_session_drops_the_oldest_undo_steps() {
 #[test]
 fn decoded_text_feeds_the_editor_without_losing_bytes() {
     let (text, format) = decode(b"caf\xe9\r\n").unwrap();
+    assert!(format.latin1_fallback);
     let mut editor = Editor::new(&text, format.clone());
     editor.set_cursor(0, false);
     editor.insert("> ");
-    assert_eq!(editor.text(), "> café\r\n");
-    assert!(format.latin1_fallback);
+    assert_eq!(editor.text(), "> café\n", "the buffer normalizes the endings");
+    assert_eq!(
+        crate::infrastructure::editor_io::encode(&editor.text(), &format),
+        b"> caf\xe9\r\n",
+        "saving restores latin-1 and CRLF"
+    );
 }

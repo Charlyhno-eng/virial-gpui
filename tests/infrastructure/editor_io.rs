@@ -13,7 +13,7 @@ fn detects_the_dominant_line_ending() {
     assert_eq!(LineEnding::detect("a\nb\n"), LineEnding::Lf);
     assert_eq!(LineEnding::detect("a\r\nb\r\n"), LineEnding::LfCr);
     assert_eq!(LineEnding::detect("a\rb\r"), LineEnding::Cr);
-    // A mixed file follows the majority.
+    // A mixed file follows the strict majority.
     assert_eq!(LineEnding::detect("a\r\nb\r\nc\n"), LineEnding::LfCr);
     assert_eq!(LineEnding::detect("a\nb\nc\r\n"), LineEnding::Lf);
     assert_eq!(LineEnding::detect("single line"), LineEnding::Lf);

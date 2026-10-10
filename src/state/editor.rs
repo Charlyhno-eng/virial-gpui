@@ -51,12 +51,12 @@ impl History {
         {
             let previous = &mut last.changes[0];
             let current = &edit.changes[0];
-            let contiguous = previous.range.end == current.range.start
+            let contiguous = previous.range.start + previous.after.len() == current.range.start
+                && current.range.is_empty()
                 && previous.after.len() + current.after.len() <= COALESCE_LIMIT
-                && previous.after.chars().count() == 1
                 && current.after.chars().count() == 1;
             if contiguous {
-                previous.range.end = current.range.end;
+                previous.range.end = current.range.start;
                 previous.after.push_str(&current.after);
                 return;
             }
@@ -106,7 +106,7 @@ impl Buffer {
         self.lines.get(index).map_or("", String::as_str)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     pub fn lines(&self) -> &[String] {
         &self.lines
     }
@@ -246,7 +246,7 @@ impl Editor {
         self.anchor.min(self.cursor)..self.anchor.max(self.cursor)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     pub fn has_selection(&self) -> bool {
         self.anchor != self.cursor
     }
@@ -506,7 +506,7 @@ impl Editor {
     }
 
     /// Select the next occurrence of the current selection, as an IDE does.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     pub fn select_word_at(&mut self, offset: usize) {
         let offset = self.buffer.clamp_offset(offset);
         let text = self.text();
@@ -568,11 +568,13 @@ fn word_left(text: &str, cursor: usize) -> usize {
 fn word_right(text: &str, cursor: usize) -> usize {
     let mut index = cursor;
     let length = text.len();
+    // A word motion ends the run of word characters, then the run of
+    // separators — but a newline ends the movement: words do not span lines.
     while index < length {
         let Some(ch) = text[index..].chars().next() else {
             break;
         };
-        if !is_word(ch) {
+        if !is_word(ch) || ch == '\n' {
             break;
         }
         index += ch.len_utf8();
@@ -581,7 +583,7 @@ fn word_right(text: &str, cursor: usize) -> usize {
         let Some(ch) = text[index..].chars().next() else {
             break;
         };
-        if is_word(ch) {
+        if is_word(ch) || ch == '\n' {
             break;
         }
         index += ch.len_utf8();

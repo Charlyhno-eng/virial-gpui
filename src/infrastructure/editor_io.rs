@@ -19,11 +19,11 @@ impl LineEnding {
     /// Guess the dominant ending, or Lf when the file is single-line.
     pub fn detect(text: &str) -> Self {
         let crlf = text.matches("\r\n").count();
-        let lf = text.matches('\n').count();
-        let cr = text.matches('\r').count();
-        if crlf > 0 && crlf * 2 >= lf + cr {
+        let lone_lf = text.matches('\n').count() - crlf;
+        let lone_cr = text.matches('\r').count() - crlf;
+        if crlf > lone_lf && crlf > lone_cr {
             Self::LfCr
-        } else if cr > 0 && cr * 2 >= lf + cr {
+        } else if lone_cr > lone_lf {
             Self::Cr
         } else {
             Self::Lf
@@ -54,11 +54,14 @@ pub fn decode(bytes: &[u8]) -> Option<(String, DocumentFormat)> {
         Some(body) => (body, true),
         None => (bytes, false),
     };
+    // A NUL byte means binary, not text: refuse it before any decoding.
+    if body.contains(&0) {
+        return None;
+    }
     let (text, latin1_fallback) = match std::str::from_utf8(body) {
         Ok(text) => (text.to_owned(), false),
         // Latin-1 maps every byte to exactly one character, so a save never
-        // loses data. A NUL byte means binary, not text: refuse it.
-        Err(_) if body.contains(&0) => return None,
+        // loses data.
         Err(_) => (
             body.iter().map(|byte| char::from(*byte)).collect::<String>(),
             true,
@@ -92,7 +95,22 @@ pub fn encode(text: &str, format: &DocumentFormat) -> Vec<u8> {
     if format.bom {
         bytes.extend_from_slice(&[0xef, 0xbb, 0xbf]);
     }
-    bytes.extend_from_slice(normalized.as_bytes());
+    if format.latin1_fallback {
+        // Chars within Latin-1 go back as single bytes; anything the user
+        // typed outside that range keeps its UTF-8 form rather than being
+        // mangled into a question mark.
+        for ch in normalized.chars() {
+            let code = ch as u32;
+            if code <= 0xff {
+                bytes.push(code as u8);
+            } else {
+                let mut encoded = [0u8; 4];
+                bytes.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+            }
+        }
+    } else {
+        bytes.extend_from_slice(normalized.as_bytes());
+    }
     bytes
 }
 
