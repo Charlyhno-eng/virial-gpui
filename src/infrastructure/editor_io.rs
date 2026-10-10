@@ -64,10 +64,11 @@ pub fn decode(bytes: &[u8]) -> Option<(String, DocumentFormat)> {
             true,
         ),
     };
+    let line_ending = LineEnding::detect(&text);
     Some((
         text,
         DocumentFormat {
-            line_ending: LineEnding::detect(&text),
+            line_ending,
             bom,
             latin1_fallback,
         },

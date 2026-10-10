@@ -44,11 +44,12 @@ impl History {
             return;
         }
         self.redo.clear();
-        if typing && let Some(last) = self.undo.last_mut()
+        if typing
+            && let Some(last) = self.undo.last_mut()
             && edit.changes.len() == 1
             && last.changes.len() == 1
         {
-            let previous = &last.changes[0];
+            let previous = &mut last.changes[0];
             let current = &edit.changes[0];
             let contiguous = previous.range.end == current.range.start
                 && previous.after.len() + current.after.len() <= COALESCE_LIMIT
@@ -275,9 +276,11 @@ impl Editor {
     }
 
     /// Replace the selection (or insert at the caret) and leave the caret after
-    /// the inserted text. `typing` marks single characters, which coalesce.
+    /// the inserted text. A single character is typed input, which coalesces
+    /// with its neighbours into one undo step.
     pub fn insert(&mut self, text: &str) {
         let selection = self.selection();
+        let typing = text.chars().count() == 1;
         let change = self.buffer.replace(selection, text);
         let end = change.range.start + change.after.len();
         let edit = Edit {
@@ -380,7 +383,7 @@ impl Editor {
         } else {
             leading
         };
-        self.insert(&format!("{eol}{indent}"));
+        self.insert(&format!("{}{indent}", eol.as_str()));
     }
 
     /// Indent or outdent every line the selection touches.
@@ -390,40 +393,40 @@ impl Editor {
         let first = self.buffer.line_of(selection.start);
         let last = self.buffer.line_of(selection.end);
         let mut changes = Vec::new();
-        for line in first..=last {
+        // Applied from the bottom up so the offsets of the lines above stay valid.
+        for line in (first..=last).rev() {
             let start = self.buffer.line_start(line);
             let content = text[start..].split('\n').next().unwrap_or("");
-            let (range, after) = if outdent {
-                let removed = content
-                    .chars()
-                    .take_while(|ch| *ch == ' ' || *ch == '\t')
-                    .map(char::len_utf8)
-                    .sum::<usize>();
-                let removed = if content.starts_with('\t') {
+            let range = if outdent {
+                let width = if content.starts_with('\t') {
                     1
                 } else {
-                    removed.min(self.indent.len())
+                    content
+                        .chars()
+                        .take_while(|ch| *ch == ' ' || *ch == '\t')
+                        .map(char::len_utf8)
+                        .sum::<usize>()
+                        .min(self.indent.len())
                 };
-                (start..start + removed, String::new())
+                if width == 0 {
+                    continue;
+                }
+                start..start + width
             } else {
-                (start..start, self.indent.clone())
+                start..start
             };
-            if !outdent || !range.is_empty() {
-                let change = self.buffer.replace(range, &after);
-                changes.push((change.range.start, change.after.len(), change));
-            }
+            let after = if outdent { "" } else { &self.indent };
+            changes.push(self.buffer.replace(range, after));
         }
         if changes.is_empty() {
             return;
         }
-        changes.sort_by(|left, right| right.0.cmp(&left.0));
-        let width: usize = changes.iter().map(|(_, after, _)| after.len()).sum();
-        let edit = Edit {
-            changes: changes.into_iter().map(|(_, _, change)| change).collect(),
-        };
+        // Every change is the same indent width, so the caret keeps its column.
+        let width: usize = changes.iter().map(|change| change.after.len()).sum();
+        let edit = Edit { changes };
         self.history.record(edit, false);
-        let first = self.buffer.clamp_offset(selection.start);
-        self.cursor = (first + width).min(self.buffer.text().len());
+        let anchor = self.buffer.clamp_offset(selection.start);
+        self.cursor = (anchor + width).min(self.buffer.text().len());
         self.anchor = self.cursor;
     }
 
