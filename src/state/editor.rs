@@ -288,6 +288,28 @@ impl Editor {
         self.anchor = end;
     }
 
+    /// Replace an explicit byte range, used by IME composition.
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str) {
+        self.insert_range(range, text, false);
+    }
+
+    /// Insert at an explicit range and record the change, so an IME edit lands
+    /// in the history like any other.
+    fn insert_range(&mut self, range: Range<usize>, text: &str, typing: bool) {
+        let change = self.buffer.replace(range, text);
+        let edit = Edit {
+            changes: vec![change],
+        };
+        self.history.record(edit, typing);
+        let end = edit.changes[0].range.start + edit.changes[0].after.len();
+        self.cursor = end;
+        self.anchor = end;
+    }
+
+    pub fn text_in(&self, range: Range<usize>) -> String {
+        self.buffer.text_in(range)
+    }
+
     /// Delete the selection, or the unit before/after the caret.
     pub fn delete(&mut self, backwards: bool) {
         let selection = self.selection();
