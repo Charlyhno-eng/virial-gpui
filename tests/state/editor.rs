@@ -22,8 +22,8 @@ fn round_trips_exactly_and_keeps_the_trailing_newline() {
 
 #[test]
 fn normalizes_crlf_and_keeps_the_original_ending_for_saving() {
-    let editor = editor("a\r\nb\r\n");
-    assert_eq!(editor.text(), "a\nb\n");
+    let normalized = make("a\r\nb\r\n");
+    assert_eq!(normalized.text(), "a\nb\n");
 }
 
 #[test]
