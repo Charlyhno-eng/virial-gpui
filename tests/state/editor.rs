@@ -220,7 +220,7 @@ fn clamping_keeps_the_cursor_inside_the_buffer() {
     assert_eq!(editor.line_column(), (1, 3), "line one, clamped to its end");
     editor.set_cursor(1, false);
     editor.move_by(Direction::LineUp, false, None);
-    assert_eq!(editor.line_column(), (1, 1));
+    assert_eq!(editor.line_column(), (1, 2), "LineUp on the first line stays put");
 }
 
 #[test]
