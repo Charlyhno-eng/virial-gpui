@@ -469,7 +469,7 @@ impl Element for EditorRow {
         let view = self.view.read(cx);
         let text = view.editor.buffer().line(self.line).to_owned();
         let style = window.text_style();
-        let runs = highlight_runs(self.code.as_deref(), self.line, &text, style.font());
+        let runs = highlight_runs(self.code.as_deref(), self.line, &text, &style.font());
         let shape = window
             .text_system()
             .shape_line(text.into(), style.font_size.to_pixels(window.rem_size()), &runs, None);
@@ -544,7 +544,7 @@ impl Element for EditorRow {
 
 /// Build the color runs of one line from the preview's highlighting, filling the
 /// gaps with the default code color.
-fn highlight_runs(code: Option<&CodePreview>, line: usize, text: &str, font: Font) -> Vec<TextRun> {
+fn highlight_runs(code: Option<&CodePreview>, line: usize, text: &str, font: &Font) -> Vec<TextRun> {
     let empty = CodeLine {
         text: text.into(),
         number: String::new().into(),
@@ -569,10 +569,10 @@ fn highlight_runs(code: Option<&CodePreview>, line: usize, text: &str, font: Fon
     runs
 }
 
-fn plain_run(range: Range<usize>, font: Font, color: Option<Hsla>) -> TextRun {
+fn plain_run(range: Range<usize>, font: &Font, color: Option<Hsla>) -> TextRun {
     TextRun {
         len: range.end - range.start,
-        font,
+        font: font.clone(),
         color: color.unwrap_or_else(|| white()),
         background_color: None,
         underline: None,
@@ -709,7 +709,7 @@ impl EntityInputHandler for CodeEditor {
     fn bounds_for_range(
         &mut self,
         range: Range<usize>,
-        element: Bounds<Pixels>,
+        _: Bounds<Pixels>,
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
