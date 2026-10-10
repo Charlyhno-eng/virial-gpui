@@ -41,6 +41,12 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   « Unable to reserve cache », donc sans cache du tout. Chaque job porte maintenant
   le sien dans la clé.
 
+- **Aperçu Markdown** : un fichier `.md`/`.markdown` s'ouvre sur une vue
+  rendue (titres, gras/italique, code inline et blocs clos, liens, listes,
+  citations, filets) avec un bouton « Vue source / Vue rendue » pour basculer
+  vers l'aperçu coloré du code. Rendu maison sans dépendance : mêmes styles
+  que le thème de l'application, spans calculées une fois au chargement.
+
 ### Ajouts
 - **Section d'installation dans le README** : un tableau des quatre archives
   publiées (archive autonome Linux, `.deb`, `Virial.app`, zip Windows), la

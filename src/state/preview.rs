@@ -17,6 +17,8 @@ pub(crate) enum Preview {
     Media(crate::infrastructure::media::Media),
     Text(String),
     Code(CodePreview),
+    /// A Markdown document, parsed on the worker; `bool` = rendered view.
+    Markdown(super::markdown::Document, bool),
     /// The file is open in the editor rather than only previewed.
     Editing,
     Unavailable,
@@ -212,6 +214,15 @@ fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
         }
         Err(_) => return Preview::Unavailable,
     };
+    // Markdown files get a rendered view alongside the syntax-colored source.
+    let lower = entry
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    if matches!(lower.as_deref(), Some("md" | "markdown")) {
+        return Preview::Markdown(super::markdown::Document::new(&entry.path, text), true);
+    }
     match CodePreview::new(&entry.path, text) {
         Some(code) => Preview::Code(code),
         None => Preview::Text(text.to_owned()),
