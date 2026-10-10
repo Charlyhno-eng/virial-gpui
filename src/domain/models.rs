@@ -40,34 +40,19 @@ impl Entry {
         }
     }
 
+    /// Artwork name for this entry: exact filenames and a long extension table
+    /// first, then the scanned kind, then a generic document. See
+    /// [`crate::domain::file_type`].
     pub fn icon(&self) -> &'static str {
         if self.directory {
             return "folder";
         }
-        match self
-            .path
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "py" | "pyw" => return "python",
-            "js" | "mjs" | "cjs" => return "javascript",
-            "ts" => return "typescript",
-            "jsx" | "tsx" => return "react",
-            "rs" => return "rust",
-            "html" | "htm" => return "html",
-            "css" => return "css",
-            "scss" | "sass" => return "sass",
-            "json" => return "json",
-            "toml" | "yaml" | "yml" => return "config",
-            "sh" | "bash" => return "shell",
-            "c" | "h" => return "c",
-            "cpp" | "cc" | "cxx" | "hpp" => return "cpp",
-            "pdf" => return "pdf",
-            "md" => return "markdown",
-            _ => {}
+        let file_name = self.path.file_name().and_then(|n| n.to_str());
+        if let Some(name) = file_name {
+            let art = crate::domain::file_type::icon_for(name);
+            if art != "file" {
+                return art;
+            }
         }
         match self.kind() {
             "Folder" => "folder",
