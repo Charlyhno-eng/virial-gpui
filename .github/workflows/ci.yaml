@@ -113,6 +113,10 @@ jobs:
       - name: Upload Debian package
         uses: actions/upload-artifact@v6
         with:
+          name: virial-gpui-linux
+          path: target/debian/*.deb
+          if-no-files-found: error
+          # v6 rejects unknown inputs instead of ignoring them.
           persist-credentials: false
       - name: Install NASM
         shell: pwsh
