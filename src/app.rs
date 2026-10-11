@@ -10,7 +10,6 @@ use crate::{
 use gpui::{AppContext, Context, KeyDownEvent, ScrollStrategy, UniformListScrollHandle, Window};
 use std::{
     path::PathBuf,
-    process::Command,
     sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
@@ -492,9 +491,7 @@ impl FileManager {
                 .as_ref()
                 .map(|file| file.path.as_path())
                 .unwrap_or(&entry.path);
-            let result = Command::new("xdg-open")
-                .arg(path)
-                .output()
+            let result = crate::platform::shell_open::open(path)
                 .map_err(|error| {
                     format!(
                         "{} {}: {error}",
@@ -502,21 +499,10 @@ impl FileManager {
                         entry.path.display()
                     )
                 })
-                .and_then(|output| {
-                    if output.status.success() {
-                        crate::infrastructure::recent::record(&data, &opened_path).map_err(
-                            |error| {
-                                format!("{}: {error}", language.text("Cannot save recent history"))
-                            },
-                        )
-                    } else {
-                        Err(format!(
-                            "{} {}: {}",
-                            language.text("Cannot open"),
-                            entry.path.display(),
-                            String::from_utf8_lossy(&output.stderr).trim()
-                        ))
-                    }
+                .and_then(|()| {
+                    crate::infrastructure::recent::record(&data, &opened_path).map_err(|error| {
+                        format!("{}: {error}", language.text("Cannot save recent history"))
+                    })
                 });
             Ok::<_, String>((result, extracted))
         });
@@ -752,8 +738,8 @@ impl FileManager {
     }
 
     /// Open a file living on a connected SSH host: download it into a local
-    /// cache directory, then hand the local copy to xdg-open. The cache is
-    /// wiped on application exit.
+    /// cache directory, then hand the local copy to the host's launcher. The
+    /// cache is wiped on application exit.
     pub(crate) fn open_remote_file(
         &mut self,
         host: crate::infrastructure::ssh::HostId,
@@ -794,24 +780,9 @@ impl FileManager {
                 })
                 .await
                 .unwrap_or_else(|join| Err(format!("SSH task failed: {join}")))?;
-            let result = Command::new("xdg-open")
-                .arg(&downloaded)
-                .output()
-                .map_err(|error| {
-                    format!("{} {}: {error}", language.text("Cannot open"), entry_name)
-                })
-                .and_then(|output| {
-                    if output.status.success() {
-                        Ok(())
-                    } else {
-                        Err(format!(
-                            "{} {}: {}",
-                            language.text("Cannot open"),
-                            entry_name,
-                            String::from_utf8_lossy(&output.stderr).trim()
-                        ))
-                    }
-                });
+            let result = crate::platform::shell_open::open(&downloaded).map_err(|error| {
+                format!("{} {}: {error}", language.text("Cannot open"), entry_name)
+            });
             Ok::<_, String>((result, downloaded))
         });
         cx.spawn(async move |view, cx| {
