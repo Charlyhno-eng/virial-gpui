@@ -153,7 +153,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item target/release/virial-gpui.exe dist/virial-gpui.exe
       - name: Upload Windows executable
-        if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'packaging')
+        # Same condition as the build above, so the upload can never outlive the
+        # artefact it uploads: when the build is skipped, this step must be
+        # skipped too (`if-no-files-found: error` would otherwise fail the job).
+        if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'packaging')
         uses: actions/upload-artifact@v6
         with:
           name: virial-gpui-windows-x64
