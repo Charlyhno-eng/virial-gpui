@@ -11,6 +11,25 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouts
+- **Corbeille Windows fonctionnelle** : la vue Corbeille listait toujours une
+  erreur « non supportée » sous Windows — le module n'existait pas (stub).
+  L'énumération lit les dossiers `$Recycle.Bin\<SID>` de chaque volume (fichiers
+  `$R*` + métadonnées `$I*`, chemin d'origine et heure de suppression), le
+  vidage supprime paires `$R`/`$I`, et la restauration renomme vers le chemin
+  d'origine en un seul pas annulable via l'historique d'undo.
+- **Aperçu HTML** : un `.html`/`.htm`/`.xhtml` s'ouvre comme le Markdown sur
+  deux vues — code coloré et vue rendue (titres, listes avec puces et
+  numérotation, tableaux, citations, blocs de code, liens, filets) — avec le
+  bouton « Vue source / Vue rendue » pour basculer. Rendu maison sans
+  dépendance, titres de page et CSS/script ignorés proprement.
+- **Éditeur utilisable sous Windows** : les caractères tapés au clavier ne
+  s'affichaient pas. Cause : parmi les enregistrements multiples, une seule
+  surface d'entrée couvre désormais toute la zone de texte (les caractères
+  Windows arrivent par `WM_CHAR` au handler, pas par `on_key_down`) : saisir,
+  effacer, coller fonctionne ; flèches, undo/redo et Ctrl+S étaient déjà
+  opérationnels.
+
 ### Corrections
 - **Documentation d'installation et de release à jour** — le README pointe vers
   `/releases/latest` avec un tableau court (un seul livrable Linux : le `.deb`),

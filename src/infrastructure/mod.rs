@@ -63,39 +63,16 @@ pub(crate) fn try_lock_exclusive(file: &File, busy: &'static str) -> io::Result<
     Err(error)
 }
 
-// Freedesktop-trash module: Linux only; a portable stub serves other targets.
+// Freedesktop-trash module: Linux and macOS; the native Recycle Bin serves
+// Windows, and a portable stub serves the remaining targets.
 pub(crate) mod harness;
 pub(crate) mod toolkit;
 #[cfg(unix)]
 pub(crate) mod trash;
-#[cfg(not(unix))]
-pub(crate) mod trash_stub {
-    use crate::domain::models::Entry;
-    use std::{io, path::Path, path::PathBuf};
-
-    pub(crate) fn read(_data: &Path) -> io::Result<Vec<Entry>> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "Trash is not supported on this platform yet",
-        ))
-    }
-
-    pub(crate) fn empty(_data: &Path) -> io::Result<()> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "Emptying Trash is not supported on this platform yet",
-        ))
-    }
-
-    pub(crate) fn restore(_data: &Path, _paths: &[PathBuf]) -> io::Result<()> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "Trash restore is not supported on this platform yet",
-        ))
-    }
-}
-#[cfg(not(unix))]
-pub(crate) use trash_stub as trash;
+#[cfg(windows)]
+pub(crate) mod trash_windows;
+#[cfg(windows)]
+pub(crate) use trash_windows as trash;
 
 #[cfg(all(test, windows))]
 #[path = "../../tests/infrastructure/queue_windows.rs"]
