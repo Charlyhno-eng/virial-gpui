@@ -12,6 +12,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- Navigation : boutons « dossier parent » et « actualiser » dans la barre de
+  navigation, à côté de précédent/suivant. Le bouton parent n'apparaît que
+  dans un dossier local (là où l'action est possible) et se grise à la racine
+  ; actualiser est indisponible pendant une opération en cours. Les actions
+  restent liées à leurs raccourcis existants (Backspace/← et F5).
+
+### Ajouts
 - Publication : bump de version `0.1.0` → `0.1.2` (`0.1.1` était déjà publié)
   pour déclencher la première release automatique après merge.
 
