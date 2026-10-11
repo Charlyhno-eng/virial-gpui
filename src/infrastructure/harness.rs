@@ -24,9 +24,6 @@ pub struct Harness {
     /// Folder names relative to the home directory, in preference order. The
     /// first one that exists identifies the installation.
     pub homes: &'static [&'static str],
-    /// Files and folders that belong to this harness, matched by name inside
-    /// one of its homes (`""` means the home folder itself).
-    pub markers: &'static [&'static str],
     /// Where the harness keeps its system prompt, when it has one.
     pub prompt: &'static [&'static str],
     /// Where per-harness credentials live, listed for the details panel.
@@ -38,7 +35,6 @@ pub const HARNESS_LIST: &[Harness] = &[
         name: "Claude Code",
         icon: "config",
         homes: &[".claude"],
-        markers: &["", "agents", "skills", "commands", "settings.json", "projects", "sessions"],
         prompt: &["CLAUDE.md", "agents"],
         credentials: &[".credentials.json", "settings.json"],
     },
@@ -46,7 +42,6 @@ pub const HARNESS_LIST: &[Harness] = &[
         name: "Codex",
         icon: "config",
         homes: &[".codex"],
-        markers: &["", "config.toml", "auth.json", "sessions", "memories", "logs_2.sqlite"],
         prompt: &["AGENTS.md", "instructions.md"],
         credentials: &["auth.json", ".env"],
     },
@@ -54,7 +49,6 @@ pub const HARNESS_LIST: &[Harness] = &[
         name: "Hermes",
         icon: "config",
         homes: &[".hermes", "AppData/Local/hermes"],
-        markers: &["", "profiles", "skills", "memories", "sessions", "cron", "plugins"],
         prompt: &["SOUL.md", "profiles"],
         credentials: &[".env", "profiles"],
     },
@@ -62,7 +56,6 @@ pub const HARNESS_LIST: &[Harness] = &[
         name: "OpenClaw",
         icon: "config",
         homes: &[".config/openclaw", ".openclaw"],
-        markers: &["", "agents", "config", "workspace"],
         prompt: &["SOUL.md", "agents"],
         credentials: &[".env", "auth.json"],
     },
@@ -70,7 +63,6 @@ pub const HARNESS_LIST: &[Harness] = &[
         name: "Zcode",
         icon: "config",
         homes: &[".zcode"],
-        markers: &["", "cli", "workspace", "v2", "plugin-workspace"],
         prompt: &["SOUL.md", "workspace"],
         credentials: &[".env"],
     },
@@ -78,7 +70,6 @@ pub const HARNESS_LIST: &[Harness] = &[
         name: "OpenCode",
         icon: "config",
         homes: &[".config/opencode", ".opencode"],
-        markers: &["", "agents", "config.json", "opencode.json"],
         prompt: &["AGENTS.md", "agents"],
         credentials: &[".env", "auth.json"],
     },
@@ -86,7 +77,6 @@ pub const HARNESS_LIST: &[Harness] = &[
         name: "Overmind",
         icon: "config",
         homes: &[".overmind"],
-        markers: &["", ".env", ".mcp.json", "hermes"],
         prompt: &["hermes"],
         credentials: &[".env", ".env.postgres"],
     },
@@ -182,6 +172,7 @@ fn finish(harness: &Harness, home: PathBuf, role: Role) -> HarnessInfo {
 }
 
 /// Every harness installed on this machine, for an overview entry point.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn installed() -> Vec<(&'static str, PathBuf)> {
     let Some(home_root) = home() else {
         return Vec::new();
