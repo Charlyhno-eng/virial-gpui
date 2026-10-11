@@ -1,0 +1,653 @@
+//! Editing engine behind the code view: line buffer, cursor, selection and a
+//! coalescing undo history. Pure text logic with no GPUI dependency, so it is
+//! unit tested on its own.
+//!
+//! Invariant: the document text is always `lines.join("\n")`. A file ending in
+//! a newline simply has an empty last line, so a round trip is exact and no
+//! edit needs to special-case the end of the file.
+
+use crate::infrastructure::editor_io::{DocumentFormat, LineEnding};
+use std::ops::Range;
+use unicode_segmentation::UnicodeSegmentation;
+
+/// One replaced span plus the text before and after it, so undo and redo are
+/// the same operation with the other side of the pair.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Change {
+    pub range: Range<usize>,
+    pub before: String,
+    pub after: String,
+}
+
+/// Every change of one user action, applied from the last offset backwards.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Edit {
+    pub changes: Vec<Change>,
+}
+
+/// Longest a history stays useful before the oldest steps are dropped.
+const MAX_HISTORY: usize = 500;
+/// A run of typed characters longer than this becomes several undo steps.
+const COALESCE_LIMIT: usize = 64;
+
+#[derive(Clone, Debug, Default)]
+pub struct History {
+    undo: Vec<Edit>,
+    redo: Vec<Edit>,
+}
+
+impl History {
+    /// Record one action. Consecutive single-character typing merges into the
+    /// previous step, so one Ctrl+Z removes the word just typed.
+    pub fn record(&mut self, edit: Edit, typing: bool) {
+        if edit.changes.is_empty() {
+            return;
+        }
+        self.redo.clear();
+        if typing
+            && let Some(last) = self.undo.last_mut()
+            && edit.changes.len() == 1
+            && last.changes.len() == 1
+        {
+            let previous = &mut last.changes[0];
+            let current = &edit.changes[0];
+            let contiguous = previous.range.start + previous.after.len() == current.range.start
+                && current.range.is_empty()
+                && previous.after.len() + current.after.len() <= COALESCE_LIMIT
+                && current.after.chars().count() == 1;
+            if contiguous {
+                previous.range.end = current.range.start;
+                previous.after.push_str(&current.after);
+                return;
+            }
+        }
+        self.undo.push(edit);
+        if self.undo.len() > MAX_HISTORY {
+            self.undo.remove(0);
+        }
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+}
+
+/// The document: lines without terminators, plus the format to save it with.
+pub struct Buffer {
+    lines: Vec<String>,
+    pub format: DocumentFormat,
+    /// Bumped on every change so the view knows a re-highlight is due.
+    pub revision: u64,
+}
+
+impl Buffer {
+    pub fn new(text: &str, format: DocumentFormat) -> Self {
+        Self {
+            lines: text
+                .replace("\r\n", "\n")
+                .replace('\r', "\n")
+                .split('\n')
+                .map(str::to_owned)
+                .collect(),
+            format,
+            revision: 0,
+        }
+    }
+
+    pub fn line_count(&self) -> usize {
+        self.lines.len()
+    }
+
+    pub fn line(&self, index: usize) -> &str {
+        self.lines.get(index).map_or("", String::as_str)
+    }
+
+    #[allow(dead_code)]
+    pub fn lines(&self) -> &[String] {
+        &self.lines
+    }
+
+    /// The exact text to save; `lines.join("\n")` is the whole document.
+    pub fn text(&self) -> String {
+        self.lines.join("\n")
+    }
+
+    /// Byte offset where a line starts, the unit every range is expressed in.
+    pub fn line_start(&self, line: usize) -> usize {
+        self.lines
+            .iter()
+            .take(line)
+            .map(|text| text.len() + 1)
+            .sum()
+    }
+
+    /// Line containing a byte offset. An offset sitting exactly on the newline
+    /// belongs to the line it terminates, where a cursor is allowed to rest.
+    pub fn line_of(&self, offset: usize) -> usize {
+        let mut start = 0;
+        for (index, text) in self.lines.iter().enumerate() {
+            if offset <= start + text.len() {
+                return index;
+            }
+            start += text.len() + 1;
+        }
+        self.lines.len() - 1
+    }
+
+    /// Clamp a byte offset into the buffer and off any newline.
+    pub fn clamp_offset(&self, offset: usize) -> usize {
+        let offset = offset.min(self.text().len());
+        let line = self.line_of(offset);
+        let start = self.line_start(line);
+        let inside = (offset - start).min(self.line(line).len());
+        // Never land in the middle of a multi-byte character.
+        let mut inside = floor_boundary(self.line(line), inside);
+        if inside == 0 && line > 0 && offset < start {
+            inside = 0;
+        }
+        start + inside
+    }
+
+    /// Character column (1-based for display) of a byte offset.
+    pub fn column(&self, offset: usize) -> usize {
+        let line = self.line_of(self.clamp_offset(offset));
+        let start = self.line_start(line);
+        char_count(&self.line(line)[..offset.saturating_sub(start).min(self.line(line).len())]) + 1
+    }
+
+    pub fn line_of_offset(&self, offset: usize) -> usize {
+        self.line_of(self.clamp_offset(offset))
+    }
+
+    /// Apply one replacement, returning the change so it can be undone.
+    pub fn replace(&mut self, range: Range<usize>, after: &str) -> Change {
+        let text = self.text();
+        let start = self.clamp_offset(range.start);
+        let end = self.clamp_offset(range.end).max(start);
+        let change = Change {
+            range: start..end,
+            before: text[start..end].to_owned(),
+            after: after.to_owned(),
+        };
+        let head = &text[..start];
+        let tail = &text[end..];
+        let joined = format!("{head}{}{tail}", change.after.replace("\r\n", "\n"));
+        self.lines = joined.split('\n').map(str::to_owned).collect::<Vec<_>>();
+        self.revision = self.revision.wrapping_add(1);
+        change
+    }
+
+    /// Replace without clamping: undo and redo spans are computed against the
+    /// previous text, where the recorded offsets are exact.
+    pub fn replace_raw(&mut self, range: Range<usize>, after: &str) -> Change {
+        let text = self.text();
+        let end = range.end.min(text.len());
+        let change = Change {
+            range: range.start..end,
+            before: text[range.start..end].to_owned(),
+            after: after.to_owned(),
+        };
+        let head = &text[..range.start];
+        let tail = &text[end..];
+        let joined = format!("{head}{}{tail}", change.after.replace("\r\n", "\n"));
+        self.lines = joined.split('\n').map(str::to_owned).collect::<Vec<_>>();
+        self.revision = self.revision.wrapping_add(1);
+        change
+    }
+
+    pub fn text_in(&self, range: Range<usize>) -> String {
+        let text = self.text();
+        let start = self.clamp_offset(range.start);
+        let end = self.clamp_offset(range.end).max(start);
+        text[start..end].to_owned()
+    }
+}
+
+/// The editable document: buffer, cursor, selection and history.
+pub struct Editor {
+    buffer: Buffer,
+    /// Where the caret is, as a byte offset.
+    cursor: usize,
+    /// Where the selection started; equal to `cursor` when nothing is selected.
+    anchor: usize,
+    history: History,
+    /// Text as loaded, to answer "is this modified?".
+    saved: String,
+    /// Character column kept across vertical moves, as IDEs do.
+    sticky_column: Option<usize>,
+    pub indent: String,
+}
+
+impl Editor {
+    pub fn new(text: &str, format: DocumentFormat) -> Self {
+        Self {
+            buffer: Buffer::new(text, format),
+            cursor: 0,
+            anchor: 0,
+            history: History::default(),
+            saved: text.replace("\r\n", "\n").replace('\r', "\n"),
+            indent: "    ".to_owned(),
+            sticky_column: None,
+        }
+    }
+
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    pub fn text(&self) -> String {
+        self.buffer.text()
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.buffer.revision
+    }
+
+    pub fn line_ending(&self) -> LineEnding {
+        self.buffer.format.line_ending
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn anchor(&self) -> usize {
+        self.anchor
+    }
+
+    /// The selected range, always ordered.
+    pub fn selection(&self) -> Range<usize> {
+        self.anchor.min(self.cursor)..self.anchor.max(self.cursor)
+    }
+
+    #[allow(dead_code)]
+    pub fn has_selection(&self) -> bool {
+        self.anchor != self.cursor
+    }
+
+    /// Line and column for the status bar, both 1-based.
+    pub fn line_column(&self) -> (usize, usize) {
+        let cursor = self.buffer.clamp_offset(self.cursor);
+        (self.buffer.line_of(cursor) + 1, self.buffer.column(cursor))
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.text() != self.saved
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.history.can_undo()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.history.can_redo()
+    }
+
+    pub fn set_cursor(&mut self, offset: usize, extend: bool) {
+        let offset = self.buffer.clamp_offset(offset);
+        if !extend {
+            self.anchor = offset;
+        }
+        self.cursor = offset;
+        self.sticky_column = None;
+    }
+
+    /// Replace the selection (or insert at the caret) and leave the caret after
+    /// the inserted text. A single character is typed input, which coalesces
+    /// with its neighbours into one undo step.
+    pub fn insert(&mut self, text: &str) {
+        let selection = self.selection();
+        let typing = text.chars().count() == 1;
+        let change = self.buffer.replace(selection, text);
+        let end = change.range.start + change.after.len();
+        let edit = Edit {
+            changes: vec![change],
+        };
+        self.history.record(edit, typing);
+        self.cursor = end;
+        self.anchor = end;
+    }
+
+    /// Replace an explicit byte range, used by IME composition.
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str) {
+        self.insert_range(range, text, false);
+    }
+
+    /// Insert at an explicit range and record the change, so an IME edit lands
+    /// in the history like any other.
+    fn insert_range(&mut self, range: Range<usize>, text: &str, typing: bool) {
+        let change = self.buffer.replace(range, text);
+        let end = change.range.start + change.after.len();
+        let edit = Edit {
+            changes: vec![change],
+        };
+        self.history.record(edit, typing);
+        self.cursor = end;
+        self.anchor = end;
+    }
+
+    pub fn text_in(&self, range: Range<usize>) -> String {
+        self.buffer.text_in(range)
+    }
+
+    /// Delete the selection, or the unit before/after the caret.
+    pub fn delete(&mut self, backwards: bool) {
+        let selection = self.selection();
+        if !selection.is_empty() {
+            self.apply_ranges(selection);
+            return;
+        }
+        let cursor = self.buffer.clamp_offset(self.cursor);
+        if backwards {
+            if cursor == 0 {
+                return;
+            }
+            // A whole grapheme goes at once, so an emoji is not cut in half.
+            let text = self.text();
+            let previous = text[..cursor]
+                .grapheme_indices(true)
+                .next_back()
+                .map(|(index, _)| index)
+                .unwrap_or(cursor - 1);
+            self.apply_ranges(previous..cursor);
+        } else {
+            let text = self.text();
+            let next = text[cursor..]
+                .grapheme_indices(true)
+                .nth(1)
+                .map(|(index, _)| cursor + index)
+                .unwrap_or(text.len());
+            if next <= cursor {
+                return;
+            }
+            self.apply_ranges(cursor..next);
+        }
+    }
+
+    /// Delete one range as a single undoable step.
+    fn apply_ranges(&mut self, range: Range<usize>) {
+        let change = self.buffer.replace(range, "");
+        let cursor = change.range.start;
+        let edit = Edit {
+            changes: vec![change],
+        };
+        self.history.record(edit, false);
+        self.cursor = cursor;
+        self.anchor = cursor;
+    }
+
+    /// Insert a newline, copying the leading whitespace of the current line so
+    /// the next line keeps its indentation.
+    pub fn newline(&mut self, eol: LineEnding) {
+        let cursor = self.buffer.clamp_offset(self.cursor);
+        let line = self.buffer.line_of(cursor);
+        let start = self.buffer.line_start(line);
+        let inside = cursor - start;
+        let text = self.buffer.line(line).to_owned();
+        let leading: String = text
+            .chars()
+            .take_while(|ch| *ch == ' ' || *ch == '\t')
+            .collect();
+        let braces = text[..inside].trim_end().ends_with(['{', '(', '[']);
+        let indent = if braces {
+            format!("{leading}{}", self.indent)
+        } else {
+            leading
+        };
+        self.insert(&format!("{}{indent}", eol.as_str()));
+    }
+
+    /// Indent or outdent every line the selection touches.
+    pub fn shift(&mut self, outdent: bool) {
+        let text = self.text();
+        let selection = self.selection();
+        let first = self.buffer.line_of(selection.start);
+        let last = self.buffer.line_of(selection.end);
+        let mut changes = Vec::new();
+        // Applied from the bottom up so the offsets of the lines above stay valid.
+        for line in (first..=last).rev() {
+            let start = self.buffer.line_start(line);
+            let content = text[start..].split('\n').next().unwrap_or("");
+            let range = if outdent {
+                let width = if content.starts_with('\t') {
+                    1
+                } else {
+                    content
+                        .chars()
+                        .take_while(|ch| *ch == ' ' || *ch == '\t')
+                        .map(char::len_utf8)
+                        .sum::<usize>()
+                        .min(self.indent.len())
+                };
+                if width == 0 {
+                    continue;
+                }
+                start..start + width
+            } else {
+                start..start
+            };
+            let after = if outdent { "" } else { &self.indent };
+            changes.push(self.buffer.replace(range, after));
+        }
+        if changes.is_empty() {
+            return;
+        }
+        let edit = Edit { changes };
+        self.history.record(edit, false);
+        // The selection follows the lines it touched, as in every IDE, so a
+        // shift cycle acts on the same block twice.
+        self.anchor = self.buffer.line_start(first);
+        self.cursor = self.buffer.line_start(last) + self.buffer.line(last).len();
+    }
+
+    pub fn undo(&mut self) {
+        let Some(edit) = self.history.undo.pop() else {
+            return;
+        };
+        let mut cursor = None;
+        for change in edit.changes.iter().rev() {
+            // An insertion is reverted over the span its text occupies now,
+            // not over the empty range it once replaced.
+            let span = change.range.start..change.range.start + change.after.len();
+            let applied = self.buffer.replace_raw(span, &change.before);
+            cursor = Some(applied.range.start);
+        }
+        self.history.redo.push(edit);
+        let cursor = cursor.unwrap_or(self.cursor);
+        self.cursor = cursor;
+        self.anchor = cursor;
+    }
+
+    pub fn redo(&mut self) {
+        let Some(edit) = self.history.redo.pop() else {
+            return;
+        };
+        let mut cursor = None;
+        for change in edit.changes.iter().rev() {
+            let span = change.range.start..change.range.start + change.before.len();
+            let applied = self.buffer.replace_raw(span, &change.after);
+            cursor = Some(applied.range.start + applied.after.len());
+        }
+        self.history.undo.push(edit);
+        let cursor = cursor.unwrap_or(self.cursor);
+        self.cursor = cursor;
+        self.anchor = cursor;
+    }
+
+    /// Forget the saved state so `is_dirty` reports clean after a write.
+    pub fn mark_saved(&mut self) {
+        self.saved = self.text();
+    }
+
+    /// Move the caret by whole characters or lines, keeping the column.
+    pub fn move_by(&mut self, direction: Direction, extend: bool, lines: Option<usize>) {
+        let text = self.text();
+        let cursor = self.buffer.clamp_offset(self.cursor);
+        let line = self.buffer.line_of(cursor);
+        let start = self.buffer.line_start(line);
+        let column = cursor - start;
+        let target = match direction {
+            Direction::Left => cursor
+                .checked_sub(1)
+                .filter(|offset| text.is_char_boundary(*offset))
+                .unwrap_or(0),
+            Direction::Right => text[cursor..]
+                .chars()
+                .next()
+                .map(|ch| cursor + ch.len_utf8())
+                .unwrap_or(cursor),
+            Direction::WordLeft => word_left(&text, cursor),
+            Direction::WordRight => word_right(&text, cursor),
+            Direction::LineStart => start,
+            Direction::LineEnd => start + self.buffer.line(line).len(),
+            Direction::DocumentStart => 0,
+            Direction::DocumentEnd => text.len(),
+            Direction::LineUp | Direction::LineDown => {
+                let step = lines.unwrap_or(1);
+                let target_line = match direction {
+                    Direction::LineUp => line.checked_sub(step),
+                    _ => Some((line + step).min(self.buffer.line_count() - 1)),
+                };
+                match target_line {
+                    // The column remembered from the last horizontal
+                    // position survives short lines, as in every IDE.
+                    Some(target_line) => {
+                        let line_text = self.buffer.line(line);
+                        let current = char_count(&line_text[..column.min(line_text.len())]);
+                        let wanted = *self.sticky_column.get_or_insert(current);
+                        let target_text = self.buffer.line(target_line);
+                        let offset = byte_index(target_text, wanted).min(target_text.len());
+                        self.buffer.line_start(target_line) + offset
+                    }
+                    None => cursor,
+                }
+            }
+        };
+        let offset = self.buffer.clamp_offset(target);
+        if !extend {
+            self.anchor = offset;
+        }
+        self.cursor = offset;
+        if !matches!(direction, Direction::LineUp | Direction::LineDown) {
+            self.sticky_column = None;
+        }
+    }
+
+    /// Select the next occurrence of the current selection, as an IDE does.
+    #[allow(dead_code)]
+    pub fn select_word_at(&mut self, offset: usize) {
+        let offset = self.buffer.clamp_offset(offset);
+        let text = self.text();
+        let start = text[..offset]
+            .char_indices()
+            .rev()
+            .find(|(_, ch)| !is_word(*ch))
+            .map_or(0, |(index, ch)| index + ch.len_utf8());
+        let end = text[offset..]
+            .char_indices()
+            .find(|(_, ch)| !is_word(*ch))
+            .map_or(text.len(), |(index, _)| offset + index);
+        self.anchor = start;
+        self.cursor = end;
+    }
+
+    pub fn select_all(&mut self) {
+        self.anchor = 0;
+        self.cursor = self.text().len();
+    }
+}
+
+pub enum Direction {
+    Left,
+    Right,
+    WordLeft,
+    WordRight,
+    LineStart,
+    LineEnd,
+    LineUp,
+    LineDown,
+    DocumentStart,
+    DocumentEnd,
+}
+
+fn is_word(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
+}
+
+fn word_left(text: &str, cursor: usize) -> usize {
+    let mut index = cursor;
+    let mut moved = false;
+    while index > 0 {
+        let previous = text[..index].char_indices().next_back().unwrap_or((0, ' '));
+        if !is_word(previous.1) {
+            break;
+        }
+        index = previous.0;
+        moved = true;
+    }
+    // From the end of a word the motion stops at its start; from a separator
+    // it continues across the separators to the previous word's start.
+    if moved {
+        return index;
+    }
+    while index > 0 {
+        let previous = text[..index].char_indices().next_back().unwrap_or((0, ' '));
+        if is_word(previous.1) {
+            break;
+        }
+        index = previous.0;
+    }
+    index
+}
+
+fn word_right(text: &str, cursor: usize) -> usize {
+    let mut index = cursor;
+    let length = text.len();
+    // A word motion ends the run of word characters, then the run of
+    // separators — but a newline ends the movement: words do not span lines.
+    while index < length {
+        let Some(ch) = text[index..].chars().next() else {
+            break;
+        };
+        if !is_word(ch) || ch == '\n' {
+            break;
+        }
+        index += ch.len_utf8();
+    }
+    while index < length {
+        let Some(ch) = text[index..].chars().next() else {
+            break;
+        };
+        if is_word(ch) || ch == '\n' {
+            break;
+        }
+        index += ch.len_utf8();
+    }
+    index
+}
+
+fn floor_boundary(text: &str, byte: usize) -> usize {
+    let mut index = byte.min(text.len());
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn byte_index(line: &str, column: usize) -> usize {
+    line.char_indices()
+        .nth(column)
+        .map_or(line.len(), |(index, _)| index)
+}
+
+fn char_count(text: &str) -> usize {
+    text.chars().count()
+}
+
+#[cfg(test)]
+#[path = "../../tests/state/editor.rs"]
+mod tests;

@@ -1,4 +1,5 @@
 mod button;
+pub(crate) mod editor;
 pub(crate) mod input;
 mod modal;
 mod operations;

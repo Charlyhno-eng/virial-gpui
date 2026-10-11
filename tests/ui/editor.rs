@@ -1,0 +1,42 @@
+// Tests for the editable code view's status-bar behavior, driven through the
+// same buffer API the key handler uses. Explicit imports: a glob would pull
+// gpui's own `test` attribute macro over the standard one.
+
+use crate::infrastructure::editor_io::{DocumentFormat, LineEnding};
+use crate::state::editor::Editor;
+
+#[test]
+fn the_status_bar_counts_lines_columns_and_the_modified_flag() {
+    let editor = Editor::new("first\nsecond\n", test_format());
+    assert_eq!(editor.line_column(), (1, 1));
+    assert!(!editor.is_dirty());
+}
+
+#[test]
+fn typing_reports_the_new_cursor_position() {
+    let mut editor = Editor::new("first\nsecond\n", test_format());
+    editor.set_cursor(5, false);
+    editor.insert("-X");
+    assert_eq!(editor.text(), "first-X\nsecond\n");
+    assert_eq!(editor.line_column(), (1, 8));
+    assert!(editor.is_dirty());
+}
+
+#[test]
+fn a_save_resets_the_modified_flag_without_touching_the_buffer() {
+    let mut editor = Editor::new("hello\n", test_format());
+    editor.set_cursor(5, false);
+    editor.insert("!");
+    assert!(editor.is_dirty());
+    editor.mark_saved();
+    assert!(!editor.is_dirty());
+    assert_eq!(editor.text(), "hello!\n");
+}
+
+fn test_format() -> DocumentFormat {
+    DocumentFormat {
+        line_ending: LineEnding::Lf,
+        bom: false,
+        latin1_fallback: false,
+    }
+}
