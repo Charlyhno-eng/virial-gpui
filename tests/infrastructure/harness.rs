@@ -118,6 +118,84 @@ fn a_missing_home_reports_nothing_instead_of_guessing() {
 }
 
 #[test]
+fn the_audited_families_of_three_machines_are_recognized() {
+    with_home(
+        |home| {
+            for dir in [
+                ".cursor", ".cline", ".qoder", ".gemini", ".antigravity",
+                ".blackboxcli", ".kilo", ".qwen", ".lark-cli", ".securecoder",
+                ".moltbot", ".cagent", ".agents", ".hermes-dev",
+                ".cargo", ".rustup", ".bun", ".npm", ".docker", ".vscode",
+                ".pm2", ".expo", ".gradle", ".gunicorn", ".ssh",
+                ".msf4", ".john", ".havoc", ".sliver", ".nxc",
+                ".tradingview-pilot", ".com.moomoo.OpenD", ".com.futunn.FutuOpenD",
+            ] {
+                std::fs::create_dir_all(home.join(dir)).unwrap();
+            }
+        },
+        |home| {
+            assert_eq!(inspect_with(&home.join(".cursor"), home).unwrap().name, "Cursor");
+            assert_eq!(inspect_with(&home.join(".cargo"), home).unwrap().name, "Cargo");
+            assert_eq!(inspect_with(&home.join(".msf4"), home).unwrap().name, "Metasploit");
+            assert_eq!(
+                inspect_with(&home.join(".tradingview-pilot"), home).unwrap().name,
+                "TradingView Pilot"
+            );
+        },
+    );
+}
+
+#[test]
+fn kind_is_reported_per_family() {
+    with_home(
+        |home| {
+            std::fs::create_dir_all(home.join(".claude")).unwrap();
+            std::fs::create_dir_all(home.join(".cargo")).unwrap();
+            std::fs::create_dir_all(home.join(".msf4")).unwrap();
+            std::fs::create_dir_all(home.join(".tradingview-pilot")).unwrap();
+            std::fs::create_dir_all(home.join(".overmind")).unwrap();
+        },
+        |home| {
+            assert_eq!(inspect_with(&home.join(".claude"), home).unwrap().kind, Kind::Agentic);
+            assert_eq!(inspect_with(&home.join(".cargo"), home).unwrap().kind, Kind::Development);
+            assert_eq!(inspect_with(&home.join(".msf4"), home).unwrap().kind, Kind::Security);
+            assert_eq!(
+                inspect_with(&home.join(".tradingview-pilot"), home).unwrap().kind,
+                Kind::Trading
+            );
+            assert_eq!(inspect_with(&home.join(".overmind"), home).unwrap().kind, Kind::Server);
+        },
+    );
+}
+
+#[test]
+fn sliver_and_kilo_have_alternate_homes() {
+    with_home(
+        |home| {
+            std::fs::create_dir_all(home.join(".sliver-client")).unwrap();
+            std::fs::create_dir_all(home.join(".kilocode")).unwrap();
+        },
+        |home| {
+            assert_eq!(
+                inspect_with(&home.join(".sliver-client"), home).unwrap().name,
+                "Sliver"
+            );
+            assert_eq!(inspect_with(&home.join(".kilocode"), home).unwrap().name, "Kilo Code");
+        },
+    );
+}
+
+#[test]
+fn security_and_trading_icons_are_embedded() {
+    for name in ["shield", "chart", "tools"] {
+        assert!(
+            crate::ui::icons::icon_names().contains(&name),
+            "icon {name} is not embedded"
+        );
+    }
+}
+
+#[test]
 fn every_harness_uses_an_icon_that_ships_with_the_binary() {
     for harness in HARNESS_LIST {
         assert!(

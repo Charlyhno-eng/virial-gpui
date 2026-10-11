@@ -156,6 +156,7 @@ impl FileManager {
                     crate::infrastructure::harness::Role::Home => "Harness home",
                     crate::infrastructure::harness::Role::Folder => "Harness folder",
                 });
+                let kind = self.language.text(harness.kind.label());
                 panel
                     .child(
                         div()
@@ -179,6 +180,14 @@ impl FileManager {
                             .text_size(px(11.))
                             .child(self.language.text("Role"))
                             .child(div().text_color(color(MUTED)).child(role)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Kind"))
+                            .child(div().text_color(color(MUTED)).child(kind)),
                     )
                     .child(
                         div()
