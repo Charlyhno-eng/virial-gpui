@@ -13,9 +13,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Ajouts
 - **Publication : le README se met à jour tout seul à chaque release** — un job
-  `docs-sync` remplace les empreintes `<version>` du tableau d'installation par
-  la version réellement publiée (commit mécanique du bot directement sur
-  `main`, uniquement après une publication réussie du chemin automatique).
+  `docs-sync` régénère le tableau d'installation avec les vrais assets de la
+  release : chaque plateforme affiche son nom de fichier exact en lien cliquable
+  vers le téléchargement (noms et URLs lus depuis l'API GitHub après
+  publication, commit mécanique du bot directement sur `main`, uniquement sur
+  le chemin automatique).
 
 ### Corrections
 - **Documentation d'installation et de release à jour** — le README pointe vers

@@ -18,9 +18,9 @@ Download the latest release from the [Releases page](https://github.com/Charlyhn
 
 | Your system | Download | Then |
 | --- | --- | --- |
-| 🐧 Linux | `virial-gpui_<version>_amd64.deb` | `sudo apt install ./virial-gpui_<version>_amd64.deb` — installs the launcher and the icon |
-| 🍎 macOS | `Virial-<version>-macos-<arch>.app.tar.gz` | Open the archive and drag `Virial.app` into Applications |
-| 🪟 Windows | `virial-gpui-<version>-windows-x86_64.zip` | Unzip anywhere and double-click `virial-gpui.exe` |
+| 🐧 Linux | [virial-gpui_0.1.2_amd64.deb](https://github.com/Charlyhno-eng/virial-gpui/releases/download/v0.1.2/virial-gpui_0.1.2_amd64.deb) | `sudo apt install ./virial-gpui_0.1.2_amd64.deb` — installs the launcher and the icon |
+| 🍎 macOS | [Virial-0.1.2-macos-arm64.app.tar.gz](https://github.com/Charlyhno-eng/virial-gpui/releases/download/v0.1.2/Virial-0.1.2-macos-arm64.app.tar.gz) | Open the archive and drag `Virial.app` into Applications |
+| 🪟 Windows | [virial-gpui-0.1.2-windows-x86_64.zip](https://github.com/Charlyhno-eng/virial-gpui/releases/download/v0.1.2/virial-gpui-0.1.2-windows-x86_64.zip) | Unzip anywhere and double-click `virial-gpui.exe` |
 
 Every release also ships a `SHA256SUMS` file, so you can verify your download:
 
