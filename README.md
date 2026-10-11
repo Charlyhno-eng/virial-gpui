@@ -14,29 +14,32 @@ Virial is a file manager for local and remote files on Linux, macOS and Windows.
 
 ## Install
 
-Every release ships one archive per platform. Download the one that matches your
-system, then follow the platform notes below.
+**The easy way:** go to the [Releases page](https://github.com/Charlyhno-eng/virial-gpui/releases/latest)
+and grab the file that matches your system — the latest release is always at
+that address. No build, no toolchain, no terminal required.
 
-| Platform | Asset | Notes |
+| Your system | Download this file | Then |
 | --- | --- | --- |
-| Linux x86_64 | `virial-gpui-<version>-linux-x86_64.tar.gz` | Standalone: binary, desktop entry and icon |
-| Linux x86_64 (Debian/Ubuntu) | `virial-gpui_<version>_amd64.deb` | Installs to `/usr/bin`, adds a launcher |
-| macOS | `Virial-<version>-macos-<arch>.app.tar.gz` | Untar, then drag `Virial.app` to Applications |
-| Windows x86_64 | `virial-gpui-<version>-windows-x86_64.zip` | No console window; `virial-gpui.exe` runs on its own |
+| 🐧 Linux (Debian/Ubuntu) | `virial-gpui_<version>_amd64.deb` | Double-click it, or `sudo apt install ./virial-gpui_<version>_amd64.deb` — it installs to `/usr/bin` and adds a launcher |
+| 🐧 Linux (other distros) | `virial-gpui-<version>-linux-x86_64.tar.gz` | Unpack it anywhere and run `virial-gpui` — it is standalone: binary, desktop entry and icon inside |
+| 🍎 macOS | `Virial-<version>-macos-<arch>.app.tar.gz` | Double-click the `.tar.gz`, then drag `Virial.app` into Applications |
+| 🪟 Windows | `virial-gpui-<version>-windows-x86_64.zip` | Unzip anywhere and double-click `virial-gpui.exe` — no console window, no installer needed |
 
 On Windows, `virial-gpui.exe --install-desktop` registers the launcher, the taskbar
 identity and the `.env` / `.gitignore` / `.toml` file associations. Pass
 `--uninstall-desktop` to remove them. Virial registers itself under *Open with*
 without replacing an editor you already assigned.
 
-Each release also carries a `SHA256SUMS` file:
+Each release also carries a `SHA256SUMS` file, if you want to verify your
+download:
 
 ```sh
 sha256sum --check SHA256SUMS
 ```
 
-The macOS bundle is ad-hoc signed, so Gatekeeper shows a warning on the first
-launch until macOS records the exception (right-click, *Open*).
+First launch on macOS: the bundle is ad-hoc signed, so Gatekeeper shows a
+warning once. Right-click the app, choose *Open*, and macOS remembers the
+exception — this does not happen again on later launches.
 
 ## See Virial in action
 
