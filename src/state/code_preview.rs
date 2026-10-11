@@ -214,7 +214,7 @@ impl CodePreview {
             }
             offset += line.len();
         }
-        Self::assemble(text, highlights)
+        Some(Self::assemble(text, highlights))
     }
 
     /// Line-indexed source without any grammar: used by the formats that keep

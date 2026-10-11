@@ -123,7 +123,7 @@ impl Document {
 const SCRIPTED: [&str; 7] = ["script", "style", "template", "svg", "noscript", "iframe", "object"];
 
 /// Elements rendered as their own block: each one ends the pending line.
-const BLOCKS: [&str; 47] = [
+const BLOCKS: [&str; 46] = [
     "html", "head", "body", "div", "section", "article", "header", "footer", "main", "nav", "aside",
     "h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "pre", "ul", "ol", "li", "dl", "dt",
     "dd", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "form",
@@ -408,7 +408,7 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
             if name == "title" {
                 if !line.trim().is_empty() {
                     title = Some(HtmlLine {
-                        text: line.trim().into(),
+                        text: line.trim().to_owned().into(),
                         indent: 0,
                         kind: LineKind::Title,
                         highlights: Vec::new(),
