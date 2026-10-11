@@ -19,6 +19,15 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   même d'afficher son diagnostic. Les artefacts sont désormais aplatis dans
   `out/` après téléchargement et comptés avec `find` (un motif absent renvoie
   zéro au lieu de tuer le script).
+- **Ouverture des fichiers au double-clic sous Windows** : les deux points
+  d'entrée appelaient `xdg-open` en dur, une commande qui n'existe que sur
+  Linux. Sur Windows, un double-clic sur un fichier ne faisait donc rien, alors
+  que sur un dossier la navigation marchait (elle ne passe pas par le
+  lanceur). L'ouverture passe désormais par un module `platform::shell_open`
+  qui choisit le lanceur du système à la compilation — `xdg-open` sous Linux,
+  `open` sous macOS, `explorer.exe` sous Windows, lancé sans console. Sous
+  Windows le lanceur est détaché et son code de sortie n'est pas attendu :
+  `explorer.exe` resterait ouvert tant que la fenêtre est affichée.
 
 ### Ajouts
 - Publication : bump de version `0.1.0` → `0.1.2` (`0.1.1` était déjà publié)

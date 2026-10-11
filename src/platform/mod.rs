@@ -20,6 +20,10 @@ pub(crate) mod file_drag;
 #[cfg(not(target_os = "linux"))]
 pub(crate) mod places;
 
+// One module for every target: picking the launcher is a compile-time choice
+// inside it, so there is no per-platform file to keep in step.
+pub(crate) mod shell_open;
+
 #[cfg(test)]
 #[path = "../../tests/platform/storage.rs"]
 mod portable_storage_tests;
