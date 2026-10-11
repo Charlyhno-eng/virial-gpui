@@ -641,9 +641,7 @@ mod tests {
 
     #[test]
     fn plantuml_blocks_are_captioned_like_mermaid_ones() {
-        let lines = parse(
-            "```plantuml\n@startuml\nparticipant A\nA -> B: hi\n@enduml\n```",
-        );
+        let lines = parse("```plantuml\n@startuml\nparticipant A\nA -> B: hi\n@enduml\n```");
         assert_eq!(lines[0].text, "plantuml · sequence");
         assert_eq!(lines[0].kind, LineKind::Mermaid);
         assert_eq!(lines[1].text, "@startuml");
