@@ -475,7 +475,11 @@ fn finish(harness: &Harness, home: PathBuf, role: Role) -> HarnessInfo {
         .iter()
         .map(|name| home.join(name))
         .filter(|candidate| candidate.exists())
-        .filter_map(|candidate| candidate.file_name().map(|name| name.to_string_lossy().into_owned()))
+        .filter_map(|candidate| {
+            candidate
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
         .collect();
     HarnessInfo {
         name: harness.name,
@@ -506,7 +510,9 @@ pub fn installed_with(home_root: &Path) -> Vec<(&'static str, PathBuf)> {
             harness
                 .homes
                 .iter()
-                .map(|relative| home_root.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR)))
+                .map(|relative| {
+                    home_root.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR))
+                })
                 .find(|candidate| candidate.is_dir())
                 .map(|home| (harness.name, home))
         })
