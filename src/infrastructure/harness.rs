@@ -322,7 +322,7 @@ pub const HARNESS_LIST: &[Harness] = &[
     },
     Harness {
         name: "SSH",
-        icon: "network",
+        icon: "config",
         kind: Kind::Development,
         homes: &[".ssh"],
         prompt: &[],
