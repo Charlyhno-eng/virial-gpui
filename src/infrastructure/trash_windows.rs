@@ -14,42 +14,32 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// File size of a version-1 $I header (volume 8 bytes, file size 8, FILETIME
-/// 8, path length 4) plus the fixed 520-byte UTF-16 path slot: version 2
-/// reuses the same layout with a longer path slot, so both parse identically.
+/// First four fields of a `$I` record: version (8 bytes), deleted file size
+/// (8), deletion FILETIME (8), then the path length (4). Versions 1 and 2
+/// share this prefix; only the path slot that follows changes size.
 const HEADER: usize = 24;
 
-/// One parsed $I record: where the item came from and when it was deleted.
-struct Info {
-    original: PathBuf,
-    deleted_ms: u64,
-}
-
-/// Read the metadata of a trash item; `None` for a malformed record.
-fn parse_info(bytes: &[u8]) -> Option<Info> {
-    let version = u64::from(bytes[0]);
-    // Versions beyond the known two are not guaranteed to keep the layout.
-    if version > 2 {
+/// The original path recorded in a `$I` metadata file; `None` when the record
+/// is shorter than its header or carries a version we do not know.
+fn parse_info(bytes: &[u8]) -> Option<PathBuf> {
+    if bytes.len() < HEADER + 4 {
         return None;
     }
-    let size = u64::from_le_bytes(bytes[8..16].try_into().ok()?);
-    let _ = size;
-    let filetime = u64::from_le_bytes(bytes[16..24].try_into().ok()?);
-    // Windows FILETIME: 100 ns ticks since 1601-01-01.
-    let deleted_ms = filetime / 10_000 - 11_644_473_600_000;
-    let len = usize::try_from(u32::from_le_bytes(bytes[24..28].try_into().ok()?)).ok()?;
-    let end = (HEADER + 4 + len).min(bytes.len());
+    // The version is stored as an u64, but only 1 and 2 are ever written.
+    if u64::from(bytes[0]) > 2 {
+        return None;
+    }
+    // The length counts UTF-16 code units, not bytes: the path is two bytes
+    // per unit, and `min` keeps a truncated record from panicking.
+    let units = usize::try_from(u32::from_le_bytes(bytes[24..28].try_into().ok()?)).ok()?;
+    let end = (HEADER + 4 + units * 2).min(bytes.len());
     let path = String::from_utf16_lossy(
-        bytes[HEADER + 4..end]
+        &bytes[HEADER + 4..end]
             .chunks_exact(2)
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-            .collect::<Vec<_>>()
-            .as_slice(),
+            .collect::<Vec<_>>(),
     );
-    Some(Info {
-        original: PathBuf::from(path),
-        deleted_ms,
-    })
+    Some(PathBuf::from(path))
 }
 
 /// `$R<name>` → `$I<name>`: the metadata twin of a data file.
@@ -76,8 +66,8 @@ fn bins() -> Vec<PathBuf> {
     roots
 }
 
-/// The current user's SID, queried once. Without it the other users' bins are
-/// invisible, and `GetUserProfileDirectory` needs a token we get here.
+/// The current user's SID, queried once. Without it the bin of the current
+/// user cannot be located among the per-user folders of `$Recycle.Bin`.
 fn whoami_sid() -> String {
     thread_local! {
         static SID: String = sid_once().unwrap_or_default();
@@ -161,19 +151,17 @@ pub(crate) fn read(_data: &Path) -> io::Result<Vec<Entry>> {
             let Ok(bytes) = fs::read(&info_path) else {
                 continue;
             };
-            let Some(info) = parse_info(&bytes) else {
+            let Some(original) = parse_info(&bytes) else {
                 continue;
             };
             let metadata = match fs::symlink_metadata(&path) {
                 Ok(metadata) => metadata,
                 Err(_) => continue,
             };
-            let _ = info.deleted_ms;
             entries.push(Entry {
-                name: info
-                    .original
+                name: original
                     .file_name()
-                    .unwrap_or(info.original.as_os_str())
+                    .unwrap_or(original.as_os_str())
                     .to_string_lossy()
                     .into(),
                 path,
@@ -230,10 +218,9 @@ pub(crate) fn restore(_data: &Path, paths: &[PathBuf]) -> io::Result<()> {
             ));
         };
         let bytes = fs::read(&info_path)?;
-        let info = parse_info(&bytes).ok_or_else(|| {
+        let destination = parse_info(&bytes).ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "Malformed recycle metadata")
         })?;
-        let destination = info.original;
         if destination.exists() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
@@ -262,7 +249,9 @@ pub(crate) fn restore(_data: &Path, paths: &[PathBuf]) -> io::Result<()> {
     super::undo::record(_data, affected, || {
         for (source, destination) in &moves {
             super::operations::rename(source, destination)?;
-            let _ = fs::remove_file(info_of(source).unwrap_or_default());
+            if let Some(info) = info_of(source) {
+                let _ = fs::remove_file(info);
+            }
         }
         Ok(())
     })
