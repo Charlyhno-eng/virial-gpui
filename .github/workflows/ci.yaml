@@ -118,6 +118,16 @@ jobs:
           if-no-files-found: error
           # v6 rejects unknown inputs instead of ignoring them.
           persist-credentials: false
+
+  windows:
+    # Windows runs the suite with the DirectX (dx12) gpui backend and, on
+    # main or a PR carrying the `packaging` label, produces the release exe.
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Install NASM
         shell: pwsh
         run: |
