@@ -14,6 +14,9 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Markdown : aperçu rendu ⇄ vue source pour `.md`/`.markdown` (rendu maison, sans dépendance)
 - CI : cache de dépendances par job, `package-and-benchmarks` en parallèle, builds release sautés sur PR
 - Publication : suppression du job `cratesio`, inutile pour un crate binaire (pas de `src/lib.rs`)
+- CI : le build release Windows/macOS ne part plus que sur `main` ou une PR étiquetée
+  `packaging` — un push sur une branche de travail ne paie plus la seconde compilation
+  complète (22 min → ~8 min sur le runner Windows)
 
 - **CI plus rapide** : le cache `actions/cache` couvre le registre cargo et les
   artefacts de dépendances (`.rlib`/`.rmeta`) au lieu de reconstruire ~150
