@@ -43,7 +43,7 @@ fn parse_info(bytes: &[u8]) -> Option<Info> {
     let path = String::from_utf16_lossy(
         bytes[HEADER + 4..end]
             .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes(pair.try_into().ok()?))
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
             .collect::<Vec<_>>()
             .as_slice(),
     );
@@ -129,7 +129,7 @@ fn sid_once() -> Option<String> {
             len += 1;
         }
         let text = String::from_utf8_lossy(std::slice::from_raw_parts(string, len)).into_owned();
-        LocalFree(HLOCAL(string.cast()));
+        LocalFree(string as HLOCAL);
         Some(text)
     }
 }
