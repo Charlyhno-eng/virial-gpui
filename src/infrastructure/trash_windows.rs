@@ -18,7 +18,6 @@ use std::path::{Path, PathBuf};
 /// 8, path length 4) plus the fixed 520-byte UTF-16 path slot: version 2
 /// reuses the same layout with a longer path slot, so both parse identically.
 const HEADER: usize = 24;
-const SLOT: usize = 520;
 
 /// One parsed $I record: where the item came from and when it was deleted.
 struct Info {
