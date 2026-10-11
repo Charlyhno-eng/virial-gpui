@@ -30,6 +30,12 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   jamais leur contenu.
 - **Catalogue étendu** : Prime Agent, OMP, Muse et DSH rejoignent la liste des
   harnais agentiques reconnus (45 entrées au total).
+- **Sessions, skills et serveurs MCP** : le panneau de détails d'un dossier de
+  harnais liste les conversations enregistrées (Claude Code `sessions/<pid>.json`
+  et les jsonl par projet, Codex `sessions/<AAAA>/<MM>/<JJ>/rollout-*.jsonl`),
+  les skills déclarés par un `SKILL.md` avec leur description, et les serveurs
+  MCP configurés avec leur transport, avec une icône dédiée. Cinq sessions
+  au plus sont affichées pour que le panneau reste lisible.
 - Empty Trash from the context menu, with the same confirmation as the toolbar.
 - Empty Trash from the toolbar with confirmation before permanent deletion.
 - Folder sizes appear progressively, using a cancellable background scan with
