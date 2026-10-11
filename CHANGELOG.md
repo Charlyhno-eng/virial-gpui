@@ -12,6 +12,14 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **CI : restauration du workflow délingué par le merge de `feat/package-hosts`** —
+  la résolution de conflit avait absorbé le job `windows` dans `linux` (steps
+  morts jamais exécutés, Windows sans CI sur `main`), déplacé le build du
+  `.deb` dans `linux` sans ses dépendances (`desktop-file-validate : command
+  not found`, `main` rouge) et supprimé le cache release de
+  `package-and-benchmarks` (double build complet par run). Le job set est
+  désormais vérifié structurellement par le job `lint` : une disparition de
+  job échoue désormais le lint au merge.
 - **Reconnaissance des hébergeurs de paquets** : les fichiers manifestes,
   lock et identifiants des principaux registres (npm, pnpm, Yarn, Bun, Deno,
   crates.io, PyPI, RubyGems, Packagist, NuGet, Go modules, Maven Central,

@@ -2,11 +2,14 @@ name: Tests and performance
 
 on:
   push:
-    # Branches only: a `v*` tag must not trigger this workflow — release.yaml
-    # builds the very same release profile on the same commit, so a tag would
-    # compile everything twice on two different runners.
+    # `main` only: a branch with an open pull request already runs this
+    # workflow as `pull_request` on `refs/pull/<n>/merge`, so a broad `push`
+    # filter ran every commit twice, end to end. A `v*` tag must not trigger
+    # this workflow either — release.yaml builds the very same release
+    # profile on the same commit, so a tag would compile everything twice
+    # on two different runners.
     branches:
-      - '**'
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -63,6 +66,22 @@ jobs:
         # the compile the suite needs; the cache makes the second consumer pay
         # only the time to relink.
         run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Guard the CI job set
+        # A bad conflict resolution in .github/workflows/ci.yaml once dropped
+        # the `windows` job entirely (merge 29f2d41): its steps were absorbed
+        # as dead steps at the tail of the `linux` job, the YAML stayed valid,
+        # and Windows silently lost its CI. This structural check makes that
+        # class of mistake fail loudly instead of silently.
+        shell: bash
+        run: |
+          for job in lint linux windows macos package-and-benchmarks; do
+            if ! grep -qE "^  ${job}:" .github/workflows/ci.yaml; then
+              echo "::error::ci.yaml: job '${job}' is missing from the job set."
+              echo "::error::A conflict resolution probably mangled the workflow;"
+              echo "::error::restore the full job before merging."
+              exit 1
+            fi
+          done
       - name: Require a changelog entry for the pull request
         if: github.event_name == 'pull_request'
         shell: bash
@@ -101,17 +120,17 @@ jobs:
           restore-keys: |
             ci-debug-linux-${{ runner.os }}-
       - name: Run tests
-        # One thread at a time: the undo-history flock is process-wide, so
-        # parallel test threads would contend for it and flake (seen on the
-        # linux runner as "undo history is active in another window").
+        # Serial like the macOS job: the undo history takes an exclusive lock
+        # on `<data>/virial/undo/lock`, and the suite's filesystem fixtures
+        # overlap enough for the parallel default to make that lock race fail.
+        # The win here is the restored cache, not runner-level parallelism.
         run: cargo test --locked -- --test-threads=1
-      - name: Build Debian package
-        run: |
-          desktop-file-validate packaging/virial-gpui.desktop
-          ./build-deb.sh
-          dpkg-deb --info target/debian/*.deb
-      - name: Upload Debian package
-        uses: actions/upload-artifact@v6
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - name: Install NASM
@@ -228,11 +247,18 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Run tests
-        # Same reason as the Linux job: the undo-history flock is process-wide.
-        run: cargo test --locked -- --test-threads=1
-      - name: Build release executable
-        shell: pwsh
+      - name: Restore cargo and build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release/deps
+            target/release/build
+          key: ci-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ci-release-${{ runner.os }}-
+      - name: Build Debian package
         run: |
           desktop-file-validate packaging/virial-gpui.desktop
           ./build-deb.sh
