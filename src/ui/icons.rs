@@ -107,6 +107,18 @@ const ASSETS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/icons/recent.svg"),
     ),
     (
+        "icons/shield.svg",
+        include_bytes!("../../assets/icons/shield.svg"),
+    ),
+    (
+        "icons/chart.svg",
+        include_bytes!("../../assets/icons/chart.svg"),
+    ),
+    (
+        "icons/tools.svg",
+        include_bytes!("../../assets/icons/tools.svg"),
+    ),
+    (
         "icons/folder.svg",
         include_bytes!("../../assets/icons/folder.svg"),
     ),
@@ -225,6 +237,10 @@ const ASSETS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/icons/markdown.svg"),
     ),
     (
+        "icons/mcp.svg",
+        include_bytes!("../../assets/icons/mcp.svg"),
+    ),
+    (
         "icons/remote.svg",
         include_bytes!("../../assets/icons/remote.svg"),
     ),
@@ -268,6 +284,7 @@ impl AssetSource for IconAssets {
 
 /// Bare names of the artwork assets, for checks that want to know whether a
 /// given icon exists without touching the renderer.
+#[allow(dead_code)]
 pub fn icon_names() -> &'static [&'static str] {
     static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {

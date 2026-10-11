@@ -195,6 +195,21 @@ impl Language {
             "This file carries an access key for the registry" => {
                 "Ce fichier contient une clé d’accès au registre"
             }
+            "Harness" => "Harnais",
+            "Harness home" => "Dossier du harnais",
+            "Harness folder" => "Dossier appartenant au harnais",
+            "Kind" => "Famille",
+            "Agentic harness" => "Harnais agentique",
+            "Development tool" => "Outil de développement",
+            "Security suite" => "Suite de sécurité",
+            "Trading gateway" => "Passerelle de trading",
+            "Server runtime" => "Service serveur",
+            "Prompt" => "Invite système",
+            "Credentials" => "Identifiants",
+            "Session" => "Session",
+            "Sessions" => "Sessions",
+            "Skills" => "Compétences",
+            "MCP server" => "Serveur MCP",
             "Properties" => "Propriétés",
             "Path" => "Chemin",
             "Size (bytes)" => "Taille (octets)",
