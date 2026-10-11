@@ -353,7 +353,10 @@ impl Render for CodeEditor {
             .on_key_down(cx.listener(|view, event, _, cx| {
                 view.key(event, cx);
             }))
-            .child(body)
+            .child(InputSurface {
+                view: cx.entity(),
+                content: body,
+            })
             .child(
                 div()
                     .flex()
@@ -386,6 +389,80 @@ impl Render for CodeEditor {
 /// Whether an undo step exists; keeps the status bar hint honest.
 fn view_can_undo(view: &CodeEditor) -> bool {
     view.can_undo() || view.can_redo()
+}
+
+/// Wraps the text viewport and registers the platform input handler once per
+/// frame.
+///
+/// The handler used to be installed from every row's `paint`, which left it
+/// bound to whichever line happened to be painted last — and on Windows that
+/// made typed characters vanish: they arrive as `WM_CHAR` and are delivered to
+/// the input handler, never to `on_key_down`. One registration over the whole
+/// viewport covers every line, including the empty area below the last one.
+struct InputSurface {
+    view: Entity<CodeEditor>,
+    content: gpui::AnyElement,
+}
+
+impl IntoElement for InputSurface {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for InputSurface {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, ()) {
+        let style = Style::default();
+        (
+            window.request_layout(style, [self.content.clone().into_any_element()], cx),
+            (),
+        )
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut (),
+        _: &mut Window,
+        _: &mut App,
+    ) {
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let view = self.view.read(cx);
+        let focus = view.focus.clone();
+        let handler = self.view.clone();
+        window.handle_input(&focus, ElementInputHandler::new(bounds, handler), cx);
+    }
 }
 
 /// One visible line of text. Shapes its own content so the caret, the selection
@@ -504,12 +581,6 @@ impl Element for EditorRow {
     ) {
         let view = self.view.read(cx);
         let focus = view.focus.clone();
-        // The row is the input surface: clicks and IME land here.
-        window.handle_input(
-            &focus,
-            ElementInputHandler::new(bounds, self.view.clone()),
-            cx,
-        );
         for rect in &prepaint.selection {
             window.paint_quad(fill(*rect, color(SELECTED)));
         }
