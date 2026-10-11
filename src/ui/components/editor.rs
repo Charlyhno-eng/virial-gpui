@@ -273,6 +273,7 @@ impl Render for CodeEditor {
         self.generation += 1;
         let generation = self.generation;
 
+        let entity = cx.entity();
         let body = uniform_list(
             ("editor", generation),
             line_count,
@@ -353,10 +354,25 @@ impl Render for CodeEditor {
             .on_key_down(cx.listener(|view, event, _, cx| {
                 view.key(event, cx);
             }))
-            .child(InputSurface {
-                view: cx.entity(),
-                content: body,
-            })
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(body)
+                    // Painted after the list, so its handler is the one gpui
+                    // keeps: typed characters (WM_CHAR on Windows) land in the
+                    // buffer instead of vanishing when the last painted row was
+                    // outside the viewport.
+                    .child(
+                        canvas(|_, _, _| (), move |bounds, _, window, cx| {
+                            let view = entity.read(cx);
+                            let focus = view.focus.clone();
+                            let handler = entity.clone();
+                            window.handle_input(&focus, ElementInputHandler::new(bounds, handler), cx);
+                        }),
+                    ),
+            )
             .child(
                 div()
                     .flex()
@@ -389,95 +405,6 @@ impl Render for CodeEditor {
 /// Whether an undo step exists; keeps the status bar hint honest.
 fn view_can_undo(view: &CodeEditor) -> bool {
     view.can_undo() || view.can_redo()
-}
-
-/// Wraps the text viewport and registers the platform input handler once per
-/// frame.
-///
-/// The handler used to be installed from every row's `paint`, which left it
-/// bound to whichever line happened to be painted last — and on Windows that
-/// made typed characters vanish: they arrive as `WM_CHAR` and are delivered to
-/// the input handler, never to `on_key_down`. One registration over the whole
-/// viewport covers every line, including the empty area below the last one.
-struct InputSurface {
-    view: Entity<CodeEditor>,
-    content: Option<UniformList>,
-}
-
-impl IntoElement for InputSurface {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
-impl Element for InputSurface {
-    type RequestLayoutState = Option<AnyElement>;
-    type PrepaintState = ();
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, Option<AnyElement>) {
-        // The text viewport fills this element, so the bounds the paint phase
-        // reports cover every visible line.
-        let style = Style {
-            size: gpui::Size {
-                width: gpui::relative(1.).into(),
-                height: gpui::relative(1.).into(),
-            },
-            ..Default::default()
-        };
-        let Some(content) = self.content.take() else {
-            return (window.request_layout(style, [], cx), None);
-        };
-        let content = content.into_any_element();
-        (window.request_layout(style, [content.clone()], cx), Some(content))
-    }
-
-    fn prepaint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
-        state: &mut Option<AnyElement>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        if let Some(content) = state {
-            content.prepaint(window, cx);
-        }
-    }
-
-    fn paint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        state: &mut Option<AnyElement>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        if let Some(content) = state {
-            content.paint(window, cx);
-        }
-        let view = self.view.read(cx);
-        let focus = view.focus.clone();
-        let handler = self.view.clone();
-        window.handle_input(&focus, ElementInputHandler::new(bounds, handler), cx);
-    }
 }
 
 /// One visible line of text. Shapes its own content so the caret, the selection

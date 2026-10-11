@@ -74,6 +74,7 @@ pub(crate) enum LineKind {
 }
 
 /// One rendered line: text, left indent, block style and inline spans.
+#[derive(Clone, Debug)]
 pub(crate) struct HtmlLine {
     pub(crate) text: SharedString,
     /// Spaces of left padding, applied by the renderer.
@@ -282,6 +283,8 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
     // Open elements, innermost last; the second field is the inline style.
     let mut open: Vec<(String, Option<HighlightStyle>)> = Vec::new();
     let mut list_depth = 0usize;
+    // Position inside the current ordered list; reset on every <ul>/<ol>.
+    let mut list_items = 0usize;
     let mut pre_depth = 0usize;
     let mut scripted_depth = 0usize;
     let mut title: Option<HtmlLine> = None;
