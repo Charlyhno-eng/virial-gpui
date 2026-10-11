@@ -12,6 +12,32 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **Reconnaissance des harnais agentiques** : les dossiers des principaux
+  harnais (Claude Code, Codex, Hermes, OpenClaw, Zcode, OpenCode, Overmind)
+  sont reconnus dans l'arborescence du dossier personnel. Le panneau de
+  détails affiche le harnais avec son artwork, le rôle du dossier (dossier
+  principal ou sous-dossier), le fichier d'invite système (SOUL.md,
+  CLAUDE.md…) et les fichiers d'identifiants présents — par nom seulement,
+  jamais leur contenu.
+- **Catalogue étendu** : Prime Agent, OMP, Muse et DSH rejoignent la liste des
+  harnais agentiques reconnus (45 entrées au total).
+- **Encore 13 harnais** : StepCode, Zed Editor, goose, Crush, Aider, OpenHands,
+  Letta, Agent Zero, pi, Roo Code, CodeGPT, Portkey AI et Strix (58 entrées au
+  total). Chacun n'est reconnu que s'il écrit vraiment son dossier : les homes
+  retenus sont ceux que la documentation de l'outil indique, et les extensions
+  VS Code sont cherchées aussi dans le dossier utilisateur de VS Code, où elles
+  installent leurs réglages. Les outils de la liste qui n'ont pas de dossier
+  local — Lemonade, Proto Agent, GDevelop, Digen, Ito, Letaido, JONI, Favur,
+  Traycer, isdlc, BigPlans, DXAP, camelAI, StakeBetApp, SiteSpin, envai, Ribas,
+  hax, Workshop AI Router, Agent37, V12X, Panwright, Gihanga CLI et dsh-vm —
+  ne sont pas ajoutés : reconnaître un dossier qui n'existe pas ferait
+  apparaître un harnais dans le panneau alors que rien n'est installé.
+- **Sessions, skills et serveurs MCP** : le panneau de détails d'un dossier de
+  harnais liste les conversations enregistrées (Claude Code `sessions/<pid>.json`
+  et les jsonl par projet, Codex `sessions/<AAAA>/<MM>/<JJ>/rollout-*.jsonl`),
+  les skills déclarés par un `SKILL.md` avec leur description, et les serveurs
+  MCP configurés avec leur transport, avec une icône dédiée. Cinq sessions
+  au plus sont affichées pour que le panneau reste lisible.
 - **CI : builds release supprimés des jobs de test `windows` et `macos`** — ils
   ne payaient qu'une exe de convenance téléchargeable depuis `main`, que
   `release.yaml` reconstruit de toute façon à chaque tag. Chaque push `main`
