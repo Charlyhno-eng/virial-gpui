@@ -535,10 +535,9 @@ impl FileManager {
                 let scrollbar = crate::ui::components::scrollbar::render(
                     &self.scroll,
                     visible_count,
-                    gpui::rgba(0xff8e8aa8),
+                    gpui::rgba(0xff000000),
                 );
                 div().relative().flex().flex_col().flex_1().min_h_0().overflow_hidden()
-                .child(scrollbar)
                 .child(uniform_list(
                     self.location.id(),
                     visible_count,
@@ -749,6 +748,7 @@ impl FileManager {
                         window.paint_quad(gpui::quad(bounds, px(0.), translucent(ACCENT_BLUE, 0.15), px(1.), color(ACCENT_BLUE), gpui::BorderStyle::Solid));
                     }).absolute().size_full()
                 }))
+                .child(scrollbar)
                 .into_any_element()
             })
             .child(
