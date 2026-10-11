@@ -12,6 +12,12 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Corrections
+- **Documentation d'installation et de release à jour** — le README pointe vers
+  `/releases/latest` avec un tableau court (un seul livrable Linux : le `.deb`),
+  `RELEASE.md` décrit le circuit réel (bump de version mergé sur un `main` vert
+  → builds des 3 OS, tag et publication automatiques, plus aucun tag manuel),
+  et `AGENTS.md` documente la garde-fou du job set et la règle « ne jamais
+  pousser un tag de release à la main ».
 - **Publication : la release automatique publie de nouveau** — le job `publish`
   rejetait tous les artefacts : `upload-artifact` préserve les chemins d'origine
   (le `.deb` arrivait dans `out/target/debian/`, pas à la racine), le contrôle

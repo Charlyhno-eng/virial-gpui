@@ -1,72 +1,71 @@
 # Release procedure
 
-How to publish a Virial release. The rule: **a merge into `main` only happens
-with the CI fully green**, and **a release is always cut from `main`**.
+How a Virial release ships. The rule: **a release is a version bump merged
+into a green `main`** — everything else (three platform builds, the tag, the
+GitHub Release) happens automatically.
 
 ## 0. What the CI enforces on every PR
 
-Workflow `.github/workflows/ci.yaml`, three jobs that must pass before a merge:
+Workflow `.github/workflows/ci.yaml`, five jobs:
 
 | Job | Content |
 |---|---|
-| `lint` | `cargo fmt --all --check` · `cargo clippy --locked --all-targets -- -D warnings` · CHANGELOG entry required under « Non publié » (PR only) |
-| `linux` | `cargo test --locked` · `.deb` build · benchmarks filesystem/indexed search |
-| `windows` | `cargo test --locked` · release build · upload `virial-gpui-windows-x64` artefact |
+| `lint` | `cargo fmt --all --check` · `cargo clippy --locked --all-targets -- -D warnings` · job-set guard (the five jobs must exist in `ci.yaml`) · CHANGELOG entry under « Non publié » (PR only) |
+| `linux` | `cargo test --locked` (debug) |
+| `windows` | `cargo test --locked` (debug) |
+| `macos` | `cargo test --locked` (debug, Metal backend) |
+| `package-and-benchmarks` | `.deb` build + filesystem/indexed-search benchmarks (release profile, only on `main` or labeled PRs) |
 
-Configure the GitHub repository settings so these checks are **required** for
-merging (Settings → Branches → Branch protection on `main` → require status
-checks `lint`, `linux`, `windows`). The repository itself cannot force this;
-it is a one-time host-side setting.
+Configure the GitHub repository settings so `lint`, `linux`, `windows` are
+**required** checks for merging (Settings → Branches → Branch protection on
+`main`). The repository itself cannot force this; it is a one-time host-side
+setting.
 
-## 1. Prepare the version
+## 1. Publish a release
 
-1. `git checkout main && git pull`
-2. Bump `version` in `Cargo.toml`, then `cargo build` to refresh
-   `Cargo.lock` (or run `cargo update -p virial-gpui` so only the package
-   entry moves) and commit both files.
-3. In `CHANGELOG.md`: rename `## [Non publié]` to `## [x.y.z] - YYYY-MM-DD`,
-   and start a fresh empty `## [Unreleased/Non publié]` section above it
-   (Keep a Changelog layout).
-4. Commit: `chore(release): x.y.z`.
+1. Bump `version` in `Cargo.toml`, refresh `Cargo.lock` (`cargo update -p
+   virial-gpui` moves only the package entry), and commit both files.
+2. In `CHANGELOG.md`: rename `## [Non publié]` to `## [x.y.z] - YYYY-MM-DD`
+   and start a fresh empty `## [Non publié]` section above it. Add a minimal
+   bump entry under the fresh « Non publié » — the `lint` job requires it.
+3. Open a pull request with those changes. A convenient title:
+   `release: bump version to x.y.z`.
+4. Merge once the checks are green. Done — no tag to push, nothing else.
 
-## 2. Pre-flight checks (all must pass, locally and on CI)
+The version number is the whole decision: a merge **without** a bump
+publishes nothing. `v0.1.1` already exists → merging docs or fixes is
+invisible to the release machinery.
 
-```bash
-cargo fmt --all --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
-```
+## 2. What happens after the merge
 
-On Windows add the NASM toolchain for the gpui build
-(`choco install nasm`); on Linux the build-deb native deps
-(build-essential, pkg-config, dpkg-dev, desktop-file-utils, …).
+Workflow `.github/workflows/release.yaml` triggers on the CI finishing on
+`main` (`workflow_run`):
 
-## 3. Tag and push
+1. A `prepare` job reads `Cargo.toml` and publishes only when **the CI
+   succeeded and the version has no tag yet**; otherwise it skips everything.
+2. `linux`, `macos`, `windows` build the release profile **in parallel** on
+   the exact commit the CI validated (~45–60 min total, not per platform).
+3. `publish` verifies all three artifact sets are present, builds
+   `SHA256SUMS`, creates the `v<version>` tag pinned to that commit, and
+   publishes the GitHub Release with generated notes.
 
-```bash
-git tag vX.Y.Z
-git push origin main --tags
-```
+A manual `workflow_dispatch` run builds all three platforms and uploads
+artifacts for inspection **without publishing anything** — useful to check
+the builders before a release.
 
-The tag **must equal `v` + the Cargo.toml version** — the release workflow
-verifies it and fails otherwise.
+## 3. The release assets
 
-## 4. What the release workflow publishes
+| Asset | Platform |
+|---|---|
+| `virial-gpui_x.y.z_amd64.deb` | Debian/Ubuntu, installs to `/usr/bin` with a launcher |
+| `virial-gpui-x.y.z-linux-x86_64.tar.gz` | Standalone Linux: binary, desktop entry, icon |
+| `Virial-x.y.z-macos-<arch>.app.tar.gz` | macOS app bundle, ad-hoc signed |
+| `virial-gpui-x.y.z-windows-x86_64.zip` (+ plain `.exe`) | Windows x86_64, GUI subsystem verified |
 
-Workflow `.github/workflows/release.yaml`, triggered by the `v*` tag:
+## 4. Post-release
 
-- **Debian package** (ubuntu-24.04): `build-deb.sh` →
-  `virial-gpui_x.y.z_amd64.deb` attached to the GitHub Release.
-- **Windows executable** (windows-latest): `cargo build --release` →
-  `dist/virial-gpui.exe` uploaded as `virial-gpui-windows-x64.exe` on the
-  same GitHub Release.
-- Release notes are generated from the tag; enrich them with the matching
-  CHANGELOG section when publishing.
-
-## 5. Post-release
-
-1. Verify the GitHub Release shows both assets (.deb + .exe).
-2. Smoke-test the artefacts on a clean machine.
-3. If something is wrong: fix on `main`, move the tag
-   (`git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`, re-tag), the
-   workflow re-uploads with `--clobber`.
+1. Check the release page lists the four assets plus `SHA256SUMS`.
+2. Smoke-test the artifacts on a clean machine.
+3. If something is wrong: fix on `main` and bump to a **new** version number
+   (the workflow refuses to reuse an existing tag). There is deliberately no
+   partial-release path: a failed builder must be fixed, not shipped around.
