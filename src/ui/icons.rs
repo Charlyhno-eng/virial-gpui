@@ -266,6 +266,18 @@ impl AssetSource for IconAssets {
     }
 }
 
+/// Bare names of the artwork assets, for checks that want to know whether a
+/// given icon exists without touching the renderer.
+pub fn icon_names() -> &'static [&'static str] {
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        ASSETS
+            .iter()
+            .map(|(name, _)| name.trim_start_matches("icons/").trim_end_matches(".svg"))
+            .collect()
+    })
+}
+
 pub fn icon(name: &str, size: f32, color: u32) -> Svg {
     let name = interface_icon_name(name);
     svg()

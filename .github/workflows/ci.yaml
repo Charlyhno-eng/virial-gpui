@@ -101,17 +101,17 @@ jobs:
           restore-keys: |
             ci-debug-linux-${{ runner.os }}-
       - name: Run tests
-        # Serial like the macOS job: the undo history takes an exclusive lock
-        # on `<data>/virial/undo/lock`, and the suite's filesystem fixtures
-        # overlap enough for the parallel default to make that lock race fail.
-        # The win here is the restored cache, not runner-level parallelism.
+        # One thread at a time: the undo-history flock is process-wide, so
+        # parallel test threads would contend for it and flake (seen on the
+        # linux runner as "undo history is active in another window").
         run: cargo test --locked -- --test-threads=1
-
-  windows:
-    runs-on: windows-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v5
+      - name: Build Debian package
+        run: |
+          desktop-file-validate packaging/virial-gpui.desktop
+          ./build-deb.sh
+          dpkg-deb --info target/debian/*.deb
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v6
         with:
           persist-credentials: false
       - name: Install NASM
@@ -228,18 +228,11 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Restore cargo and build artefacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target/release/deps
-            target/release/build
-          key: ci-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ci-release-${{ runner.os }}-
-      - name: Build Debian package
+      - name: Run tests
+        # Same reason as the Linux job: the undo-history flock is process-wide.
+        run: cargo test --locked -- --test-threads=1
+      - name: Build release executable
+        shell: pwsh
         run: |
           desktop-file-validate packaging/virial-gpui.desktop
           ./build-deb.sh

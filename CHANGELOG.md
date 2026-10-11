@@ -11,16 +11,20 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
-- Markdown : aperçu rendu ⇄ vue source pour `.md`/`.markdown` (rendu maison, sans dépendance)
-- CI : cache de dépendances par job, `package-and-benchmarks` en parallèle, builds release sautés sur PR
-- Publication : suppression du job `cratesio`, inutile pour un crate binaire (pas de `src/lib.rs`)
-- CI : le build release Windows/macOS ne part plus que sur `main` ou une PR étiquetée
-  `packaging` — un push sur une branche de travail ne paie plus la seconde compilation
-  complète (22 min → ~8 min sur le runner Windows)
-- Publication : une release ne peut plus partir sans les trois plateformes. Le job
-  macOS est désormais bloquant et `publish` refuse un jeu d'artefacts incomplet.
-  La publication partielle existe en option manuelle (`allow_partial_release`) et
-  sort alors en **pre-release**, jamais en version finale.
+### Ajouts
+- **Reconnaissance des hébergeurs de paquets** : les fichiers manifestes,
+  lock et identifiants des principaux registres (npm, pnpm, Yarn, Bun, Deno,
+  crates.io, PyPI, RubyGems, Packagist, NuGet, Go modules, Maven Central,
+  Gradle, Hex, Pub, Swift Package Manager, Hackage, CPAN) sont reconnus par
+  leur nom de fichier. Le panneau de détails affiche l'hébergeur avec son
+  artwork, son registre, le rôle du fichier, la version déclarée par un
+  manifeste, et un avertissement quand un fichier d'identifiants contient une
+  clé d'accès — la présence est signalée, la valeur n'est jamais lue ni
+  affichée.
+- Empty Trash from the context menu, with the same confirmation as the toolbar.
+- Empty Trash from the toolbar with confirmation before permanent deletion.
+- Folder sizes appear progressively, using a cancellable background scan with
+  throttled filesystem work.
 
 - **CI plus rapide** : le cache `actions/cache` couvre le registre cargo et les
   artefacts de dépendances (`.rlib`/`.rmeta`) au lieu de reconstruire ~150
