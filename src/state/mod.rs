@@ -6,6 +6,7 @@ pub(crate) mod devices;
 pub(crate) mod editor;
 pub(crate) mod editor_session;
 pub(crate) mod global_search;
+pub(crate) mod markdown;
 pub(crate) mod mouse;
 pub(crate) mod operations;
 pub(crate) mod preview;
