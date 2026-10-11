@@ -41,6 +41,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   hax, Workshop AI Router, Agent37, V12X, Panwright, Gihanga CLI et dsh-vm —
   ne sont pas ajoutés : reconnaître un dossier qui n'existe pas ferait
   apparaître un harnais dans le panneau alors que rien n'est installé.
+- **CI réparée** : le job `linux` (ubuntu) contenait les étapes Windows — il
+  installait NASM avec `choco` et construisait l'exe release en pwsh, ce qui
+  échouait à chaque run avec « The term 'choco' is not recognized ». Le job
+  `windows` avait disparu au passage : ni la suite Windows ni l'exe release
+  n'étaient donc exécutés. Les étapes Windows ont leur propre job sur
+  `windows-2022`, et l'upload du paquet Debian a retrouvé son `name`/`path`,
+  que `upload-artifact` v6 rejette quand il manque.
 - **Sessions, skills et serveurs MCP** : le panneau de détails d'un dossier de
   harnais liste les conversations enregistrées (Claude Code `sessions/<pid>.json`
   et les jsonl par projet, Codex `sessions/<AAAA>/<MM>/<JJ>/rollout-*.jsonl`),
