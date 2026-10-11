@@ -11,6 +11,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+- Markdown : aperçu rendu ⇄ vue source pour `.md`/`.markdown` (rendu maison, sans dépendance)
+- CI : cache de dépendances par job, `package-and-benchmarks` en parallèle, builds release sautés sur PR
+- Publication : suppression du job `cratesio`, inutile pour un crate binaire (pas de `src/lib.rs`)
+
 - **CI plus rapide** : le cache `actions/cache` couvre le registre cargo et les
   artefacts de dépendances (`.rlib`/`.rmeta`) au lieu de reconstruire ~150
   crates de gpui à chaque run, et `CARGO_INCREMENTAL=0` évite d'embarquer 6 Go
