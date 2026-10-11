@@ -12,6 +12,12 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- Publication : bump de version `0.1.0` → `0.1.2` (`0.1.1` était déjà publié)
+  pour déclencher la première release automatique après merge.
+
+## [0.1.2] - 2026-10-11
+
+### Ajouts
 - **Reconnaissance des harnais agentiques** : les dossiers des principaux
   harnais (Claude Code, Codex, Hermes, OpenClaw, Zcode, OpenCode, Overmind)
   sont reconnus dans l'arborescence du dossier personnel. Le panneau de
