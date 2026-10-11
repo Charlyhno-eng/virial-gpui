@@ -84,7 +84,7 @@ jobs:
       - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev poppler-utils libmpv2 ffmpeg
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config python3 dpkg-dev binutils desktop-file-utils libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev poppler-utils libmpv2 ffmpeg
       - name: Install Rust stable
         run: |
           rustup toolchain install stable --profile minimal
