@@ -12,6 +12,12 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- Publication : bump de version `0.1.0` → `0.1.2` (`0.1.1` était déjà publié)
+  pour déclencher la première release automatique après merge.
+
+## [0.1.2] - 2026-10-11
+
+### Ajouts
 - **Release automatique après CI verte sur `main`** : plus besoin de tag manuel.
   Quand la CI « Tests and performance » finit sur `main`, `release.yaml` part
   tout seul ; un job `prepare` ne publie que si la CI a réussi **et** que la
