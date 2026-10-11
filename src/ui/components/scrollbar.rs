@@ -94,22 +94,21 @@ pub(crate) fn render(
         .bottom(px(0.))
         .w(px(HIT_WIDTH))
         .occlude()
-        .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
+        .on_mouse_move(move |event: &MouseMoveEvent, window: &mut Window, _: &mut App| {
             // A scrollbar drag: the wheel and trackpad keep working because the
             // list updates its own offset on its events.
             if !event.dragging() {
                 return;
             }
             let target = drag_offset(
-                event.position.y,
+                f32::from(event.position.y),
                 thumb.top,
                 thumb.height,
                 viewport,
                 overflow,
             );
             base.set_offset(point(px(0.), px(-target)));
-            cx.stop_propagation();
-            cx.refresh();
+            window.refresh();
         })
         .child(
             div()
