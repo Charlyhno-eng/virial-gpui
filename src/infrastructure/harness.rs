@@ -173,7 +173,8 @@ fn finish(harness: &Harness, home: PathBuf, role: Role) -> HarnessInfo {
 }
 
 /// Every harness installed on this machine, for an overview entry point.
-#[cfg_attr(not(test), allow(dead_code))]
+/// (The UI entry point arrives with the overview; the seam stays for tests.)
+#[allow(dead_code)]
 pub fn installed() -> Vec<(&'static str, PathBuf)> {
     let Some(home_root) = home() else {
         return Vec::new();

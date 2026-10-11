@@ -268,6 +268,7 @@ impl AssetSource for IconAssets {
 
 /// Bare names of the artwork assets, for checks that want to know whether a
 /// given icon exists without touching the renderer.
+#[allow(dead_code)]
 pub fn icon_names() -> &'static [&'static str] {
     static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
     NAMES.get_or_init(|| {
