@@ -6,7 +6,7 @@
 //! the list's own scroll handle, so it can never disagree with the contents.
 
 use gpui::{
-    Div, MouseMoveEvent, Styled, UniformListScrollHandle, div, prelude::*, point, px,
+    App, Div, MouseMoveEvent, Styled, UniformListScrollHandle, Window, div, prelude::*, point, px,
 };
 
 /// Width of the thumb, and of the slightly wider invisible hit area.
