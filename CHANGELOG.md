@@ -17,6 +17,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - CI : le build release Windows/macOS ne part plus que sur `main` ou une PR étiquetée
   `packaging` — un push sur une branche de travail ne paie plus la seconde compilation
   complète (22 min → ~8 min sur le runner Windows)
+- Publication : une release ne peut plus partir sans les trois plateformes. Le job
+  macOS est désormais bloquant et `publish` refuse un jeu d'artefacts incomplet.
+  La publication partielle existe en option manuelle (`allow_partial_release`) et
+  sort alors en **pre-release**, jamais en version finale.
 
 - **CI plus rapide** : le cache `actions/cache` couvre le registre cargo et les
   artefacts de dépendances (`.rlib`/`.rmeta`) au lieu de reconstruire ~150

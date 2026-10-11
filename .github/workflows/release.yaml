@@ -7,6 +7,14 @@ on:
   # Manual run: checks the builders and uploads artifacts for inspection.
   # Nothing reaches a release unless the tag push triggered the workflow.
   workflow_dispatch:
+    inputs:
+      allow_partial_release:
+        description: >-
+          Publish even when a platform failed, as a pre-release instead of a
+          final one. Off by default: a tag that ships without macOS is a gap,
+          and it should never happen by accident.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -100,13 +108,12 @@ jobs:
   macos:
     needs: verify
     # macOS is the only runner that can compile the Metal (`macos-blade`) gpui
-    # backend, so a failure here must not cancel the other two builds: the
-    # release publishes whatever this job managed to upload. Expect this job
-    # to fail on branches that have not merged the macOS platform port yet
-    # (the Linux-only `libc::renameat2` call is the first thing to break).
+    # backend, so this job is a hard requirement for a final release: a tag that
+    # ships without it is a gap, and shipping one silently is worse than not
+    # shipping at all. `publish` below refuses a partial set unless a maintainer
+    # asks for a pre-release by hand.
     runs-on: macos-14
     timeout-minutes: 60
-    continue-on-error: true
     env:
       CARGO_TERM_COLOR: never
     steps:
@@ -278,6 +285,40 @@ jobs:
           pattern: virial-gpui-*
           path: out
           merge-multiple: true
+      - name: Require every platform before publishing
+        # The whole point: a missing platform must fail the release loudly here
+        # instead of quietly shipping a two-of-three download. Each builder names
+        # its artifact by platform, so absence is a fact on disk, not a guess.
+        shell: bash
+        env:
+          ALLOW_PARTIAL: ${{ inputs.allow_partial_release }}
+        run: |
+          set -euo pipefail
+          cd out
+          missing=""
+          has_deb=$(ls ./*.deb 2>/dev/null | wc -l)
+          has_linux=$(ls ./*.tar.gz 2>/dev/null | grep -c 'linux' || true)
+          has_macos=$(ls ./*.tar.gz 2>/dev/null | grep -c 'macos' || true)
+          has_exe=$(ls ./*.exe 2>/dev/null | wc -l)
+          if [ "$has_deb" -lt 1 ]; then missing="$missing deb"; fi
+          if [ "$has_linux" -lt 1 ]; then missing="$missing linux-tar"; fi
+          if [ "$has_macos" -lt 1 ]; then missing="$missing macos-tar"; fi
+          if [ "$has_exe" -lt 1 ]; then missing="$missing windows-exe"; fi
+          ls -la | sed 's/^/  /'
+          if [ -n "$missing" ]; then
+            if [ "$ALLOW_PARTIAL" = "true" ]; then
+              echo "::warning::Partial release authorised:$missing"
+              echo "partial=true" >> "$GITHUB_ENV"
+            else
+              echo "::error::Missing platform artifacts:$missing"
+              echo "::error::Refusing to publish an incomplete release."
+              echo "::error::Fix the failing job and re-run the tag, or re-run this"
+              echo "::error::workflow with allow_partial_release=true to ship a pre-release."
+              exit 1
+            fi
+          else
+            echo "All three platforms present."
+          fi
       - name: Build the checksum file
         shell: bash
         run: |
@@ -290,12 +331,20 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ github.ref_name }}"
+          # A partial set is published as a pre-release, never as a final one:
+          # it must be impossible to mistake a two-platform build for a
+          # complete release by looking at the tag.
+          prerelease_flag=""
+          if [ "${partial:-}" = "true" ]; then
+            prerelease_flag="--prerelease"
+            echo "::warning::Publishing $tag as a pre-release."
+          fi
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" out/* --clobber
-            gh release edit "$tag" --title "Virial $tag"
+            gh release edit "$tag" --title "Virial $tag" $prerelease_flag
           else
             gh release create "$tag" out/* --verify-tag \
-              --generate-notes --title "Virial $tag"
+              --generate-notes --title "Virial $tag" $prerelease_flag
           fi
       - name: Report the published files
         if: always()
