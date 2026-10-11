@@ -11,6 +11,12 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouts
+- **Publication : le README se met à jour tout seul à chaque release** — un job
+  `docs-sync` remplace les empreintes `<version>` du tableau d'installation par
+  la version réellement publiée (commit mécanique du bot directement sur
+  `main`, uniquement après une publication réussie du chemin automatique).
+
 ### Corrections
 - **Documentation d'installation et de release à jour** — le README pointe vers
   `/releases/latest` avec un tableau court (un seul livrable Linux : le `.deb`),

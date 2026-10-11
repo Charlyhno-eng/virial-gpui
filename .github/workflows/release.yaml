@@ -426,6 +426,55 @@ jobs:
           curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${{ needs.prepare.outputs.version }}" \
             | python3 -c "import json,sys; [print(f\"{a['name']}  {a['size']} bytes\") for a in json.load(sys.stdin)['assets']]"
 
+  # After a successful publish, replace the `<version>` placeholders in the
+  # README install table with the version that just shipped, so the install
+  # instructions always show real filenames. Runs only on the automatic path
+  # (a workflow_run that published): a tag-push or inspection run must not
+  # rewrite docs. The commit is mechanical — a pure version substitution —
+  # which is why it lands directly on main without a PR.
+  docs-sync:
+    needs: publish
+    if: >-
+      needs.publish.result == 'success' &&
+      github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: main
+      - name: Stamp the released version into the README
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          before=$(grep -c '<version>' README.md || true)
+          if [ "$before" -eq 0 ]; then
+            echo "::notice::No <version> placeholder in README.md; nothing to update."
+            exit 0
+          fi
+          sed -i "s/<version>/$VERSION/g" README.md
+          echo "Replaced $before placeholder(s) with $VERSION"
+      - name: Commit the README update
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet README.md; then
+            echo "README unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(readme): install table shows v$VERSION assets"
+          git push origin main
+
   # Note: there is deliberately no crates.io job. virial-gpui is a binary crate
   # (no `src/lib.rs`), and crates.io refuses binary-only manifests, so such a
   # job could only ever install a toolchain and emit warnings. Applications ship
