@@ -4,6 +4,7 @@ use std::{fs::File, io};
 #[cfg(windows)]
 use std::fs;
 pub(crate) mod archive;
+pub(crate) mod editor_io;
 pub(crate) mod image_edit;
 pub(crate) mod layout;
 pub(crate) mod media;

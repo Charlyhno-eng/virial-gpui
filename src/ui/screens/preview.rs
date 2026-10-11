@@ -1,7 +1,7 @@
 use crate::infrastructure::image_edit::{ExportFormat, ImageEdit};
 use crate::{
     app::FileManager,
-    state::preview::Preview,
+    state::{markdown, preview::Preview},
     ui::{
         components::{navigation_button, toolbar_button},
         theme::*,
@@ -311,6 +311,32 @@ impl FileManager {
                             )
                         },
                     )
+                    .when(
+                        matches!(&self.preview, Preview::Markdown(_, _)),
+                        |toolbar| {
+                            toolbar.child(
+                                navigation_button(
+                                    "toggle-markdown",
+                                    "eye",
+                                    if matches!(&self.preview, Preview::Markdown(_, true)) {
+                                        self.language.text("Source view")
+                                    } else {
+                                        self.language.text("Rendered view")
+                                    },
+                                    true,
+                                )
+                                .on_click(cx.listener(
+                                    |view, _, window, cx| {
+                                        if let Preview::Markdown(document, _) = &mut view.preview {
+                                            document.toggle();
+                                        }
+                                        view.focus.focus(window);
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                        },
+                    )
                     .child(
                         navigation_button(
                             "expand-preview",
@@ -373,20 +399,33 @@ impl FileManager {
                     .flex_1()
                     .min_h_0()
                     .when(
-                        matches!(&self.preview, Preview::Text(_) | Preview::Code(_)),
+                        matches!(
+                            &self.preview,
+                            Preview::Text(_) | Preview::Code(_) | Preview::Editing
+                        ),
                         |body| body.flex().flex_col(),
                     )
-                    .when(matches!(&self.preview, Preview::Code(_)), |body| {
-                        body.overflow_hidden()
-                    })
-                    .when(!matches!(&self.preview, Preview::Code(_)), |body| {
-                        body.overflow_y_scroll()
-                    })
+                    .when(
+                        matches!(&self.preview, Preview::Code(_) | Preview::Editing),
+                        |body| body.overflow_hidden(),
+                    )
+                    .when(
+                        !matches!(
+                            &self.preview,
+                            Preview::Code(_) | Preview::Editing | Preview::Markdown(_, _)
+                        ),
+                        |body| body.overflow_y_scroll(),
+                    )
                     .map(|mut body| {
                         body.style().restrict_scroll_to_axis = Some(true);
                         body
                     })
                     .child(match &self.preview {
+                        // The editor replaces the read-only preview entirely.
+                        Preview::Editing => match self.editor.clone() {
+                            Some(editor) => editor.into_any_element(),
+                            None => div().into_any_element(),
+                        },
                         Preview::Image(path, _)
                         | Preview::Pdf(crate::infrastructure::archive::Materialized {
                             path, ..
@@ -417,6 +456,99 @@ impl FileManager {
                         Preview::Media(media) => self
                             .media_preview_panel(media, expanded, cx)
                             .into_any_element(),
+                        Preview::Markdown(document, show_rendered) => {
+                            if *show_rendered {
+                                let lines =
+                                    document.rendered.iter().enumerate().map(|(index, line)| {
+                                        let size = match line.kind {
+                                            markdown::LineKind::Heading(1) => 20.,
+                                            markdown::LineKind::Heading(2) => 17.,
+                                            markdown::LineKind::Heading(3) => 15.,
+                                            _ => 13.,
+                                        };
+                                        div()
+                                            .id(index)
+                                            .w_full()
+                                            .pl(px(12. + line.indent as f32 * 6.))
+                                            .py(px(match line.kind {
+                                                markdown::LineKind::Heading(_) => 4.,
+                                                markdown::LineKind::Rule => 6.,
+                                                _ => 1.,
+                                            }))
+                                            .when(line.kind == markdown::LineKind::Rule, |row| {
+                                                row.h(px(1.)).bg(color(BORDER)).my_2()
+                                            })
+                                            .when(
+                                                line.kind == markdown::LineKind::CodeBlock,
+                                                |row| row.bg(color(SURFACE)),
+                                            )
+                                            .text_size(px(size))
+                                            .child(
+                                                StyledText::new(line.text.clone()).with_highlights(
+                                                    line.highlights.iter().cloned(),
+                                                ),
+                                            )
+                                            .into_any_element()
+                                    });
+                                div()
+                                    .id("markdown-rendered")
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scroll()
+                                    .track_scroll(&self.preview_scroll)
+                                    .py_3()
+                                    .children(lines)
+                                    .into_any_element()
+                            } else {
+                                let code = &document.source;
+                                uniform_list(
+                                    "markdown-source",
+                                    code.lines.len(),
+                                    cx.processor(|view, range: std::ops::Range<usize>, _, _cx| {
+                                        let Preview::Markdown(document, _) = &view.preview else {
+                                            return Vec::new();
+                                        };
+                                        range
+                                            .map(|index| {
+                                                let line = &document.source.lines[index];
+                                                div()
+                                                    .flex()
+                                                    .flex_shrink_0()
+                                                    .w_full()
+                                                    .h(px(18.))
+                                                    .child(
+                                                        div()
+                                                            .flex_shrink_0()
+                                                            .pr_3()
+                                                            .text_color(color(CODE_TEXT))
+                                                            .child(
+                                                                StyledText::new(line.text.clone())
+                                                                    .with_highlights(
+                                                                        line.highlights
+                                                                            .iter()
+                                                                            .cloned(),
+                                                                    ),
+                                                            ),
+                                                    )
+                                                    .into_any_element()
+                                            })
+                                            .collect()
+                                    }),
+                                )
+                                .with_width_from_item(Some(code.widest_line))
+                                .with_horizontal_sizing_behavior(
+                                    gpui::ListHorizontalSizingBehavior::Unconstrained,
+                                )
+                                .track_scroll(self.code_preview_scroll.clone())
+                                .flex_1()
+                                .min_h_0()
+                                .font_family(code_font(cx))
+                                .text_size(px(12.))
+                                .line_height(px(18.))
+                                .whitespace_nowrap()
+                                .into_any_element()
+                            }
+                        }
                         Preview::Text(text) => {
                             let lines = text.split('\n').enumerate().map(|(index, line)| {
                                 div()
@@ -532,9 +664,10 @@ impl FileManager {
                             .child(self.language.text("No content preview available"))
                             .into_any_element(),
                     })
-                    .when(!matches!(&self.preview, Preview::Code(_)), |body| {
-                        body.child(self.details_panel(false, cx))
-                    }),
+                    .when(
+                        !matches!(&self.preview, Preview::Code(_) | Preview::Editing),
+                        |panel| panel.child(self.details_panel(false, cx)),
+                    ),
             )
             .when(!expanded, |panel| {
                 panel.child(

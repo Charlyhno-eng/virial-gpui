@@ -17,6 +17,15 @@
 fn main() {
     let mut resource = winres::WindowsResource::new();
     resource.set_icon_with_id("assets/icons/win/virial-gpui.ico", "1");
+    // Without a version resource, Explorer's details pane and the taskbar
+    // fall back to the crate name and call the file `virial-gpui`. These are
+    // what a user reads to identify the program, so they carry the product name.
+    resource.set("FileDescription", "Virial");
+    resource.set("ProductName", "Virial");
+    resource.set("OriginalFilename", "virial-gpui.exe");
+    resource.set("InternalName", "virial-gpui");
+    resource.set("CompanyName", "Virial");
+    resource.set("LegalCopyright", "Distributed under the MIT licence.");
     if let Err(error) = resource.compile() {
         eprintln!("virial-gpui: failed to embed Windows resources: {error}");
         std::process::exit(1);

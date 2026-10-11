@@ -84,6 +84,11 @@ pub struct FileManager {
     pub(crate) preview_scroll: ScrollHandle,
     pub(crate) code_preview_scroll: gpui::UniformListScrollHandle,
     pub(crate) preview_focused: bool,
+    /// Open editor, if the previewed file is being edited rather than viewed.
+    pub(crate) editor: Option<gpui::Entity<crate::ui::components::editor::CodeEditor>>,
+    /// Fingerprint of the file when it was opened, to catch outside changes.
+    pub(crate) editor_disk: Option<crate::infrastructure::editor_io::Fingerprint>,
+    pub(crate) editor_task: Option<Task<()>>,
     pub(crate) preview_media_image: Option<Arc<gpui::RenderImage>>,
     pub(crate) preview_task: Option<Task<()>>,
     pub(crate) preview_media_updates: Option<Task<()>>,
