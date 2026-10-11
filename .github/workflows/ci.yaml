@@ -26,6 +26,10 @@ env:
   # incremental cache buys nothing here and costs a lot of disk: it was 6.2 GB
   # of the 19 GB debug tree locally. Disabling it also speeds up full builds.
   CARGO_INCREMENTAL: '0'
+  # sccache stores the compiled objects in the GitHub Actions cache backend.
+  # Opt-in is per job through RUSTC_WRAPPER: the `lint` job runs clippy-driver,
+  # whose invocations are not worth caching, so it keeps its plain cache.
+  SCCACHE_GHA_ENABLED: 'true'
 
 jobs:
   lint:
@@ -41,14 +45,12 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
       - name: Restore cargo and build artefacts
-        # The key carries the job name: `lint` and `linux` share the same runner
-        # and the same debug profile, so an identical key would let only one of
-        # them reserve the cache ("Unable to reserve cache ... another job may be
-        # creating this cache") and the loser would silently rebuild everything.
-        # Only the dependency artefacts are cached. The test binary and the debug
-        # symbols are rewritten by every run and would push the archive towards
-        # the 10 GB cache limit: target/debug measured 8.5 GB on a Linux runner
-        # of which the reusable `.rlib` and `.rmeta` are the bulk.
+        # The `lint` job is the only consumer of this debug cache: `linux`,
+        # `windows`, `macos` and `package-and-benchmarks` all cache through
+        # sccache instead (see the registry step below each of them). Only
+        # the dependency artefacts are cached — the test binary and the debug
+        # symbols are rewritten by every run and would push the archive
+        # towards the 10 GB cache limit.
         uses: actions/cache@v4
         with:
           path: |
@@ -96,6 +98,8 @@ jobs:
   linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
         with:
@@ -108,27 +112,32 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Restore cargo and build artefacts
+      - name: Restore the cargo registry
+        # sccache replaces the target/ artefact cache: it keys compiled
+        # objects by content hash, so one shared cache serves the debug and
+        # release profiles alike and a Cargo.lock bump still reuses every
+        # unchanged crate. actions/cache only covers the downloaded sources.
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target/debug/deps
-            target/debug/build
-          key: ci-debug-linux-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-debug-linux-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
       - name: Run tests
-        # Serial like the macOS job: the undo history takes an exclusive lock
-        # on `<data>/virial/undo/lock`, and the suite's filesystem fixtures
-        # overlap enough for the parallel default to make that lock race fail.
-        # The win here is the restored cache, not runner-level parallelism.
+        # Serial: the undo-history flock is process-wide, so parallel test
+        # threads would contend for it and flake. On a warm sccache the
+        # compile is nearly free; serial execution costs seconds, not minutes.
         run: cargo test --locked -- --test-threads=1
 
   windows:
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
         with:
@@ -142,45 +151,24 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Restore cargo and build artefacts
+      - name: Restore the cargo registry
+        # Same rationale as the Linux job: sccache owns the compiled objects,
+        # actions/cache only covers the downloaded sources.
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target/debug/deps
-            target/debug/build
-          key: ci-debug-windows-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-debug-windows-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
       - name: Run tests
         # Serial like the macOS job: the undo history takes an exclusive lock
         # on `<data>/virial/undo/lock`, and the suite's filesystem fixtures
         # overlap enough for the parallel default to make that lock race fail.
         run: cargo test --locked -- --test-threads=1
-      - name: Build release executable
-        # Only `main` pays a release profile here, or a PR carrying the
-        # `packaging` label. On this runner the release compile is a second
-        # full build of gpui on top of the debug suite, measured at 663-710 s,
-        # and it also forces a fresh cache save (164 s) because the debug
-        # artefacts it inherits are rewritten. A push on any other branch gets
-        # no exe: the package job and main's own run cover that.
-        if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'packaging')
-        shell: pwsh
-        run: |
-          cargo build --release --locked --features windows-resources
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item target/release/virial-gpui.exe dist/virial-gpui.exe
-      - name: Upload Windows executable
-        # Same condition as the build above, so the upload can never outlive the
-        # artefact it uploads: when the build is skipped, this step must be
-        # skipped too (`if-no-files-found: error` would otherwise fail the job).
-        if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'packaging')
-        uses: actions/upload-artifact@v6
-        with:
-          name: virial-gpui-windows-x64
-          path: dist/virial-gpui.exe
-          if-no-files-found: error
 
   macos:
     # macOS runs the same suite with the Metal (`macos-blade`) gpui backend.
@@ -189,6 +177,8 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 45
     continue-on-error: true
+    env:
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
         with:
@@ -197,26 +187,23 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Restore cargo and build artefacts
+      - name: Restore the cargo registry
+        # Same rationale as the Linux job: sccache owns the compiled objects,
+        # actions/cache only covers the downloaded sources.
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target/debug/deps
-            target/debug/build
-          key: ci-debug-macos-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-debug-macos-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
       - name: Run tests
         # macOS file operations are slower and the suite shares per-process lock
         # files, so run serial to avoid the lock-contention flakes.
         run: cargo test --locked -- --test-threads=1
-      - name: Build release binary
-        # Same gate as the Windows exe: only `main` (or a `packaging` PR) pays
-        # this second full release compile.
-        if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'packaging')
-        run: cargo build --release --locked
 
   # Packaging and the ignored benchmarks both need the release profile, which
   # is a second full compile of gpui. They share one job so that compile is
@@ -235,6 +222,8 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'performance')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
         with:
@@ -247,17 +236,19 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      - name: Restore cargo and build artefacts
+      - name: Restore the cargo registry
+        # Same rationale as the Linux job: sccache owns the compiled objects
+        # (release profile included), actions/cache only covers the sources.
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target/release/deps
-            target/release/build
-          key: ci-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ci-release-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
       - name: Build Debian package
         run: |
           desktop-file-validate packaging/virial-gpui.desktop

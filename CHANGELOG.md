@@ -38,6 +38,19 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   les skills déclarés par un `SKILL.md` avec leur description, et les serveurs
   MCP configurés avec leur transport, avec une icône dédiée. Cinq sessions
   au plus sont affichées pour que le panneau reste lisible.
+- **CI : builds release supprimés des jobs de test `windows` et `macos`** — ils
+  ne payaient qu'une exe de convenance téléchargeable depuis `main`, que
+  `release.yaml` reconstruit de toute façon à chaque tag. Chaque push `main`
+  gagne ~11 min côté Windows et ~10 min côté macOS. Un binaire de test reste
+  disponible via un run manuel de `release.yaml` (`workflow_dispatch`), qui
+  vérifie les builders sans rien publier.
+- **CI : sccache partagé entre jobs** — les objets compilés sont mis en cache
+  par empreinte de contenu dans le cache GitHub Actions via
+  `mozilla-actions/sccache-action`, en remplacement des caches `target/` par
+  job (debug Linux/Windows/macOS et release packaging). Un bump de `Cargo.lock`
+  ne rejette plus tout le cache : chaque crate inchangée est réutilisée, et le
+  même cache sert aux profils debug et release. Le job `lint` reste sur son
+  cache dédié (clippy-driver ne passe pas par rustc).
 - **CI : restauration du workflow délingué par le merge de `feat/package-hosts`** —
   la résolution de conflit avait absorbé le job `windows` dans `linux` (steps
   morts jamais exécutés, Windows sans CI sur `main`), déplacé le build du
