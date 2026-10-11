@@ -21,6 +21,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   manifeste, et un avertissement quand un fichier d'identifiants contient une
   clé d'accès — la présence est signalée, la valeur n'est jamais lue ni
   affichée.
+- **Reconnaissance des harnais agentiques** : les dossiers des principaux
+  harnais (Claude Code, Codex, Hermes, OpenClaw, Zcode, OpenCode, Overmind)
+  sont reconnus dans l'arborescence du dossier personnel. Le panneau de
+  détails affiche le harnais avec son artwork, le rôle du dossier (dossier
+  principal ou sous-dossier), le fichier d'invite système (SOUL.md,
+  CLAUDE.md…) et les fichiers d'identifiants présents — par nom seulement,
+  jamais leur contenu.
 - Empty Trash from the context menu, with the same confirmation as the toolbar.
 - Empty Trash from the toolbar with confirmation before permanent deletion.
 - Folder sizes appear progressively, using a cancellable background scan with

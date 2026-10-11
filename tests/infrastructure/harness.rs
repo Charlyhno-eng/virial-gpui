@@ -24,10 +24,7 @@ fn recognizes_a_claude_code_home_and_its_subfolders() {
                 info.prompt.as_ref().map(|p| p.file_name().unwrap()),
                 Some(std::ffi::OsStr::new("CLAUDE.md"))
             );
-            assert!(info
-                .credentials
-                .iter()
-                .any(|name| name == "settings.json"));
+            assert!(info.credentials.iter().any(|name| name == "settings.json"));
 
             let agents = inspect_with(&home.join(".claude/agents"), home).unwrap();
             assert_eq!(agents.name, "Claude Code");
@@ -69,7 +66,9 @@ fn opencode_and_zcode_nested_homes_are_found() {
         },
         |home| {
             assert_eq!(
-                inspect_with(&home.join(".config/opencode"), home).unwrap().name,
+                inspect_with(&home.join(".config/opencode"), home)
+                    .unwrap()
+                    .name,
                 "OpenCode"
             );
             assert_eq!(

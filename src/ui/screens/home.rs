@@ -169,9 +169,7 @@ impl FileManager {
                                     .items_center()
                                     .gap_1()
                                     .child(file_icon(harness.icon, 14.))
-                                    .child(
-                                        div().text_color(color(MUTED)).child(harness.name),
-                                    ),
+                                    .child(div().text_color(color(MUTED)).child(harness.name)),
                             ),
                     )
                     .child(
