@@ -85,9 +85,9 @@ fn plain(text: impl Into<SharedString>, kind: LineKind, indent: usize) -> Markdo
 /// Caption state for a fenced block being parsed.
 #[derive(PartialEq)]
 enum MermaidCaption {
-    /// Not a mermaid block (wrong info string or caption already settled).
+    /// Not a diagram block (wrong info string or caption already settled).
     None,
-    /// Mermaid info string, waiting for the first body line to detect the
+    /// A diagram info string, waiting for the first body line to detect the
     /// diagram type.
     Pending,
     /// The type was already found; no more detection work.
@@ -97,6 +97,15 @@ enum MermaidCaption {
     /// one once a later line reveals the type (front matter, directives and
     /// comments can delay the keyword).
     Skip(usize),
+}
+
+/// Info strings of the diagram ecosystems this preview captions. Mermaid is
+/// exact; PlantUML travels under several aliases and Graphviz under three.
+fn diagram_language(language: &str) -> bool {
+    matches!(
+        language,
+        "mermaid" | "plantuml" | "uml" | "puml" | "dot" | "graphviz" | "gv"
+    )
 }
 
 /// The info string of an opening fence: the text after the three markers.
@@ -167,6 +176,8 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
     // comments precede the keyword, the caption is inserted retroactively
     // above the first body line once a later line reveals the type.
     let mut mermaid = MermaidCaption::None;
+    // Info string of the open diagram block (kept across body lines).
+    let mut pending_language = String::new();
     let mut blank_streak = 0;
 
     for raw in source.split('\n') {
@@ -182,30 +193,23 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
                 fence = None;
                 mermaid = MermaidCaption::None;
             } else {
-                // A mermaid caption is decided by the block's first
+                // A diagram caption is decided by the block's first
                 // non-blank line — mermaid's own detectors only read that
                 // line once front matter, directives and comments are
                 // stripped, so feeding the accumulated body reproduces
                 // upstream exactly while staying incremental.
                 if mermaid == MermaidCaption::Pending && !trimmed.is_empty() {
-                    if let Some(kind) = crate::state::mermaid::detect(trimmed) {
-                        out.push(plain(
-                            format!("mermaid · {}", kind.id()),
-                            LineKind::Mermaid,
-                            0,
-                        ));
+                    if let Some(text) = crate::state::diagram::caption(&pending_language, trimmed) {
+                        out.push(plain(text.text, LineKind::Mermaid, 0));
                         mermaid = MermaidCaption::Done;
                     } else {
                         mermaid = MermaidCaption::Skip(out.len());
                     }
                 } else if let MermaidCaption::Skip(start) = mermaid
                     && !trimmed.is_empty()
-                    && let Some(kind) = crate::state::mermaid::detect(trimmed)
+                    && let Some(text) = crate::state::diagram::caption(&pending_language, trimmed)
                 {
-                    out.insert(
-                        start,
-                        plain(format!("mermaid · {}", kind.id()), LineKind::Mermaid, 0),
-                    );
+                    out.insert(start, plain(text.text, LineKind::Mermaid, 0));
                     mermaid = MermaidCaption::Done;
                 }
                 out.push(plain(line.to_owned(), LineKind::CodeBlock, 0));
@@ -215,16 +219,22 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
 
         if trimmed.len() >= 3 && trimmed.starts_with("```") {
             fence = Some('`');
-            // A mermaid block earns a type caption above its body; the type
+            // A diagram block earns a type caption above its body; the type
             // is known once the first body line is seen.
-            if fenced_language(trimmed, '`') == Some("mermaid") {
+            if let Some(language) = fenced_language(trimmed, '`')
+                && diagram_language(language)
+            {
+                pending_language = language.to_owned();
                 mermaid = MermaidCaption::Pending;
             }
             continue;
         }
         if trimmed.len() >= 3 && trimmed.starts_with("~~~") {
             fence = Some('~');
-            if fenced_language(trimmed, '~') == Some("mermaid") {
+            if let Some(language) = fenced_language(trimmed, '~')
+                && diagram_language(language)
+            {
+                pending_language = language.to_owned();
                 mermaid = MermaidCaption::Pending;
             }
             continue;
@@ -627,6 +637,55 @@ mod tests {
         assert_eq!(text_of(&lines), ["fn main() {}"]);
         let lines = parse("```\nplain\n```");
         assert_eq!(text_of(&lines), ["plain"]);
+    }
+
+    #[test]
+    fn plantuml_blocks_are_captioned_like_mermaid_ones() {
+        let lines = parse(
+            "```plantuml\n@startuml\nparticipant A\nA -> B: hi\n@enduml\n```",
+        );
+        assert_eq!(lines[0].text, "plantuml · sequence");
+        assert_eq!(lines[0].kind, LineKind::Mermaid);
+        assert_eq!(lines[1].text, "@startuml");
+        assert_eq!(lines[1].kind, LineKind::CodeBlock);
+    }
+
+    #[test]
+    fn plantuml_aliases_and_dedicated_start_tags() {
+        let lines = parse("```uml\n@startmindmap\n* root\n@endmindmap\n```");
+        assert_eq!(lines[0].text, "plantuml · mindmap");
+        let lines = parse("```puml\n@startgantt\n[t] lasts 1d\n@endgantt\n```");
+        assert_eq!(lines[0].text, "plantuml · gantt");
+    }
+
+    #[test]
+    fn plantuml_keyword_inside_startuml_and_delayed_keyword() {
+        let lines = parse("```plantuml\n@startuml\nclass Foo\n```\n");
+        assert_eq!(lines[0].text, "plantuml · class");
+        // A bare @startuml delays: the caption is inserted retroactively.
+        let lines = parse("```plantuml\n@startuml\nskinparam x y\nstate s1\n```");
+        assert_eq!(lines[0].kind, LineKind::Mermaid);
+        assert_eq!(lines[0].text, "plantuml · state");
+        assert_eq!(lines[1].kind, LineKind::CodeBlock);
+    }
+
+    #[test]
+    fn graphviz_blocks_are_captioned_by_shape() {
+        let lines = parse("```dot\ndigraph G {\n a -> b;\n}\n```");
+        assert_eq!(lines[0].text, "graphviz · directed-graph");
+        assert_eq!(lines[0].kind, LineKind::Mermaid);
+        let lines = parse("```graphviz\ngraph G { a -- b; }\n```");
+        assert_eq!(lines[0].text, "graphviz · undirected-graph");
+        let lines = parse("```gv\ndigraph G { node [shape=record]; a [label=\"{1|2}\"]; }\n```");
+        assert_eq!(lines[0].text, "graphviz · record-data-structure");
+    }
+
+    #[test]
+    fn diagram_languages_with_unknown_body_stay_uncaptioned() {
+        let lines = parse("```plantuml\njust words\n```");
+        assert_eq!(text_of(&lines), ["just words"]);
+        let lines = parse("```dot\nno graph here\n```");
+        assert_eq!(text_of(&lines), ["no graph here"]);
     }
 
     #[test]
