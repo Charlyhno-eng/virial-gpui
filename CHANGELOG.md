@@ -28,6 +28,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   principal ou sous-dossier), le fichier d'invite système (SOUL.md,
   CLAUDE.md…) et les fichiers d'identifiants présents — par nom seulement,
   jamais leur contenu.
+- **Catalogue étendu** : Prime Agent, OMP, Muse et DSH rejoignent la liste des
+  harnais agentiques reconnus (45 entrées au total).
 - Empty Trash from the context menu, with the same confirmation as the toolbar.
 - Empty Trash from the toolbar with confirmation before permanent deletion.
 - Folder sizes appear progressively, using a cancellable background scan with
