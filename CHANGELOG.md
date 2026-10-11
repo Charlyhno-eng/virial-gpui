@@ -12,6 +12,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **CI : suppression du déclenchement en double** — `push` ne visait pas que
+  `main` : un commit de branche portant une pull request ouverte déclenchait le
+  workflow deux fois de bout en bout (une fois sur `refs/heads/<branche>` via
+  l'event `push`, une fois sur `refs/pull/<n>/merge` via `pull_request`). Le
+  filtre `push` est désormais limité à `main` ; les branches de travail passent
+  exclusivement par `pull_request`. Un push ponctuel hors PR reste possible via
+  `workflow_dispatch`.
 - **Reconnaissance des hébergeurs de paquets** : les fichiers manifestes,
   lock et identifiants des principaux registres (npm, pnpm, Yarn, Bun, Deno,
   crates.io, PyPI, RubyGems, Packagist, NuGet, Go modules, Maven Central,

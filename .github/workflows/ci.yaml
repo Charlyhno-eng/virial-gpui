@@ -2,11 +2,14 @@ name: Tests and performance
 
 on:
   push:
-    # Branches only: a `v*` tag must not trigger this workflow — release.yaml
-    # builds the very same release profile on the same commit, so a tag would
-    # compile everything twice on two different runners.
+    # `main` only: a branch with an open pull request already runs this
+    # workflow as `pull_request` on `refs/pull/<n>/merge`, so a broad `push`
+    # filter ran every commit twice, end to end. A `v*` tag must not trigger
+    # this workflow either — release.yaml builds the very same release
+    # profile on the same commit, so a tag would compile everything twice
+    # on two different runners.
     branches:
-      - '**'
+      - main
   pull_request:
   workflow_dispatch:
 
