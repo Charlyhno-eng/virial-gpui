@@ -22,7 +22,7 @@ pub(crate) fn detect(source: &str) -> Option<&'static str> {
     let mut clusters = 0usize;
     let mut records = false;
     let mut html_label = false;
-    let mut engine = None;
+    let mut engine: Option<&'static str> = None;
     for line in source.lines() {
         let line = strip_comment(line);
         let trimmed = line.trim();
@@ -31,12 +31,19 @@ pub(crate) fn detect(source: &str) -> Option<&'static str> {
         }
         if engine.is_none()
             && let Some((kind, _)) = split_word(trimmed)
-            && matches!(
-                kind,
-                "neato" | "fdp" | "sfdp" | "twopi" | "circo" | "patchwork" | "osage"
-            )
+            && let Some(static_kind) = [
+                "neato",
+                "fdp",
+                "sfdp",
+                "twopi",
+                "circo",
+                "patchwork",
+                "osage",
+            ]
+            .iter()
+            .find(|name| *name == &kind)
         {
-            engine = Some(kind);
+            engine = Some(static_kind);
         }
         if trimmed.contains("digraph") {
             digraph = true;
