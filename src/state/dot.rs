@@ -32,23 +32,22 @@ pub(crate) fn detect(source: &str) -> Option<&'static str> {
         if engine.is_none()
             && let Some((kind, _)) = split_word(trimmed)
             && let Some(static_kind) = [
-                "neato",
-                "fdp",
-                "sfdp",
-                "twopi",
-                "circo",
-                "patchwork",
-                "osage",
+                "neato", "fdp", "sfdp", "twopi", "circo", "patchwork", "osage",
             ]
             .iter()
             .find(|name| *name == &kind)
         {
             engine = Some(static_kind);
         }
-        if trimmed.contains("digraph") {
+        // Graph keywords are matched as whole words at a statement start —
+        // `no graph here` is prose, `graph G` is a graph.
+        let (word, _) = match split_word(trimmed) {
+            Some(pair) => pair,
+            None => (trimmed, ""),
+        };
+        if word == "digraph" || word == "strict" && trimmed.contains("digraph") {
             digraph = true;
-        }
-        if trimmed.contains("graph") && !trimmed.contains("digraph") {
+        } else if word == "graph" || word == "strict" && trimmed.contains("graph") {
             graph = true;
         }
         if trimmed.contains("subgraph") && trimmed.contains("cluster") {
@@ -57,7 +56,7 @@ pub(crate) fn detect(source: &str) -> Option<&'static str> {
         if trimmed.contains("record") {
             records = true;
         }
-        if trimmed.contains("<") && trimmed.contains(">") && trimmed.contains("label") {
+        if trimmed.contains('<') && trimmed.contains('>') && trimmed.contains("label") {
             html_label = true;
         }
     }
@@ -167,5 +166,14 @@ mod tests {
         assert!(detect("").is_none());
         assert!(detect("just text").is_none());
         assert!(detect("{ a; b; }").is_none());
+        // Prose mentioning the keyword is not a graph declaration.
+        assert!(detect("no graph here").is_none());
+        assert!(detect("the word digraph appears in prose").is_none());
+    }
+
+    #[test]
+    fn strict_prefixes_recognized() {
+        assert_eq!(kind("strict digraph G { a -> b; }"), "directed-graph");
+        assert_eq!(kind("strict graph G { a -- b; }"), "undirected-graph");
     }
 }
