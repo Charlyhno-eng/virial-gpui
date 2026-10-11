@@ -30,6 +30,17 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   jamais leur contenu.
 - **Catalogue étendu** : Prime Agent, OMP, Muse et DSH rejoignent la liste des
   harnais agentiques reconnus (45 entrées au total).
+- **Encore 13 harnais** : StepCode, Zed Editor, goose, Crush, Aider, OpenHands,
+  Letta, Agent Zero, pi, Roo Code, CodeGPT, Portkey AI et Strix (58 entrées au
+  total). Chacun n'est reconnu que s'il écrit vraiment son dossier : les homes
+  retenus sont ceux que la documentation de l'outil indique, et les extensions
+  VS Code sont cherchées aussi dans le dossier utilisateur de VS Code, où elles
+  installent leurs réglages. Les outils de la liste qui n'ont pas de dossier
+  local — Lemonade, Proto Agent, GDevelop, Digen, Ito, Letaido, JONI, Favur,
+  Traycer, isdlc, BigPlans, DXAP, camelAI, StakeBetApp, SiteSpin, envai, Ribas,
+  hax, Workshop AI Router, Agent37, V12X, Panwright, Gihanga CLI et dsh-vm —
+  ne sont pas ajoutés : reconnaître un dossier qui n'existe pas ferait
+  apparaître un harnais dans le panneau alors que rien n'est installé.
 - **Sessions, skills et serveurs MCP** : le panneau de détails d'un dossier de
   harnais liste les conversations enregistrées (Claude Code `sessions/<pid>.json`
   et les jsonl par projet, Codex `sessions/<AAAA>/<MM>/<JJ>/rollout-*.jsonl`),
