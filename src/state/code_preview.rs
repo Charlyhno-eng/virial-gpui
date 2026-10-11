@@ -96,7 +96,10 @@ fn normalize(source: &str) -> String {
 
 /// Split the worker-produced spans once, instead of scanning the entire
 /// document for every rendered line on each keyboard event.
-fn split_lines(text: &str, highlights: &[(Range<usize>, HighlightStyle)]) -> (Vec<CodeLine>, usize) {
+fn split_lines(
+    text: &str,
+    highlights: &[(Range<usize>, HighlightStyle)],
+) -> (Vec<CodeLine>, usize) {
     let mut offset = 0;
     let mut span = 0;
     let lines: Vec<_> = text

@@ -112,15 +112,10 @@ impl FileManager {
 
     /// The shared syntax-colored source list, used by every document format
     /// that offers a source view (code, Markdown, HTML).
-    fn source_view(
-        &self,
-        id: &'static str,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    fn source_view(&self, id: &'static str, cx: &mut Context<Self>) -> impl IntoElement {
         uniform_list(
             id,
-            self
-                .preview
+            self.preview
                 .source_lines()
                 .map_or(0, |code| code.lines.len()),
             cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
@@ -423,32 +418,29 @@ impl FileManager {
                             )
                         },
                     )
-                    .when(
-                        matches!(&self.preview, Preview::Html(_, _)),
-                        |toolbar| {
-                            toolbar.child(
-                                navigation_button(
-                                    "toggle-html",
-                                    "eye",
-                                    if matches!(&self.preview, Preview::Html(_, true)) {
-                                        self.language.text("Source view")
-                                    } else {
-                                        self.language.text("Page preview")
-                                    },
-                                    true,
-                                )
-                                .on_click(cx.listener(
-                                    |view, _, window, cx| {
-                                        if let Preview::Html(_, rendered) = &mut view.preview {
-                                            *rendered = !*rendered;
-                                        }
-                                        view.focus.focus(window);
-                                        cx.notify();
-                                    },
-                                )),
+                    .when(matches!(&self.preview, Preview::Html(_, _)), |toolbar| {
+                        toolbar.child(
+                            navigation_button(
+                                "toggle-html",
+                                "eye",
+                                if matches!(&self.preview, Preview::Html(_, true)) {
+                                    self.language.text("Source view")
+                                } else {
+                                    self.language.text("Page preview")
+                                },
+                                true,
                             )
-                        },
-                    )
+                            .on_click(cx.listener(
+                                |view, _, window, cx| {
+                                    if let Preview::Html(_, rendered) = &mut view.preview {
+                                        *rendered = !*rendered;
+                                    }
+                                    view.focus.focus(window);
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                    })
                     .child(
                         navigation_button(
                             "expand-preview",
@@ -525,10 +517,7 @@ impl FileManager {
                     // the body must not add a second one on top of it.
                     .when(
                         !self.preview_is_source_list()
-                            && !matches!(
-                                &self.preview,
-                                Preview::Editing | Preview::Markdown(_, _)
-                            ),
+                            && !matches!(&self.preview, Preview::Editing | Preview::Markdown(_, _)),
                         |body| body.overflow_y_scroll(),
                     )
                     .map(|mut body| {
@@ -642,10 +631,9 @@ impl FileManager {
                                             .when(line.kind == html::LineKind::Rule, |row| {
                                                 row.h(px(1.)).bg(color(BORDER)).my_2()
                                             })
-                                            .when(
-                                                line.kind == html::LineKind::CodeBlock,
-                                                |row| row.bg(color(SURFACE)),
-                                            )
+                                            .when(line.kind == html::LineKind::CodeBlock, |row| {
+                                                row.bg(color(SURFACE))
+                                            })
                                             .when(line.kind == html::LineKind::Title, |row| {
                                                 row.text_color(color(MUTED))
                                                     .text_size(px(12.))

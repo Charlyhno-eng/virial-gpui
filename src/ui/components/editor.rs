@@ -364,14 +364,19 @@ impl Render for CodeEditor {
                     // keeps: typed characters (WM_CHAR on Windows) land in the
                     // buffer instead of vanishing when the last painted row was
                     // outside the viewport.
-                    .child(
-                        canvas(|_, _, _| (), move |bounds, _, window, cx| {
+                    .child(canvas(
+                        |_, _, _| (),
+                        move |bounds, _, window, cx| {
                             let view = entity.read(cx);
                             let focus = view.focus.clone();
                             let handler = entity.clone();
-                            window.handle_input(&focus, ElementInputHandler::new(bounds, handler), cx);
-                        }),
-                    ),
+                            window.handle_input(
+                                &focus,
+                                ElementInputHandler::new(bounds, handler),
+                                cx,
+                            );
+                        },
+                    )),
             )
             .child(
                 div()

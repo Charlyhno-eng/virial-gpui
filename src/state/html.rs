@@ -120,15 +120,58 @@ impl Document {
 }
 
 /// Elements whose text content is code or styling, never prose.
-const SCRIPTED: [&str; 7] = ["script", "style", "template", "svg", "noscript", "iframe", "object"];
+const SCRIPTED: [&str; 7] = [
+    "script", "style", "template", "svg", "noscript", "iframe", "object",
+];
 
 /// Elements rendered as their own block: each one ends the pending line.
 const BLOCKS: [&str; 46] = [
-    "html", "head", "body", "div", "section", "article", "header", "footer", "main", "nav", "aside",
-    "h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "pre", "ul", "ol", "li", "dl", "dt",
-    "dd", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "form",
-    "fieldset", "legend", "label", "figure", "figcaption", "address", "details", "summary",
-    "dialog", "hgroup",
+    "html",
+    "head",
+    "body",
+    "div",
+    "section",
+    "article",
+    "header",
+    "footer",
+    "main",
+    "nav",
+    "aside",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "blockquote",
+    "pre",
+    "ul",
+    "ol",
+    "li",
+    "dl",
+    "dt",
+    "dd",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "td",
+    "th",
+    "caption",
+    "colgroup",
+    "form",
+    "fieldset",
+    "legend",
+    "label",
+    "figure",
+    "figcaption",
+    "address",
+    "details",
+    "summary",
+    "dialog",
+    "hgroup",
 ];
 
 /// Elements that never have content and never close: handled in place.
@@ -237,9 +280,13 @@ fn decode_entities(text: &str) -> String {
                 "apos" => Some('\''),
                 "nbsp" => Some(' '),
                 _ if name.starts_with("#x") || name.starts_with("#X") => {
-                    u32::from_str_radix(&name[2..], 16).ok().and_then(char::from_u32)
+                    u32::from_str_radix(&name[2..], 16)
+                        .ok()
+                        .and_then(char::from_u32)
                 }
-                _ if name.starts_with('#') => name[1..].parse::<u32>().ok().and_then(char::from_u32),
+                _ if name.starts_with('#') => {
+                    name[1..].parse::<u32>().ok().and_then(char::from_u32)
+                }
                 _ => None,
             }
         });
@@ -593,10 +640,7 @@ mod tests {
         let lines = parse("<p>a <b>bold</b> word</p>");
         assert_eq!(lines[0].text, "a bold word");
         assert_eq!(lines[0].highlights[0].0, 2..6);
-        assert_eq!(
-            lines[0].highlights[0].1.font_weight,
-            Some(FontWeight::BOLD)
-        );
+        assert_eq!(lines[0].highlights[0].1.font_weight, Some(FontWeight::BOLD));
     }
 
     #[test]
@@ -615,7 +659,9 @@ mod tests {
     fn scripts_and_styles_are_not_page_content() {
         let lines = parse("<style>body { color: red }</style><p>Visible</p>");
         assert!(
-            !text_of(&lines).iter().any(|line| line.contains("color: red")),
+            !text_of(&lines)
+                .iter()
+                .any(|line| line.contains("color: red")),
             "CSS is not page content: {lines:?}"
         );
         assert!(text_of(&lines).contains(&"Visible".to_owned()));
@@ -645,8 +691,10 @@ mod tests {
         assert!(items[1].text.ends_with("second"));
         assert!(items[0].indent > 0, "list items are indented");
         assert!(
-            items[0].highlights.iter().any(|(range, style)| range.end == 2
-                && style.color.is_some()),
+            items[0]
+                .highlights
+                .iter()
+                .any(|(range, style)| range.end == 2 && style.color.is_some()),
             "the bullet itself is colored: {items:?}"
         );
     }
@@ -779,11 +827,10 @@ mod tests {
         let lines = parse("<H1>Title</H1><STRONG>bold</STRONG>");
         assert_eq!(lines[0].kind, LineKind::Heading(1));
         assert!(
-            lines
+            lines.iter().any(|line| line
+                .highlights
                 .iter()
-                .any(|line| line.highlights.iter().any(|(_, style)| style
-                    .font_weight
-                    .is_some())),
+                .any(|(_, style)| style.font_weight.is_some())),
             "a closing </STRONG> still ends the style: {lines:?}"
         );
     }
