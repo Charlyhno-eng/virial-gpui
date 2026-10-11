@@ -6,7 +6,7 @@
 //! the list's own scroll handle, so it can never disagree with the contents.
 
 use gpui::{
-    App, Div, MouseMoveEvent, Styled, UniformListScrollHandle, Window, div, prelude::*, point, px,
+    App, Div, MouseMoveEvent, Styled, UniformListScrollHandle, Window, div, point, prelude::*, px,
 };
 
 /// Width of the thumb, and of the slightly wider invisible hit area.
@@ -76,11 +76,7 @@ pub(crate) fn geometry(handle: &UniformListScrollHandle, item_count: usize) -> O
 /// Renders nothing until [`geometry`] reports a scrollable list, so the thumb
 /// never flickers on the opening frame. The strip follows the pointer while a
 /// drag is active, so the thumb can be grabbed like a desktop scrollbar's.
-pub(crate) fn render(
-    handle: &UniformListScrollHandle,
-    item_count: usize,
-    tint: gpui::Rgba,
-) -> Div {
+pub(crate) fn render(handle: &UniformListScrollHandle, item_count: usize, tint: gpui::Rgba) -> Div {
     let Some(thumb) = geometry(handle, item_count) else {
         return div();
     };
@@ -94,22 +90,24 @@ pub(crate) fn render(
         .bottom(px(0.))
         .w(px(HIT_WIDTH))
         .occlude()
-        .on_mouse_move(move |event: &MouseMoveEvent, window: &mut Window, _: &mut App| {
-            // A scrollbar drag: the wheel and trackpad keep working because the
-            // list updates its own offset on its events.
-            if !event.dragging() {
-                return;
-            }
-            let target = drag_offset(
-                f32::from(event.position.y),
-                thumb.top,
-                thumb.height,
-                viewport,
-                overflow,
-            );
-            base.set_offset(point(px(0.), px(-target)));
-            window.refresh();
-        })
+        .on_mouse_move(
+            move |event: &MouseMoveEvent, window: &mut Window, _: &mut App| {
+                // A scrollbar drag: the wheel and trackpad keep working because the
+                // list updates its own offset on its events.
+                if !event.dragging() {
+                    return;
+                }
+                let target = drag_offset(
+                    f32::from(event.position.y),
+                    thumb.top,
+                    thumb.height,
+                    viewport,
+                    overflow,
+                );
+                base.set_offset(point(px(0.), px(-target)));
+                window.refresh();
+            },
+        )
         .child(
             div()
                 .w(px(THUMB_WIDTH))
