@@ -12,36 +12,45 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
-- Empty Trash from the context menu, with the same confirmation as the toolbar.
-- Empty Trash from the toolbar with confirmation before permanent deletion.
-- Folder sizes appear progressively, using a cancellable background scan with
-  throttled filesystem work.
-
-### Corrections
-- Suppress the harmless `dpkg-shlibdeps` warning for libc6's merged-`/usr` loader diversion
-  when building `.deb` packages.
-- Prepare code preview lines once and render only visible rows for responsive keyboard navigation.
-- Keep preview textures alive until GPU rendering completes when switching files
-  or opening a context menu, and cancel delayed previews on right-click.
-- Keep large Linux Trash moves fast with desktop-created subdirectory permissions
-  inside a private Trash root, and pause folder size scans during deletion.
-- Revert the recent search memory changes and idle index unloading.
-- Restore same-device Linux Trash items with persistent undo without copying or
-  hashing their contents.
-- Linux renames and same-device Trash moves keep persistent undo without copying
-  or hashing file contents; undo preserves edits and refuses replaced items or
-  occupied names.
-- Ctrl-click uses the modifiers held at mouse-down and keeps multiple selection
-  visible without opening the preview.
-
-### Interface
-- Group context actions with separators, shorten workspace labels, remove Refresh,
-  and add Duplicate and a compression submenu for ZIP, TAR.GZ, TAR.XZ and TAR.BZ2.
-- Replace the file kind column with a final modification date and time column.
-- Compact search and filter icons reveal separate input fields below the toolbar;
-  local filtering supports names and extensions.
-
-### Ajouts
+- **Section d'installation dans le README** : un tableau des quatre archives
+  publiées (archive autonome Linux, `.deb`, `Virial.app`, zip Windows), la
+  commande `--install-desktop` et ce qu'elle enregistre, la vérification des
+  sommes SHA-256, et l'avertissement Gatekeeper attendu sur le bundle macOS.
+- **Job `cratesio` dans le workflow de publication** : il vérifie si le crate
+  expose une cible `src/lib.rs` et lance `cargo publish --dry-run` le cas
+  échéant. crates.io ne publie que des bibliothèques — virial-gpui est un
+  binaire — donc le job le signale explicitement au lieu d'échouer sur une
+  erreur opaque de l'API, et devient une vraie publication le jour où une cible
+  `lib` est ajoutée.
+- Métadonnées de manifeste complète pour un enregistrement éventuel :
+  `repository`, `homepage`, `readme`, `keywords` (5, le maximum accepté) et
+  `categories`.
+- **Publication automatique** : un tag `v*` déclenche la construction et la
+  publication des trois systèmes depuis un seul workflow. Chaque cible sort un
+  paquet natif — `.deb` + archive `.tar.gz` pour Linux, `Virial.app` signé et
+  compressé pour macOS, `.exe` + `.zip` pour Windows — accompagné d'un fichier
+  `SHA256SUMS`.
+  - `virial-gpui-<version>-linux-x86_64.tar.gz` : binaire strippé, entrée de
+    bureau, icône et licence, pour une installation sans gestionnaire de paquets.
+  - `Virial-<version>-macos-<arch>.app.tar.gz` : bundle `Virial.app` avec
+    `Info.plist`, icône `.icns` générée par `iconutil` et signature ad hoc
+    vérifiée par `codesign --verify --deep --strict`.
+  - `virial-gpui-<version>-windows-x86_64.zip` : l'exe, le README et la licence.
+  - Le contrôle de cohérence tag/`Cargo.toml` est centralisé dans un job
+    `verify` unique, au lieu d'être répété — et contourné — dans chaque
+    constructeur. Le build Windows vérifie le sous-système PE et échoue si le
+    binaire n'est pas en `IMAGE_SUBSYSTEM_WINDOWS_GUI`, pour qu'une console
+    ne puisse jamais clignoter au lancement.
+  - Les trois constructeurs sont indépendants et un seul job `publish` crée la
+    release : un échec Linux ne bloque plus la publication Windows, et les
+    constructeurs ne se disputent plus `gh release create`.
+- **Métadonnées Windows de l'exe** : le fichier s'affichait comme
+  « virial-gpui » dans le volet des détails de l'Explorateur et dans la barre
+  des tâches. La ressource de version embarque désormais le nom de produit
+  « Virial », la société et le copyright, et le build de publication échoue si
+  `ProductName` redevient le nom du crate.
+- Le workflow accepte un lancement manuel (`workflow_dispatch`) pour
+  vérifier les constructeurs sans publier de release.
 - **Icônes de fichiers par type** : le navigateur et le panneau de détails
   choisissent l'illustration à partir du nom exact du fichier (`Dockerfile`,
   `.gitignore`, `Cargo.toml`, `LICENSE`, …) puis d'une table d'extensions
@@ -60,8 +69,6 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   cible dans `Cargo.toml`, ce qui évite d'imposer Wayland/X11 à macOS.
 - **macOS** : l'aperçu vidéo charge `libmpv.2` et la corbeille ne lit plus
   `/proc/self/mountinfo`, inexistant sur ce système.
-
-### Ajouts
 - **Identité visuelle Windows complète** : `virial-gpui.exe` embarque désormais
   l'icône multi-résolutions (16/24/32/48/64/128/256) et un manifest
   PerMonitorV2. L'icône s'affiche dans l'installeur, sur le raccourci du
@@ -105,8 +112,18 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   (cible `dist/`, ignorée par git) ; la CI publie l'exe en artefact sur chaque
   push (job `windows`).
 - `CHANGELOG.md` devient obligatoire pour toute PR (règle AGENTS.md).
-
+- Empty Trash from the context menu, with the same confirmation as the toolbar.
+- Empty Trash from the toolbar with confirmation before permanent deletion.
+- Folder sizes appear progressively, using a cancellable background scan with
+  throttled filesystem work.
 ### Corrections
+- **CI — tests instables en parallèle** : l'historique d'annulation prend un
+  verrou exclusif `flock` sur `<data>/virial/undo/lock`. Les fixtures
+  d'archives se recouvrent assez pour que l'exécution parallèle fasse perdre la
+  course à
+  `undoes_zip_edits_and_transfers_between_local_files_and_archives`, qui échouait
+  avec « undo history is active in another window ». Les jobs Linux et Windows
+  sérialisent maintenant leurs tests comme le job macOS le faisait déjà.
 - **Curseur de défilement** : la hauteur minimale était appliquée après le
   calcul de la course, si bien qu'une liste très longue faisait sortir le
   curseur de sa piste (jusqu'à 23 px sur une piste de 512 px, l'écart croissant
@@ -138,7 +155,21 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Linux : l'ouverture des handles de timestamps reste en lecture seule
   (régression `EISDIR`/`EACCES` du portage corrigée en amont de cette branche,
   commit `5500acc`).
-
+- Suppress the harmless `dpkg-shlibdeps` warning for libc6's merged-`/usr` loader diversion
+  when building `.deb` packages.
+- Prepare code preview lines once and render only visible rows for responsive keyboard navigation.
+- Keep preview textures alive until GPU rendering completes when switching files
+  or opening a context menu, and cancel delayed previews on right-click.
+- Keep large Linux Trash moves fast with desktop-created subdirectory permissions
+  inside a private Trash root, and pause folder size scans during deletion.
+- Revert the recent search memory changes and idle index unloading.
+- Restore same-device Linux Trash items with persistent undo without copying or
+  hashing their contents.
+- Linux renames and same-device Trash moves keep persistent undo without copying
+  or hashing file contents; undo preserves edits and refuses replaced items or
+  occupied names.
+- Ctrl-click uses the modifiers held at mouse-down and keeps multiple selection
+  visible without opening the preview.
 ### Interface
 - L'indicateur de connexion distante tient dans un carré de 22 px avec un
   cadre permanent : le nom d'hôte ne s'affiche plus en ligne (il était dans
@@ -148,3 +179,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - L'indicateur remote `><` siège en tête de la ligne de pied de sidebar,
   séparé du libellé « LOCAL FILES » par un filet vertical ; la barre de statut
   séparée disparaît et la liste de fichiers descend jusqu'au bord.
+- Group context actions with separators, shorten workspace labels, remove Refresh,
+  and add Duplicate and a compression submenu for ZIP, TAR.GZ, TAR.XZ and TAR.BZ2.
+- Replace the file kind column with a final modification date and time column.
+- Compact search and filter icons reveal separate input fields below the toolbar;
+  local filtering supports names and extensions.
