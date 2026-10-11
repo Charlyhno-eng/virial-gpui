@@ -11,6 +11,36 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+- **CI plus rapide** : le cache `actions/cache` couvre le registre cargo et les
+  artefacts de dépendances (`.rlib`/`.rmeta`) au lieu de reconstruire ~150
+  crates de gpui à chaque run, et `CARGO_INCREMENTAL=0` évite d'embarquer 6 Go
+  d'artefacts incrémentaux qui ne servent à rien sur un runner jetable. La
+  construction du paquet Debian et les deux benchmarks `#[ignore]` sortent du job
+  Linux pour aller dans un job `package-and-benchmarks` séparé, exécuté **en
+  parallèle** des trois jobs de test : le job Linux ne fait plus que compiler et
+  tester. Le `.deb` n'est produit que sur `push`, sur `main` ou quand la PR
+  porte le label `packaging`, ce qui évite de payer sa compilation quand la
+  modification ne peut pas l'affecter. Le job Windows construit et dépose
+  désormais l'exe release, ce qui donne un binaire à tester sans attendre une
+  release. Le garde-fou de changelog est passé du job `merge-readiness` (qui
+  tournait en double) au job `lint`, et les runs s'interromment automatiquement
+  quand une nouvelle poussée arrive sur la même branche (`cancel-in-progress`).
+- **Builds release gateés sur les PR** : l'exe Windows (`--features
+  windows-resources`) et le binaire release macOS ne sont compilés que sur
+  `push`, `workflow_dispatch`, ou si la PR porte le label `packaging`. Une PR
+  ne paie plus aucun profil release : le chemin critique passe de ~11 min à
+  ~8 min (Windows redevient le job le plus long). L'exe à tester vient du
+  dernier `push` de la branche.
+- **Le workflow CI ne se déclenche plus sur les tags** (`push.branches`) :
+  un tag `v*` lançait `ci.yaml` ET `release.yaml` sur le même commit, donc deux
+  compiles release complètes du même binaire sur deux runners différents.
+  `release.yaml` reste le seul chemin de publication.
+- **Clés de cache distinctes par job** : `lint` et `linux` partageant le même
+  runner et le même profil debug, ils demandaient la même clé
+  `actions/cache`. Le premier à la réserver la gagnait et l'autre échouait avec
+  « Unable to reserve cache », donc sans cache du tout. Chaque job porte maintenant
+  le sien dans la clé.
+
 ### Ajouts
 - **Section d'installation dans le README** : un tableau des quatre archives
   publiées (archive autonome Linux, `.deb`, `Virial.app`, zip Windows), la
