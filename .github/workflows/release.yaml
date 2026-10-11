@@ -1,20 +1,22 @@
 name: Build and publish releases (Linux, macOS, Windows)
 
 on:
+  # Automatic release: when the CI finishes on `main`. `prepare` below
+  # refuses to publish unless the CI succeeded AND `Cargo.toml` declares a
+  # version with no tag yet — a release is exactly "a green main with a
+  # fresh version", so merging docs or fixes publishes nothing.
+  workflow_run:
+    workflows: ['Tests and performance']
+    types: [completed]
+    branches: [main]
+  # Manual release by tag still works: bump Cargo.toml, tag v<version> and
+  # push the tag. `prepare` enforces the tag/version agreement.
   push:
     tags:
       - 'v*'
   # Manual run: checks the builders and uploads artifacts for inspection.
-  # Nothing reaches a release unless the tag push triggered the workflow.
+  # Nothing reaches a release: `prepare` keeps should_publish=false.
   workflow_dispatch:
-    inputs:
-      allow_partial_release:
-        description: >-
-          Publish even when a platform failed, as a pre-release instead of a
-          final one. Off by default: a tag that ships without macOS is a gap,
-          and it should never happen by accident.
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -23,52 +25,37 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-jobs:
-  # Unit tests come first and alone: they only need the toolchain, not the
-  # native dependencies or the release builds, so a broken commit is caught
-  # before any heavy download or compilation is paid for.
-  test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    env:
-      CARGO_TERM_COLOR: never
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - name: Check release version
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          python3 - <<'PY'
-          import os, tomllib
-          with open("Cargo.toml", "rb") as manifest:
-              version = tomllib.load(manifest)["package"]["version"]
-          if os.environ["RELEASE_TAG"] != f"v{version}":
-              raise SystemExit(f"Release tag must match Cargo.toml: v{version}")
-          PY
-      - name: Install Rust stable
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-      - name: Run tests
-        # One thread at a time: the undo-history flock is process-wide.
-        run: cargo test --locked -- --test-threads=1
+env:
+  CARGO_TERM_COLOR: never
 
-  debian:
-    needs: test
+jobs:
+  # Single source of truth for "should we release, and what": read the
+  # manifest version, then decide per event. Every other job keys off its
+  # outputs, so the builders and `publish` can never disagree about the
+  # version or run when nothing is being released.
+  prepare:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      version: ${{ steps.read.outputs.version }}
+      should_publish: ${{ steps.decide.outputs.should_publish }}
+      version: ${{ steps.decide.outputs.version }}
+      sha: ${{ steps.decide.outputs.sha }}
+    env:
+      EVENT: ${{ github.event_name }}
+      REF_TYPE: ${{ github.ref_type }}
+      REF_NAME: ${{ github.ref_name }}
+      CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Read the manifest version
-        id: read
+          # `workflow_run` fires after the CI completed on a specific main
+          # commit: build exactly that commit, not whatever main points to
+          # by the time this workflow starts.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Decide whether to publish
+        id: decide
         shell: bash
         run: |
           set -euo pipefail
@@ -78,28 +65,81 @@ jobs:
               print(tomllib.load(manifest)["package"]["version"])
           PY
           )
+          tag="v$version"
+          sha="${HEAD_SHA:-$GITHUB_SHA}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Cargo.toml declares v$version"
-          if [ "${{ github.event_name }}" != "push" ]; then
-            echo "::notice::Manual run: skipping the tag/version gate."
+          skip() {
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "::notice::Manual run: the builders run and upload artifacts"
+            echo "::notice::for inspection, but nothing is published."
+            skip
+          fi
+          # One version, one release: if the tag already exists on the remote,
+          # this version shipped. The public repo needs no credentials for a
+          # plain `git ls-remote`, so this gate stays authentication-free.
+          if git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::$tag already exists: nothing new to release."
+            skip
+          fi
+          if [ "$EVENT" = "workflow_run" ]; then
+            if [ "$CI_CONCLUSION" != "success" ]; then
+              echo "::notice::CI on main finished with '$CI_CONCLUSION':"
+              echo "::notice::refusing to release an unverified commit."
+              skip
+            fi
+            echo "::notice::Green CI on main with a fresh version: releasing"
+            echo "::notice::$tag from commit $sha."
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "${{ github.ref_name }}" != "v$version" ]; then
-            echo "::error::Tag ${{ github.ref_name }} does not match Cargo.toml v$version."
-            echo "::error::Bump the version in Cargo.toml, commit, then tag v$version."
-            exit 1
+          # Remaining event: a tag push. The tag is the release instruction,
+          # but it must agree with the manifest.
+          if [ "$REF_TYPE" = "tag" ]; then
+            if [ "$REF_NAME" != "$tag" ]; then
+              echo "::error::Tag $REF_NAME does not match Cargo.toml ($tag)."
+              echo "::error::Bump the version in Cargo.toml, commit, then tag $tag."
+              exit 1
+            fi
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          skip
 
-  linux:
-    needs: verify
+  # Unit tests before the heavy builds — for tag pushes only. The automatic
+  # path skips this job: the CI run that triggered the release just ran the
+  # same suite green on the very same commit.
+  test:
+    needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    env:
-      CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run tests
+        # One thread at a time: the undo-history flock is process-wide.
+        run: cargo test --locked -- --test-threads=1
+
+  linux:
+    needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Install native dependencies
         run: |
           sudo apt-get update
@@ -117,7 +157,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${{ needs.verify.outputs.version }}"
+          version="${{ needs.prepare.outputs.version }}"
           staging="dist/virial-gpui-$version-linux-x86_64"
           mkdir -p "$staging"
           install -Dm755 target/release/virial-gpui "$staging/virial-gpui"
@@ -138,20 +178,19 @@ jobs:
           if-no-files-found: error
 
   macos:
-    needs: verify
+    needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true' || github.event_name == 'workflow_dispatch'
     # macOS is the only runner that can compile the Metal (`macos-blade`) gpui
-    # backend, so this job is a hard requirement for a final release: a tag that
-    # ships without it is a gap, and shipping one silently is worse than not
-    # shipping at all. `publish` below refuses a partial set unless a maintainer
-    # asks for a pre-release by hand.
+    # backend, so this job is a hard requirement for a final release: a
+    # release that ships without it is a gap, and shipping one silently is
+    # worse than not shipping at all. `publish` below refuses any partial set.
     runs-on: macos-14
     timeout-minutes: 60
-    env:
-      CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Install Rust stable
         run: |
           rustup toolchain install stable --profile minimal
@@ -162,7 +201,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${{ needs.verify.outputs.version }}"
+          version="${{ needs.prepare.outputs.version }}"
           # Runner architecture moves between Apple Silicon and Intel
           # generations; name the artifact after what actually built it.
           arch=$(uname -m)
@@ -233,15 +272,15 @@ jobs:
           if-no-files-found: error
 
   windows:
-    needs: verify
+    needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 45
-    env:
-      CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Install NASM
         shell: pwsh
         run: |
@@ -285,7 +324,7 @@ jobs:
       - name: Assemble the zip
         shell: pwsh
         run: |
-          $version = "${{ needs.verify.outputs.version }}"
+          $version = "${{ needs.prepare.outputs.version }}"
           Copy-Item README.md dist/README.md -ErrorAction SilentlyContinue
           Copy-Item LICENSE dist/LICENSE -ErrorAction SilentlyContinue
           Compress-Archive -Path dist/* -DestinationPath "dist/virial-gpui-$version-windows-x86_64.zip" -Force
@@ -299,17 +338,16 @@ jobs:
           if-no-files-found: error
 
   # One job creates the release and attaches everything, so the three builders
-  # never race each other with `gh release create` / `--clobber`.
+  # never race each other. The release action manages its credentials
+  # internally (its GITHUB_TOKEN input defaults to the run's own identity), so
+  # no credential line appears in this file.
   publish:
-    needs: [verify, linux, macos, windows]
-    if: github.event_name == 'push'
+    needs: [prepare, linux, macos, windows]
+    if: needs.prepare.outputs.should_publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
     steps:
       - name: Collect every artifact
         uses: actions/download-artifact@v6
@@ -321,9 +359,9 @@ jobs:
         # The whole point: a missing platform must fail the release loudly here
         # instead of quietly shipping a two-of-three download. Each builder names
         # its artifact by platform, so absence is a fact on disk, not a guess.
+        # There is no partial-release escape hatch: a manual run never reaches
+        # `publish`, and a failed builder must be fixed, not waved through.
         shell: bash
-        env:
-          ALLOW_PARTIAL: ${{ inputs.allow_partial_release }}
         run: |
           set -euo pipefail
           cd out
@@ -338,19 +376,12 @@ jobs:
           if [ "$has_exe" -lt 1 ]; then missing="$missing windows-exe"; fi
           ls -la | sed 's/^/  /'
           if [ -n "$missing" ]; then
-            if [ "$ALLOW_PARTIAL" = "true" ]; then
-              echo "::warning::Partial release authorised:$missing"
-              echo "partial=true" >> "$GITHUB_ENV"
-            else
-              echo "::error::Missing platform artifacts:$missing"
-              echo "::error::Refusing to publish an incomplete release."
-              echo "::error::Fix the failing job and re-run the tag, or re-run this"
-              echo "::error::workflow with allow_partial_release=true to ship a pre-release."
-              exit 1
-            fi
-          else
-            echo "All three platforms present."
+            echo "::error::Missing platform artifacts:$missing"
+            echo "::error::Refusing to publish an incomplete release."
+            echo "::error::Fix the failing builder and re-run the workflow."
+            exit 1
           fi
+          echo "All three platforms present."
       - name: Build the checksum file
         shell: bash
         run: |
@@ -358,32 +389,27 @@ jobs:
           cd out
           sha256sum ./* | sed 's|\./||' > SHA256SUMS
           cat SHA256SUMS
-      - name: Create the release
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${{ github.ref_name }}"
-          # A partial set is published as a pre-release, never as a final one:
-          # it must be impossible to mistake a two-platform build for a
-          # complete release by looking at the tag.
-          prerelease_flag=""
-          if [ "${partial:-}" = "true" ]; then
-            prerelease_flag="--prerelease"
-            echo "::warning::Publishing $tag as a pre-release."
-          fi
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" out/* --clobber
-            gh release edit "$tag" --title "Virial $tag" $prerelease_flag
-          else
-            gh release create "$tag" out/* --verify-tag \
-              --generate-notes --title "Virial $tag" $prerelease_flag
-          fi
+      - name: Create the release and attach every artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          # Automatic path: pin the tag to the exact commit the CI validated.
+          # On a tag push this input is ignored, the ref is the tag itself.
+          target_commitish: ${{ needs.prepare.outputs.sha }}
+          name: Virial v${{ needs.prepare.outputs.version }}
+          generate_release_notes: true
+          # Re-runs replace previously uploaded assets instead of failing.
+          overwrite_files: true
+          files: |
+            out/*
       - name: Report the published files
         if: always()
         shell: bash
+        # The repository is public: an unauthenticated API read is enough to
+        # list what just shipped.
         run: |
-          gh release view "${{ github.ref_name }}" \
-            --json assets --jq '.assets[] | "\(.name)  \(.size) bytes"'
+          curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${{ needs.prepare.outputs.version }}" \
+            | python3 -c "import json,sys; [print(f\"{a['name']}  {a['size']} bytes\") for a in json.load(sys.stdin)['assets']]"
 
   # Note: there is deliberately no crates.io job. virial-gpui is a binary crate
   # (no `src/lib.rs`), and crates.io refuses binary-only manifests, so such a

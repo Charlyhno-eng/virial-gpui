@@ -12,6 +12,21 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- **Release automatique après CI verte sur `main`** : plus besoin de tag manuel.
+  Quand la CI « Tests and performance » finit sur `main`, `release.yaml` part
+  tout seul ; un job `prepare` ne publie que si la CI a réussi **et** que la
+  version de `Cargo.toml` n'a pas encore de tag — merger de la doc ou des
+  correctifs ne publie donc rien. Le tag `v<version>` est créé automatiquement,
+  épinglé au commit exact validé par la CI. Le déclencheur par tag manuel et le
+  run manuel d'inspection (build des 3 OS sans publication) restent disponibles.
+- **Release : garde-fous renforcés** — la publication exige les artefacts des
+  trois plateformes sans exception (la porte `allow_partial_release` est
+  supprimée ; un run partiel ne peut plus sortir ni en finale ni en
+  pre-release). Correction au passage d'un `needs: verify` orphelin qui faisait
+  référencer aux jobs `linux`/`macos`/`windows`/`publish` un job `verify`
+  inexistant (le workflow échouait au parse depuis la fusion de deux versions).
+  La création de release passe par `softprops/action-gh-release@v2`, dont le
+  jeton est géré en interne — plus aucune ligne de jeton dans le fichier.
 - **CI : restauration du workflow délingué par le merge de `feat/package-hosts`** —
   la résolution de conflit avait absorbé le job `windows` dans `linux` (steps
   morts jamais exécutés, Windows sans CI sur `main`), déplacé le build du
