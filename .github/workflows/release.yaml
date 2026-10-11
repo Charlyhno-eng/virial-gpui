@@ -355,10 +355,24 @@ jobs:
           pattern: virial-gpui-*
           path: out
           merge-multiple: true
+      - name: Flatten the artifact tree
+        # upload-artifact preserves the paths files lived at inside each
+        # builder: the .deb lands in out/target/debian/, the macOS tarball in
+        # out/dist/. Move everything to out/ so the platform check and the
+        # release step operate on one flat directory.
+        shell: bash
+        run: |
+          set -euo pipefail
+          find out -mindepth 2 -type f -exec mv -t out {} +
+          find out -mindepth 1 -type d -empty -delete
+          ls -la out | sed 's/^/  /'
       - name: Require every platform before publishing
         # The whole point: a missing platform must fail the release loudly here
         # instead of quietly shipping a two-of-three download. Each builder names
         # its artifact by platform, so absence is a fact on disk, not a guess.
+        # Counted with find over an explicit list so a missing pattern is an
+        # empty result, never a failing `ls` (exit 2 would kill the script
+        # under set -e before it could even report what was missing).
         # There is no partial-release escape hatch: a manual run never reaches
         # `publish`, and a failed builder must be fixed, not waved through.
         shell: bash
@@ -366,10 +380,11 @@ jobs:
           set -euo pipefail
           cd out
           missing=""
-          has_deb=$(ls ./*.deb 2>/dev/null | wc -l)
-          has_linux=$(ls ./*.tar.gz 2>/dev/null | grep -c 'linux' || true)
-          has_macos=$(ls ./*.tar.gz 2>/dev/null | grep -c 'macos' || true)
-          has_exe=$(ls ./*.exe 2>/dev/null | wc -l)
+          has_deb=$(find . -maxdepth 1 -name '*.deb' | wc -l)
+          has_linux=$(find . -maxdepth 1 -name '*.tar.gz' -name '*linux*' | wc -l)
+          has_macos=$(find . -maxdepth 1 -name '*.tar.gz' -name '*macos*' | wc -l)
+          has_exe=$(find . -maxdepth 1 -name '*.exe' | wc -l)
+          echo "deb=$has_deb linux-tar=$has_linux macos-tar=$has_macos exe=$has_exe"
           if [ "$has_deb" -lt 1 ]; then missing="$missing deb"; fi
           if [ "$has_linux" -lt 1 ]; then missing="$missing linux-tar"; fi
           if [ "$has_macos" -lt 1 ]; then missing="$missing macos-tar"; fi

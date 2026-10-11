@@ -11,6 +11,15 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Corrections
+- **Publication : la release automatique publie de nouveau** — le job `publish`
+  rejetait tous les artefacts : `upload-artifact` préserve les chemins d'origine
+  (le `.deb` arrivait dans `out/target/debian/`, pas à la racine), le contrôle
+  « les 3 plateformes sont là » ne voyait donc aucun fichier et échouait avant
+  même d'afficher son diagnostic. Les artefacts sont désormais aplatis dans
+  `out/` après téléchargement et comptés avec `find` (un motif absent renvoie
+  zéro au lieu de tuer le script).
+
 ### Ajouts
 - Publication : bump de version `0.1.0` → `0.1.2` (`0.1.1` était déjà publié)
   pour déclencher la première release automatique après merge.
