@@ -1,13 +1,11 @@
 use super::*;
 
+/// A temp home with a harness layout, passed explicitly to the seams under
+/// test — no environment mutation, so the tests are parallel-safe.
 fn with_home(setup: impl FnOnce(&Path), run: impl FnOnce(&Path)) {
     let dir = tempfile::tempdir().unwrap();
-    // SAFETY of the env mutation is single-threaded test execution
-    // (--test-threads=1 in CI and locally).
-    std::env::set_var("VIRIAL_HOME_OVERRIDE", dir.path());
     setup(dir.path());
     run(dir.path());
-    std::env::remove_var("VIRIAL_HOME_OVERRIDE");
 }
 
 #[test]
@@ -19,7 +17,7 @@ fn recognizes_a_claude_code_home_and_its_subfolders() {
             std::fs::write(home.join(".claude/CLAUDE.md"), "# prompt").unwrap();
         },
         |home| {
-            let info = inspect(&home.join(".claude")).unwrap();
+            let info = inspect_with(&home.join(".claude"), home).unwrap();
             assert_eq!(info.name, "Claude Code");
             assert_eq!(info.role, Role::Home);
             assert_eq!(
@@ -31,7 +29,7 @@ fn recognizes_a_claude_code_home_and_its_subfolders() {
                 .iter()
                 .any(|name| name == "settings.json"));
 
-            let agents = inspect(&home.join(".claude/agents")).unwrap();
+            let agents = inspect_with(&home.join(".claude/agents"), home).unwrap();
             assert_eq!(agents.name, "Claude Code");
             assert_eq!(agents.role, Role::Folder);
         },
@@ -50,12 +48,12 @@ fn recognizes_codex_hermes_and_overmind_layouts() {
             std::fs::write(home.join(".overmind/.env"), "").unwrap();
         },
         |home| {
-            let codex = inspect(&home.join(".codex")).unwrap();
+            let codex = inspect_with(&home.join(".codex"), home).unwrap();
             assert_eq!(codex.name, "Codex");
-            let hermes = inspect(&home.join(".hermes/profiles/explorateur")).unwrap();
+            let hermes = inspect_with(&home.join(".hermes/profiles/explorateur"), home).unwrap();
             assert_eq!(hermes.name, "Hermes");
             assert_eq!(hermes.role, Role::Folder);
-            let overmind = inspect(&home.join(".overmind")).unwrap();
+            let overmind = inspect_with(&home.join(".overmind"), home).unwrap();
             assert_eq!(overmind.name, "Overmind");
             assert!(overmind.credentials.iter().any(|name| name == ".env"));
         },
@@ -71,10 +69,13 @@ fn opencode_and_zcode_nested_homes_are_found() {
         },
         |home| {
             assert_eq!(
-                inspect(&home.join(".config/opencode")).unwrap().name,
+                inspect_with(&home.join(".config/opencode"), home).unwrap().name,
                 "OpenCode"
             );
-            assert_eq!(inspect(&home.join(".zcode/cli")).unwrap().name, "Zcode");
+            assert_eq!(
+                inspect_with(&home.join(".zcode/cli"), home).unwrap().name,
+                "Zcode"
+            );
         },
     );
 }
@@ -87,8 +88,8 @@ fn a_foreign_folder_is_not_recognized() {
             std::fs::create_dir_all(home.join("Documents")).unwrap();
         },
         |home| {
-            assert_eq!(inspect(&home.join("Documents")), None);
-            assert_eq!(inspect(&home.join(".claude-lookalike")), None);
+            assert_eq!(inspect_with(&home.join("Documents"), home), None);
+            assert_eq!(inspect_with(&home.join(".claude-lookalike"), home), None);
         },
     );
 }
@@ -101,21 +102,20 @@ fn installed_lists_every_harness_that_exists() {
             std::fs::create_dir_all(home.join(".codex")).unwrap();
         },
         |home| {
-            let found = installed();
+            let found = installed_with(home);
             let names: Vec<_> = found.iter().map(|(name, _)| *name).collect();
             assert!(names.contains(&"Claude Code"));
             assert!(names.contains(&"Codex"));
             assert!(!names.contains(&"Hermes"), "absent homes are not listed");
-            let _ = home;
         },
     );
 }
 
 #[test]
 fn a_missing_home_reports_nothing_instead_of_guessing() {
-    std::env::set_var("VIRIAL_HOME_OVERRIDE", "Z:/virial-does-not-exist");
-    assert_eq!(installed(), Vec::new());
-    std::env::remove_var("VIRIAL_HOME_OVERRIDE");
+    let missing = Path::new("Z:/virial-does-not-exist");
+    assert_eq!(installed_with(missing), Vec::new());
+    assert_eq!(inspect_with(missing, missing), None);
 }
 
 #[test]
@@ -127,5 +127,16 @@ fn every_harness_uses_an_icon_that_ships_with_the_binary() {
             harness.name,
             harness.icon
         );
+    }
+}
+
+#[test]
+fn homes_are_joined_portably_across_separators() {
+    // The AppData/Local/hermes home uses a nested relative path; joining must
+    // work regardless of the platform separator.
+    for harness in HARNESS_LIST {
+        for home in harness.homes {
+            assert!(!home.contains('\\'), "{}: {home}", harness.name);
+        }
     }
 }

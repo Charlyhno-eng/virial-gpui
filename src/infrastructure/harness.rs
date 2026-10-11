@@ -8,7 +8,7 @@
 //! - Claude Code    ~/.claude/                    settings.json, agents/, skills/
 //! - Codex          ~/.codex/                     config.toml, auth.json, sessions/
 //! - Hermes         ~/.hermes/  (Windows:         profiles/<name>/{config.yaml,
-//!                  %LOCALAPPDATA%\hermes)        SOUL.md, .env, memories/, skills/)
+//!   %LOCALAPPDATA%\hermes)                        SOUL.md, .env, memories/, skills/)
 //! - OpenClaw       ~/.config/openclaw/           config, agents/
 //! - Zcode          ~/.zcode/                     cli/, workspace/, v2/
 //! - OpenCode       ~/.config/opencode/           config, agents/
@@ -105,12 +105,8 @@ pub enum Role {
     Folder,
 }
 
-/// The user home directory, portable across Windows and Unix. Overridable for
-/// tests through `VIRIAL_HOME_OVERRIDE`.
+/// The user home directory, portable across Windows and Unix.
 fn home() -> Option<PathBuf> {
-    if let Ok(override_home) = std::env::var("VIRIAL_HOME_OVERRIDE") {
-        return Some(PathBuf::from(override_home));
-    }
     #[cfg(windows)]
     {
         std::env::var("USERPROFILE")
@@ -129,6 +125,11 @@ fn home() -> Option<PathBuf> {
 /// candidate home.
 pub fn inspect(path: &Path) -> Option<HarnessInfo> {
     let home_root = home()?;
+    inspect_with(path, &home_root)
+}
+
+/// Test seam: the same recognition with an explicit home root.
+pub fn inspect_with(path: &Path, home_root: &Path) -> Option<HarnessInfo> {
     let absolute = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     for harness in HARNESS_LIST {
         for relative in harness.homes {
@@ -177,6 +178,11 @@ pub fn installed() -> Vec<(&'static str, PathBuf)> {
     let Some(home_root) = home() else {
         return Vec::new();
     };
+    installed_with(&home_root)
+}
+
+/// Test seam: the same listing with an explicit home root.
+pub fn installed_with(home_root: &Path) -> Vec<(&'static str, PathBuf)> {
     HARNESS_LIST
         .iter()
         .filter_map(|harness| {
