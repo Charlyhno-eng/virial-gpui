@@ -401,7 +401,7 @@ fn view_can_undo(view: &CodeEditor) -> bool {
 /// viewport covers every line, including the empty area below the last one.
 struct InputSurface {
     view: Entity<CodeEditor>,
-    content: gpui::AnyElement,
+    content: Option<UniformList>,
 }
 
 impl IntoElement for InputSurface {
@@ -413,7 +413,7 @@ impl IntoElement for InputSurface {
 }
 
 impl Element for InputSurface {
-    type RequestLayoutState = ();
+    type RequestLayoutState = Option<AnyElement>;
     type PrepaintState = ();
 
     fn id(&self) -> Option<ElementId> {
@@ -430,12 +430,21 @@ impl Element for InputSurface {
         _: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, ()) {
-        let style = Style::default();
-        (
-            window.request_layout(style, [self.content.clone().into_any_element()], cx),
-            (),
-        )
+    ) -> (LayoutId, Option<AnyElement>) {
+        // The text viewport fills this element, so the bounds the paint phase
+        // reports cover every visible line.
+        let style = Style {
+            size: gpui::Size {
+                width: gpui::relative(1.).into(),
+                height: gpui::relative(1.).into(),
+            },
+            ..Default::default()
+        };
+        let Some(content) = self.content.take() else {
+            return (window.request_layout(style, [], cx), None);
+        };
+        let content = content.into_any_element();
+        (window.request_layout(style, [content.clone()], cx), Some(content))
     }
 
     fn prepaint(
@@ -443,10 +452,13 @@ impl Element for InputSurface {
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
         _: Bounds<Pixels>,
-        _: &mut (),
-        _: &mut Window,
-        _: &mut App,
+        state: &mut Option<AnyElement>,
+        window: &mut Window,
+        cx: &mut App,
     ) {
+        if let Some(content) = state {
+            content.prepaint(window, cx);
+        }
     }
 
     fn paint(
@@ -454,10 +466,13 @@ impl Element for InputSurface {
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        _: &mut (),
+        state: &mut Option<AnyElement>,
         window: &mut Window,
         cx: &mut App,
     ) {
+        if let Some(content) = state {
+            content.paint(window, cx);
+        }
         let view = self.view.read(cx);
         let focus = view.focus.clone();
         let handler = self.view.clone();

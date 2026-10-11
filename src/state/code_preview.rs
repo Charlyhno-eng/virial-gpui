@@ -69,7 +69,96 @@ pub(crate) struct CodePreview {
     pub(crate) highlights: Vec<(Range<usize>, HighlightStyle)>,
 }
 
+/// GPUI renders spaces literally; expand tabs to four-column stops and
+/// normalize Windows line endings before computing UTF-8 byte ranges.
+fn normalize(source: &str) -> String {
+    let mut text = String::with_capacity(source.len());
+    let mut column = 0;
+    for ch in source.replace("\r\n", "\n").chars() {
+        match ch {
+            '\t' => {
+                let spaces = 4 - column % 4;
+                text.extend(std::iter::repeat_n(' ', spaces));
+                column += spaces;
+            }
+            '\n' => {
+                text.push(ch);
+                column = 0;
+            }
+            _ => {
+                text.push(ch);
+                column += 1;
+            }
+        }
+    }
+    text
+}
+
+/// Split the worker-produced spans once, instead of scanning the entire
+/// document for every rendered line on each keyboard event.
+fn split_lines(text: &str, highlights: &[(Range<usize>, HighlightStyle)]) -> (Vec<CodeLine>, usize) {
+    let mut offset = 0;
+    let mut span = 0;
+    let lines: Vec<_> = text
+        .split('\n')
+        .enumerate()
+        .map(|(index, line)| {
+            let start = offset;
+            let end = start + line.len();
+            offset = end + 1;
+            while span < highlights.len() && highlights[span].0.end <= start {
+                span += 1;
+            }
+            let colors = highlights[span..]
+                .iter()
+                .take_while(|(range, _)| range.start < end)
+                .filter_map(|(range, style)| {
+                    let from = range.start.max(start);
+                    let to = range.end.min(end);
+                    (from < to).then_some((from - start..to - start, *style))
+                })
+                .collect();
+            CodeLine {
+                text: line.to_owned().into(),
+                number: (index + 1).to_string().into(),
+                highlights: colors,
+            }
+        })
+        .collect();
+    let widest_line = lines
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, line)| line.text.chars().count())
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    (lines, widest_line)
+}
+
 impl CodePreview {
+    /// Assemble the line table from prepared text and its spans.
+    fn assemble(text: String, highlights: Vec<(Range<usize>, HighlightStyle)>) -> Self {
+        let (lines, widest_line) = split_lines(&text, &highlights);
+        #[cfg(test)]
+        let line_numbers = (1..=text.split('\n').count())
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .into();
+        // Outside tests the spans have already been folded into the lines.
+        #[cfg(not(test))]
+        let _ = highlights;
+        Self {
+            lines,
+            widest_line,
+            #[cfg(test)]
+            text: text.into(),
+            #[cfg(test)]
+            line_numbers,
+            #[cfg(test)]
+            highlights,
+        }
+    }
+
     pub(crate) fn new(path: &Path, source: &str) -> Option<Self> {
         let syntax = path
             .file_name()
@@ -94,27 +183,7 @@ impl CodePreview {
             return None;
         }
 
-        // GPUI renders spaces literally; expand tabs to four-column stops and
-        // normalize Windows line endings before computing UTF-8 byte ranges.
-        let mut text = String::with_capacity(source.len());
-        let mut column = 0;
-        for ch in source.replace("\r\n", "\n").chars() {
-            match ch {
-                '\t' => {
-                    let spaces = 4 - column % 4;
-                    text.extend(std::iter::repeat_n(' ', spaces));
-                    column += spaces;
-                }
-                '\n' => {
-                    text.push(ch);
-                    column = 0;
-                }
-                _ => {
-                    text.push(ch);
-                    column += 1;
-                }
-            }
-        }
+        let text = normalize(source);
 
         let mut highlighter = HighlightLines::new(syntax, &THEME);
         let mut highlights = Vec::new();
@@ -145,58 +214,14 @@ impl CodePreview {
             }
             offset += line.len();
         }
-        #[cfg(test)]
-        let line_numbers = (1..=text.split('\n').count())
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .into();
-        // Split the worker-produced spans once, instead of scanning the entire
-        // document for every rendered line on each keyboard event.
-        let mut offset = 0;
-        let mut span = 0;
-        let lines: Vec<_> = text
-            .split('\n')
-            .enumerate()
-            .map(|(index, line)| {
-                let start = offset;
-                let end = start + line.len();
-                offset = end + 1;
-                while span < highlights.len() && highlights[span].0.end <= start {
-                    span += 1;
-                }
-                let colors = highlights[span..]
-                    .iter()
-                    .take_while(|(range, _)| range.start < end)
-                    .filter_map(|(range, style)| {
-                        let from = range.start.max(start);
-                        let to = range.end.min(end);
-                        (from < to).then_some((from - start..to - start, *style))
-                    })
-                    .collect();
-                CodeLine {
-                    text: line.to_owned().into(),
-                    number: (index + 1).to_string().into(),
-                    highlights: colors,
-                }
-            })
-            .collect();
-        let widest_line = lines
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, line)| line.text.chars().count())
-            .map(|(index, _)| index)
-            .unwrap_or(0);
-        Some(Self {
-            lines,
-            widest_line,
-            #[cfg(test)]
-            text: text.into(),
-            #[cfg(test)]
-            line_numbers,
-            #[cfg(test)]
-            highlights,
-        })
+        Self::assemble(text, highlights)
+    }
+
+    /// Line-indexed source without any grammar: used by the formats that keep
+    /// both a source view and a rendered view, so the source view can never be
+    /// missing just because the extension is unknown to the syntax set.
+    pub(crate) fn plain(source: &str) -> Self {
+        Self::assemble(normalize(source), Vec::new())
     }
 }
 
