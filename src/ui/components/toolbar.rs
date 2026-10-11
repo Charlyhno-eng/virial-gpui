@@ -43,26 +43,23 @@ impl FileManager {
                     view.forward(cx);
                 })),
             )
-            .when(
-                self.location.directory().is_some(),
-                |bar| {
-                    bar.child(
-                        navigation_button(
-                            "up",
-                            "up",
-                            self.language.text("Up"),
-                            self.location
-                                .directory()
-                                .and_then(|path| path.parent())
-                                .is_some(),
-                        )
-                        .on_click(cx.listener(|view, _, window, cx| {
-                            view.focus.focus(window);
-                            view.up(cx);
-                        })),
+            .when(self.location.directory().is_some(), |bar| {
+                bar.child(
+                    navigation_button(
+                        "up",
+                        "up",
+                        self.language.text("Up"),
+                        self.location
+                            .directory()
+                            .and_then(|path| path.parent())
+                            .is_some(),
                     )
-                },
-            )
+                    .on_click(cx.listener(|view, _, window, cx| {
+                        view.focus.focus(window);
+                        view.up(cx);
+                    })),
+                )
+            })
             .child(
                 navigation_button(
                     "refresh",
