@@ -119,7 +119,10 @@ fn markdown_and_html_get_a_rendered_view_and_everything_else_does_not() {
         // Both documents open on the rendered view; the extension match is
         // case-insensitive, unlike the plain `Code` route.
         assert!(
-            matches!(read_preview(&entry, false), Preview::Markdown(_, true) | Preview::Html(_, true)),
+            matches!(
+                read_preview(&entry, false),
+                Preview::Markdown(_, true) | Preview::Html(_, true)
+            ),
             "{name} opens on its rendered view"
         );
     }

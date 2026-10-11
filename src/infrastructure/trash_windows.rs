@@ -89,7 +89,7 @@ fn whoami_sid() -> String {
 fn sid_once() -> Option<String> {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, LocalFree};
     use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidA;
-    use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+    use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
     unsafe {
