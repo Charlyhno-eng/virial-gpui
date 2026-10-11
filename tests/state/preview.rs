@@ -107,7 +107,6 @@ fn markdown_and_html_get_a_rendered_view_and_everything_else_does_not() {
         ("PAGE.HTML", html, true),
     ];
     for (name, contents, rendered) in cases {
-        let _ = rendered;
         let path = root.path().join(name);
         std::fs::write(&path, contents).unwrap();
         let entry = Entry {
@@ -118,11 +117,12 @@ fn markdown_and_html_get_a_rendered_view_and_everything_else_does_not() {
         };
         // Both documents open on the rendered view; the extension match is
         // case-insensitive, unlike the plain `Code` route.
-        assert!(
+        assert_eq!(
             matches!(
                 read_preview(&entry, false),
                 Preview::Markdown(_, true) | Preview::Html(_, true)
             ),
+            rendered,
             "{name} opens on its rendered view"
         );
     }

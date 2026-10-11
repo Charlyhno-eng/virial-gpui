@@ -327,8 +327,9 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
     let mut spans: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
     let mut indent = 0usize;
     let mut kind = LineKind::Body;
-    // Open elements, innermost last; the second field is the inline style.
-    let mut open: Vec<(String, Option<HighlightStyle>)> = Vec::new();
+    // Open elements, innermost last: name, inline style, and whether the
+    // element is hidden (`hidden` or `display:none`), whose text is muted.
+    let mut open: Vec<(String, Option<HighlightStyle>, bool)> = Vec::new();
     let mut list_depth = 0usize;
     // Position inside the current ordered list; reset on every <ul>/<ol>.
     let mut list_items = 0usize;
@@ -363,17 +364,20 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
         }
     }
 
-    /// Append text to the pending line, styled by the innermost inline tag and
-    /// muted inside a scripted or hidden element.
+    /// Append text to the pending line, styled by the innermost inline tag.
+    /// A scripted body is dropped outright — it is metadata, not page content —
+    /// while text inside a hidden element is kept but muted, so the reader
+    /// sees the file had it.
     fn push_text(
         line: &mut String,
         spans: &mut Vec<(Range<usize>, HighlightStyle)>,
         text: &str,
         style: Option<HighlightStyle>,
+        scripted: bool,
         hidden: bool,
         verbatim: bool,
     ) {
-        if text.is_empty() {
+        if scripted || text.is_empty() {
             return;
         }
         let text = decode_entities(text);
@@ -397,7 +401,8 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
 
     while index < source.len() {
         let rest = &source[index..];
-        let style = open.iter().rev().find_map(|(_, style)| *style);
+        let style = open.iter().rev().find_map(|(_, style, _)| *style);
+        let hidden = open.iter().any(|(_, _, hidden)| *hidden);
         let Some(position) = rest.find('<') else {
             push_text(
                 &mut line,
@@ -405,6 +410,7 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
                 rest,
                 style,
                 scripted_depth > 0,
+                hidden,
                 pre_depth > 0,
             );
             break;
@@ -416,6 +422,7 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
                 &rest[..position],
                 style,
                 scripted_depth > 0,
+                hidden,
                 pre_depth > 0,
             );
             index += position;
@@ -442,15 +449,20 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
             index += end + 1;
             // Close up to the matching open tag: an unclosed inner tag is
             // simply dropped, which keeps the output flat and predictable.
-            if let Some(depth) = open.iter().rposition(|(tag, _)| *tag == name) {
+            if let Some(depth) = open.iter().rposition(|(tag, _, _)| *tag == name) {
                 let closed: Vec<_> = open.split_off(depth);
                 let scripted = closed
                     .iter()
-                    .filter(|(tag, _)| SCRIPTED.contains(&tag.as_str()))
+                    .filter(|(tag, _, _)| SCRIPTED.contains(&tag.as_str()))
                     .count();
-                let pre = closed.iter().filter(|(tag, _)| tag == "pre").count();
+                let pre = closed.iter().filter(|(tag, _, _)| tag == "pre").count();
+                let lists = closed
+                    .iter()
+                    .filter(|(tag, _, _)| tag == "ul" || tag == "ol")
+                    .count();
                 scripted_depth = scripted_depth.saturating_sub(scripted);
                 pre_depth = pre_depth.saturating_sub(pre);
+                list_depth = list_depth.saturating_sub(lists);
             }
             if name == "title" {
                 if !line.trim().is_empty() {
@@ -463,15 +475,19 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
                 }
                 line.clear();
                 spans.clear();
+                kind = LineKind::Body;
             } else if SCRIPTED.contains(&name.as_str())
                 || VOID.contains(&name.as_str())
                 || inline_style(&name).is_some()
             {
-                // Inline and inert: the style ends with its own tag.
+                // Inline and inert: the style ends with its own tag, and the
+                // pending block keeps the kind it was written under.
             } else {
-                close_line(&mut out, &mut line, &mut spans, &mut indent, LineKind::Body);
+                // A block ends: its pending line keeps its own kind, so a
+                // heading closes as a heading and a quote as a quote.
+                close_line(&mut out, &mut line, &mut spans, &mut indent, kind);
+                kind = LineKind::Body;
             }
-            kind = LineKind::Body;
             continue;
         }
         // A start tag: read its name, stopping at the first non-name byte.
@@ -499,9 +515,9 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
 
         if VOID.contains(&name.as_str()) {
             match name.as_str() {
-                "br" => close_line(&mut out, &mut line, &mut spans, &mut indent, LineKind::Body),
+                "br" => close_line(&mut out, &mut line, &mut spans, &mut indent, kind),
                 "hr" => {
-                    close_line(&mut out, &mut line, &mut spans, &mut indent, LineKind::Body);
+                    close_line(&mut out, &mut line, &mut spans, &mut indent, kind);
                     out.push(HtmlLine::plain("", LineKind::Rule, 0));
                     spacer(&mut out);
                 }
@@ -527,12 +543,13 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
 
         if SCRIPTED.contains(&name.as_str()) {
             scripted_depth += 1;
-            open.push((name, None));
+            open.push((name, None, false));
             continue;
         }
         let block = BLOCKS.contains(&name.as_str());
         if block {
-            close_line(&mut out, &mut line, &mut spans, &mut indent, LineKind::Body);
+            // The pending line keeps the kind of the block it belongs to.
+            close_line(&mut out, &mut line, &mut spans, &mut indent, kind);
         }
         let hidden = attributes.contains_key("hidden")
             || attributes
@@ -556,7 +573,10 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
                 kind = LineKind::ListItem;
                 indent = list_depth * 2;
             }
-            _ => kind = LineKind::Body,
+            // Only a block element resets the line kind; an inline tag styles
+            // its text without changing what the block is.
+            _ if block => kind = LineKind::Body,
+            _ => {}
         }
         if name == "li" && !self_closing {
             // gpui 0.2 has no list marker: prefix the bullet here, colored by
@@ -565,8 +585,8 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
             let ordered = open
                 .iter()
                 .rev()
-                .find(|(tag, _)| tag == "ul" || tag == "ol")
-                .is_some_and(|(tag, _)| tag == "ol");
+                .find(|(tag, _, _)| tag == "ul" || tag == "ol")
+                .is_some_and(|(tag, _, _)| tag == "ol");
             let marker = if ordered {
                 format!("{}. ", list_items + 1)
             } else {
@@ -576,14 +596,14 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
             line.push_str(&marker);
             spans.push((start..line.len(), list_marker_span()));
         }
-        open.push((name, if hidden { None } else { style }));
+        open.push((name, if hidden { None } else { style }, hidden));
         if self_closing {
             // `<span/>` and friends: nothing stays open.
-            if let Some((tag, _)) = open.pop() {
+            if let Some((tag, _, _)) = open.pop() {
                 pre_depth = pre_depth.saturating_sub(usize::from(tag == "pre"));
             }
             if block {
-                close_line(&mut out, &mut line, &mut spans, &mut indent, LineKind::Body);
+                close_line(&mut out, &mut line, &mut spans, &mut indent, kind);
                 kind = LineKind::Body;
             }
         }
@@ -690,11 +710,15 @@ mod tests {
         assert!(items[0].text.ends_with("first"), "bullet prefix: {items:?}");
         assert!(items[1].text.ends_with("second"));
         assert!(items[0].indent > 0, "list items are indented");
+        // The whole rendered marker — glyph and its spacing — is one colored
+        // span: four UTF-8 bytes for the bullet.
         assert!(
             items[0]
                 .highlights
                 .iter()
-                .any(|(range, style)| range.end == 2 && style.color.is_some()),
+                .any(|(range, style)| range.start == 0
+                    && range.end == "• ".len()
+                    && style.color.is_some()),
             "the bullet itself is colored: {items:?}"
         );
     }
