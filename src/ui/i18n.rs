@@ -198,7 +198,6 @@ impl Language {
             "Harness" => "Harnais",
             "Harness home" => "Dossier du harnais",
             "Harness folder" => "Dossier appartenant au harnais",
-            "Home" => "Domicile",
             "Prompt" => "Invite système",
             "Credentials" => "Identifiants",
             "Properties" => "Propriétés",
