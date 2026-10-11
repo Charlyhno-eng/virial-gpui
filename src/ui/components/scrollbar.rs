@@ -6,7 +6,7 @@
 //! the list's own scroll handle, so it can never disagree with the contents.
 
 use gpui::{
-    Div, Styled, UniformListScrollHandle, div, prelude::*, px, point,
+    Div, MouseMoveEvent, Styled, UniformListScrollHandle, div, prelude::*, point, px,
 };
 
 /// Width of the thumb, and of the slightly wider invisible hit area.
@@ -93,7 +93,7 @@ pub(crate) fn render(
         .right(px(0.))
         .bottom(px(0.))
         .w(px(HIT_WIDTH))
-        .occlude_mouse()
+        .occlude()
         .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
             // A scrollbar drag: the wheel and trackpad keep working because the
             // list updates its own offset on its events.
