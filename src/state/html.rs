@@ -422,8 +422,8 @@ pub(crate) fn parse(source: &str) -> Vec<HtmlLine> {
         }
         let rest = &source[index..];
         // Comments: content the page never shows, dropped entirely.
-        if rest.starts_with("<!--") {
-            index += rest[4..].find("-->").map_or(0, |at| 4 + at + 3);
+        if let Some(comment) = rest.strip_prefix("<!--") {
+            index += comment.find("-->").map_or(0, |at| 4 + at + 3);
             continue;
         }
         // Doctype and processing instructions.

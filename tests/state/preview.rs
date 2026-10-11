@@ -107,6 +107,7 @@ fn markdown_and_html_get_a_rendered_view_and_everything_else_does_not() {
         ("PAGE.HTML", html, true),
     ];
     for (name, contents, rendered) in cases {
+        let _ = rendered;
         let path = root.path().join(name);
         std::fs::write(&path, contents).unwrap();
         let entry = Entry {
