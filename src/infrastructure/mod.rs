@@ -64,6 +64,8 @@ pub(crate) fn try_lock_exclusive(file: &File, busy: &'static str) -> io::Result<
 }
 
 // Freedesktop-trash module: Linux only; a portable stub serves other targets.
+pub(crate) mod harness;
+pub(crate) mod toolkit;
 #[cfg(unix)]
 pub(crate) mod trash;
 #[cfg(not(unix))]

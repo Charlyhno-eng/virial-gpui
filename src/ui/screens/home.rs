@@ -7,6 +7,11 @@ use gpui::{Animation, AnimationExt, Context, Div, FontWeight, div, prelude::*, p
 use std::time::Duration;
 
 impl FileManager {
+    /// How many sessions the details panel lists before stopping: the newest
+    /// ones are enough to recognise an application, and the panel must stay
+    /// readable on a home with hundreds of conversations.
+    const MAX_SESSIONS: usize = 5;
+
     pub(crate) fn details_panel(&self, current_folder: bool, _: &mut Context<Self>) -> Div {
         let selected = (!current_folder)
             .then(|| {
@@ -20,6 +25,16 @@ impl FileManager {
         let package = selected
             .as_ref()
             .and_then(|entry| crate::infrastructure::packages::inspect(&entry.path));
+        let harness = selected
+            .as_ref()
+            .filter(|entry| entry.directory)
+            .and_then(|entry| crate::infrastructure::harness::inspect(&entry.path));
+        // What the application stored in that home: conversations, skills and
+        // the MCP servers it is wired to. Read once, on the panel's read path.
+        let toolkit = harness
+            .as_ref()
+            .map(|harness| crate::infrastructure::toolkit::toolkit_with(&harness.home))
+            .unwrap_or_default();
         let modified = self.preview_modified.clone().unwrap_or_else(|| "—".into());
         let (name, path, kind, size, symbol) = if let Some(entry) = selected {
             let kind = entry.kind();
@@ -143,6 +158,176 @@ impl FileManager {
                                         .text("This file carries an access key for the registry"),
                                 ),
                         )
+                    })
+            })
+            .when_some(harness.clone(), |panel, harness| {
+                // The harness block: which agentic CLI owns this folder, its
+                // home, its system prompt and its credential files.
+                let role = self.language.text(match harness.role {
+                    crate::infrastructure::harness::Role::Home => "Harness home",
+                    crate::infrastructure::harness::Role::Folder => "Harness folder",
+                });
+                let kind = self.language.text(harness.kind.label());
+                panel
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Harness"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(file_icon(harness.icon, 14.))
+                                    .child(div().text_color(color(MUTED)).child(harness.name)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Role"))
+                            .child(div().text_color(color(MUTED)).child(role)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Kind"))
+                            .child(div().text_color(color(MUTED)).child(kind)),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Home"))
+                            .child(
+                                div()
+                                    .text_color(color(MUTED))
+                                    .text_ellipsis()
+                                    .child(harness.home.display().to_string()),
+                            ),
+                    )
+                    .children(harness.prompt.as_ref().map(|prompt| {
+                        div()
+                            .flex()
+                            .justify_between()
+                            .text_size(px(11.))
+                            .child(self.language.text("Prompt"))
+                            .child(
+                                div()
+                                    .text_color(color(MUTED))
+                                    .text_ellipsis()
+                                    .child(prompt.display().to_string()),
+                            )
+                    }))
+                    .when(!harness.credentials.is_empty(), |panel| {
+                        panel.child(
+                            div()
+                                .flex()
+                                .gap_1()
+                                .items_center()
+                                .text_size(px(11.))
+                                .text_color(color(MUTED))
+                                .child(icon("info", 12., ACCENT))
+                                .child(format!(
+                                    "{}: {}",
+                                    self.language.text("Credentials"),
+                                    harness.credentials.join(", ")
+                                )),
+                        )
+                    })
+                    .children(
+                        toolkit
+                            .sessions
+                            .iter()
+                            .take(Self::MAX_SESSIONS)
+                            .map(|session| {
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .gap_2()
+                                    .text_size(px(11.))
+                                    .child(self.language.text("Session"))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .min_w_0()
+                                            .flex_col()
+                                            .items_end()
+                                            .text_color(color(MUTED))
+                                            .child(session.name.clone())
+                                            .child(
+                                                session
+                                                    .cwd
+                                                    .as_ref()
+                                                    .map(|cwd| cwd.display().to_string())
+                                                    .unwrap_or_default(),
+                                            ),
+                                    )
+                            }),
+                    )
+                    .when(!toolkit.skills.is_empty(), |panel| {
+                        panel.child(
+                            div()
+                                .flex()
+                                .justify_between()
+                                .gap_2()
+                                .text_size(px(11.))
+                                .child(self.language.text("Skills"))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .min_w_0()
+                                        .flex_col()
+                                        .items_end()
+                                        .text_color(color(MUTED))
+                                        .child(toolkit.skills.len().to_string())
+                                        .child(
+                                            toolkit
+                                                .skills
+                                                .iter()
+                                                .map(|skill| skill.name.as_str())
+                                                .collect::<Vec<_>>()
+                                                .join(", "),
+                                        ),
+                                ),
+                        )
+                    })
+                    .when(!toolkit.servers.is_empty(), |panel| {
+                        panel.children(toolkit.servers.iter().map(|server| {
+                            div()
+                                .flex()
+                                .justify_between()
+                                .gap_2()
+                                .text_size(px(11.))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
+                                        .child(self.language.text("MCP server"))
+                                        .child(file_icon(
+                                            crate::infrastructure::toolkit::MCP_ICON,
+                                            12.,
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .min_w_0()
+                                        .flex_col()
+                                        .items_end()
+                                        .text_color(color(MUTED))
+                                        .child(server.name.clone())
+                                        .child(server.transport.clone().unwrap_or_default()),
+                                )
+                        }))
                     })
             })
             .when_some(
