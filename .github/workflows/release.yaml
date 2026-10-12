@@ -426,6 +426,89 @@ jobs:
           curl -sf "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${{ needs.prepare.outputs.version }}" \
             | python3 -c "import json,sys; [print(f\"{a['name']}  {a['size']} bytes\") for a in json.load(sys.stdin)['assets']]"
 
+  # After a successful publish, regenerate the README install table with the
+  # assets that just shipped: each platform row shows the real file name as a
+  # clickable download link. Runs only on the automatic path (a workflow_run
+  # that published): a tag-push or inspection run must not rewrite docs. The
+  # commit is mechanical — names and URLs read from the release API — which
+  # is why it lands directly on main without a PR.
+  docs-sync:
+    needs: publish
+    if: >-
+      needs.publish.result == 'success' &&
+      github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          ref: main
+      - name: Regenerate the install table from the release assets
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+
+          version = os.environ["VERSION"]
+          repo = os.environ["REPO"]
+          api = f"https://api.github.com/repos/{repo}/releases/tags/v{version}"
+          with urllib.request.urlopen(api) as response:
+              assets = {a["name"]: a["browser_download_url"]
+                        for a in json.load(response)["assets"]}
+
+          # One anchor per platform row, matched from the asset names the
+          # builders upload. If an expected asset is missing the lookup fails
+          # loudly: a half-published release must not silently rewrite docs.
+          deb = assets[f"virial-gpui_{version}_amd64.deb"]
+          macos_name = next(n for n in assets if re.match(r"Virial-.*\.app\.tar\.gz$", n))
+          win_name = f"virial-gpui-{version}-windows-x86_64.zip"
+          rows = (
+              f"| 🐧 Linux | [`virial-gpui_{version}_amd64.deb`]({deb}) "
+              f"| `sudo apt install ./virial-gpui_{version}_amd64.deb` — installs the launcher and the icon |\n"
+              f"| 🍎 macOS | [`{macos_name}`]({assets[macos_name]}) "
+              f"| Open the archive and drag `Virial.app` into Applications |\n"
+              f"| 🪟 Windows | [`{win_name}`]({assets[win_name]}) "
+              f"| Unzip anywhere and double-click `virial-gpui.exe` |\n"
+          )
+
+          with open("README.md", encoding="utf-8") as f:
+              readme = f.read()
+          table = re.compile(
+              r"^\| 🐧 Linux \|.*?\n\| 🍎 macOS \|.*?\n\| 🪟 Windows \|.*?\n",
+              re.S | re.M,
+          )
+          if not table.search(readme):
+              raise SystemExit(
+                  "::error::README.md: install table not found — "
+                  "check the row format before rewriting it."
+              )
+          with open("README.md", "w", encoding="utf-8", newline="") as f:
+              f.write(table.sub(rows, readme, count=1))
+          print(f"Install table regenerated with v{version} asset links")
+          PY
+      - name: Commit the README update
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet README.md; then
+            echo "README already shows v$VERSION; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(readme): install table links the v$VERSION assets"
+          git push origin main
+
   # Note: there is deliberately no crates.io job. virial-gpui is a binary crate
   # (no `src/lib.rs`), and crates.io refuses binary-only manifests, so such a
   # job could only ever install a toolchain and emit warnings. Applications ship
