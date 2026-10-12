@@ -1,7 +1,7 @@
 use crate::infrastructure::image_edit::{ExportFormat, ImageEdit};
 use crate::{
     app::FileManager,
-    state::{markdown, preview::Preview},
+    state::{html, markdown, preview::Preview},
     ui::{
         components::{navigation_button, toolbar_button},
         theme::*,
@@ -77,8 +77,18 @@ fn code_font(cx: &App) -> SharedString {
 }
 
 impl FileManager {
+    /// Is the preview showing the syntax-colored source list rather than a
+    /// rendered or plain document? Those views share one virtualized list and
+    /// therefore one scroll handle, so every keyboard path must agree.
+    pub(crate) fn preview_is_source_list(&self) -> bool {
+        matches!(
+            self.preview,
+            Preview::Code(_) | Preview::Markdown(_, false) | Preview::Html(_, false)
+        )
+    }
+
     pub(crate) fn scroll_preview_to_line(&self) {
-        if matches!(self.preview, Preview::Code(_)) {
+        if self.preview_is_source_list() {
             let strategy = if px(self.preview_line as f32 * 18.)
                 < -self.code_preview_scroll.0.borrow().base_handle.offset().y
             {
@@ -98,6 +108,74 @@ impl FileManager {
                 line_scroll_offset(scroll.bounds(), line, offset.y, scroll.max_offset().height);
             scroll.set_offset(offset);
         }
+    }
+
+    /// The shared syntax-colored source list, used by every document format
+    /// that offers a source view (code, Markdown, HTML).
+    fn source_view(&self, id: &'static str, cx: &mut Context<Self>) -> impl IntoElement {
+        uniform_list(
+            id,
+            self.preview
+                .source_lines()
+                .map_or(0, |code| code.lines.len()),
+            cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
+                let Some(code) = view.preview.source_lines() else {
+                    return Vec::new();
+                };
+                range
+                    .map(|index| {
+                        let line = &code.lines[index];
+                        div()
+                            .flex()
+                            .flex_shrink_0()
+                            .w_full()
+                            .h(px(18.))
+                            .when(view.preview_focused && view.preview_line == index, |line| {
+                                line.bg(color(SELECTED))
+                            })
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .w(px(44.))
+                                    .pr_3()
+                                    .text_right()
+                                    .text_color(color(CODE_GUTTER))
+                                    .child(line.number.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .pr_3()
+                                    .text_color(color(CODE_TEXT))
+                                    .child(
+                                        StyledText::new(line.text.clone())
+                                            .with_highlights(line.highlights.iter().cloned()),
+                                    ),
+                            )
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(move |view, _, window, cx| {
+                                    view.preview_focused = true;
+                                    view.preview_line = index;
+                                    view.focus.focus(window);
+                                    cx.notify();
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .into_any_element()
+                    })
+                    .collect()
+            }),
+        )
+        .with_width_from_item(self.preview.source_lines().map(|code| code.widest_line))
+        .with_horizontal_sizing_behavior(gpui::ListHorizontalSizingBehavior::Unconstrained)
+        .track_scroll(self.code_preview_scroll.clone())
+        .flex_1()
+        .min_h_0()
+        .font_family(code_font(cx))
+        .text_size(px(12.))
+        .line_height(px(18.))
+        .whitespace_nowrap()
     }
 
     pub(crate) fn preview_width(&self, window: &Window) -> f32 {
@@ -325,10 +403,13 @@ impl FileManager {
                                     },
                                     true,
                                 )
+                                // The variant's flag is the single source of
+                                // truth for the active view: flipping it here
+                                // is what the renderer reads.
                                 .on_click(cx.listener(
                                     |view, _, window, cx| {
-                                        if let Preview::Markdown(document, _) = &mut view.preview {
-                                            document.toggle();
+                                        if let Preview::Markdown(_, rendered) = &mut view.preview {
+                                            *rendered = !*rendered;
                                         }
                                         view.focus.focus(window);
                                         cx.notify();
@@ -337,6 +418,29 @@ impl FileManager {
                             )
                         },
                     )
+                    .when(matches!(&self.preview, Preview::Html(_, _)), |toolbar| {
+                        toolbar.child(
+                            navigation_button(
+                                "toggle-html",
+                                "eye",
+                                if matches!(&self.preview, Preview::Html(_, true)) {
+                                    self.language.text("Source view")
+                                } else {
+                                    self.language.text("Page preview")
+                                },
+                                true,
+                            )
+                            .on_click(cx.listener(
+                                |view, _, window, cx| {
+                                    if let Preview::Html(_, rendered) = &mut view.preview {
+                                        *rendered = !*rendered;
+                                    }
+                                    view.focus.focus(window);
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                    })
                     .child(
                         navigation_button(
                             "expand-preview",
@@ -409,11 +513,11 @@ impl FileManager {
                         matches!(&self.preview, Preview::Code(_) | Preview::Editing),
                         |body| body.overflow_hidden(),
                     )
+                    // The source views bring their own scroll container, so
+                    // the body must not add a second one on top of it.
                     .when(
-                        !matches!(
-                            &self.preview,
-                            Preview::Code(_) | Preview::Editing | Preview::Markdown(_, _)
-                        ),
+                        !self.preview_is_source_list()
+                            && !matches!(&self.preview, Preview::Editing | Preview::Markdown(_, _)),
                         |body| body.overflow_y_scroll(),
                     )
                     .map(|mut body| {
@@ -506,53 +610,65 @@ impl FileManager {
                                     .children(lines)
                                     .into_any_element()
                             } else {
-                                let code = &document.source;
-                                uniform_list(
-                                    "markdown-source",
-                                    code.lines.len(),
-                                    cx.processor(|view, range: std::ops::Range<usize>, _, _cx| {
-                                        let Preview::Markdown(document, _) = &view.preview else {
-                                            return Vec::new();
+                                self.source_view("markdown-source", cx).into_any_element()
+                            }
+                        }
+                        Preview::Html(document, show_rendered) => {
+                            if *show_rendered {
+                                let lines =
+                                    document.rendered.iter().enumerate().map(|(index, line)| {
+                                        let size = match line.kind {
+                                            html::LineKind::Heading(1) => 20.,
+                                            html::LineKind::Heading(2) => 17.,
+                                            html::LineKind::Heading(3) => 15.,
+                                            html::LineKind::Title => 12.,
+                                            _ => 13.,
                                         };
-                                        range
-                                            .map(|index| {
-                                                let line = &document.source.lines[index];
-                                                div()
-                                                    .flex()
-                                                    .flex_shrink_0()
-                                                    .w_full()
-                                                    .h(px(18.))
-                                                    .child(
-                                                        div()
-                                                            .flex_shrink_0()
-                                                            .pr_3()
-                                                            .text_color(color(CODE_TEXT))
-                                                            .child(
-                                                                StyledText::new(line.text.clone())
-                                                                    .with_highlights(
-                                                                        line.highlights
-                                                                            .iter()
-                                                                            .cloned(),
-                                                                    ),
-                                                            ),
-                                                    )
-                                                    .into_any_element()
+                                        div()
+                                            .id(index)
+                                            .w_full()
+                                            .pl(px(12. + line.indent as f32 * 6.))
+                                            .py(px(match line.kind {
+                                                html::LineKind::Heading(_) => 4.,
+                                                html::LineKind::Title => 6.,
+                                                html::LineKind::Rule => 6.,
+                                                _ => 1.,
+                                            }))
+                                            .when(line.kind == html::LineKind::Rule, |row| {
+                                                row.h(px(1.)).bg(color(BORDER)).my_2()
                                             })
-                                            .collect()
-                                    }),
-                                )
-                                .with_width_from_item(Some(code.widest_line))
-                                .with_horizontal_sizing_behavior(
-                                    gpui::ListHorizontalSizingBehavior::Unconstrained,
-                                )
-                                .track_scroll(self.code_preview_scroll.clone())
-                                .flex_1()
-                                .min_h_0()
-                                .font_family(code_font(cx))
-                                .text_size(px(12.))
-                                .line_height(px(18.))
-                                .whitespace_nowrap()
-                                .into_any_element()
+                                            .when(line.kind == html::LineKind::CodeBlock, |row| {
+                                                row.bg(color(SURFACE))
+                                            })
+                                            .when(line.kind == html::LineKind::Title, |row| {
+                                                row.text_color(color(MUTED))
+                                                    .text_size(px(12.))
+                                                    .italic()
+                                            })
+                                            // The bullet is part of the text: gpui 0.2 has no list marker, so the
+                                            // parser prefixes each item itself.
+                                            .when(line.kind == html::LineKind::ListItem, |row| {
+                                                row.pl(px(24. + line.indent as f32 * 6.))
+                                            })
+                                            .text_size(px(size))
+                                            .child(
+                                                StyledText::new(line.text.clone()).with_highlights(
+                                                    line.highlights.iter().cloned(),
+                                                ),
+                                            )
+                                            .into_any_element()
+                                    });
+                                div()
+                                    .id("html-rendered")
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scroll()
+                                    .track_scroll(&self.preview_scroll)
+                                    .py_3()
+                                    .children(lines)
+                                    .into_any_element()
+                            } else {
+                                self.source_view("html-source", cx).into_any_element()
                             }
                         }
                         Preview::Text(text) => {
@@ -588,76 +704,16 @@ impl FileManager {
                                 .children(lines)
                                 .into_any_element()
                         }
-                        Preview::Code(code) => uniform_list(
-                            if expanded {
-                                "expanded-code-preview"
-                            } else {
-                                "code-preview"
-                            },
-                            code.lines.len(),
-                            cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
-                                let Preview::Code(code) = &view.preview else {
-                                    return Vec::new();
-                                };
-                                range
-                                    .map(|index| {
-                                        let line = &code.lines[index];
-                                        div()
-                                            .flex()
-                                            .flex_shrink_0()
-                                            .w_full()
-                                            .h(px(18.))
-                                            .when(
-                                                view.preview_focused && view.preview_line == index,
-                                                |line| line.bg(color(SELECTED)),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex_shrink_0()
-                                                    .w(px(44.))
-                                                    .pr_3()
-                                                    .text_right()
-                                                    .text_color(color(CODE_GUTTER))
-                                                    .child(line.number.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex_shrink_0()
-                                                    .pr_3()
-                                                    .text_color(color(CODE_TEXT))
-                                                    .child(
-                                                        StyledText::new(line.text.clone())
-                                                            .with_highlights(
-                                                                line.highlights.iter().cloned(),
-                                                            ),
-                                                    ),
-                                            )
-                                            .on_mouse_down(
-                                                gpui::MouseButton::Left,
-                                                cx.listener(move |view, _, window, cx| {
-                                                    view.preview_focused = true;
-                                                    view.preview_line = index;
-                                                    view.focus.focus(window);
-                                                    cx.notify();
-                                                    cx.stop_propagation();
-                                                }),
-                                            )
-                                    })
-                                    .collect()
-                            }),
-                        )
-                        .with_width_from_item(Some(code.widest_line))
-                        .with_horizontal_sizing_behavior(
-                            gpui::ListHorizontalSizingBehavior::Unconstrained,
-                        )
-                        .track_scroll(self.code_preview_scroll.clone())
-                        .flex_1()
-                        .min_h_0()
-                        .font_family(code_font(cx))
-                        .text_size(px(12.))
-                        .line_height(px(18.))
-                        .whitespace_nowrap()
-                        .into_any_element(),
+                        Preview::Code(_) => self
+                            .source_view(
+                                if expanded {
+                                    "expanded-code-preview"
+                                } else {
+                                    "code-preview"
+                                },
+                                cx,
+                            )
+                            .into_any_element(),
                         Preview::Loading => div()
                             .p_3()
                             .text_color(color(MUTED))

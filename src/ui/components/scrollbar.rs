@@ -5,7 +5,9 @@
 //! paints a proportional thumb on the right edge whose geometry derives from
 //! the list's own scroll handle, so it can never disagree with the contents.
 
-use gpui::{Div, Styled, UniformListScrollHandle, div, prelude::*, px};
+use gpui::{
+    App, Div, MouseMoveEvent, Styled, UniformListScrollHandle, Window, div, point, prelude::*, px,
+};
 
 /// Width of the thumb, and of the slightly wider invisible hit area.
 const THUMB_WIDTH: f32 = 4.;
@@ -72,20 +74,40 @@ pub(crate) fn geometry(handle: &UniformListScrollHandle, item_count: usize) -> O
 /// Paint the thumb as an overlay inside a `relative` container.
 ///
 /// Renders nothing until [`geometry`] reports a scrollable list, so the thumb
-/// never flickers on the opening frame.
+/// never flickers on the opening frame. The strip follows the pointer while a
+/// drag is active, so the thumb can be grabbed like a desktop scrollbar's.
 pub(crate) fn render(handle: &UniformListScrollHandle, item_count: usize, tint: gpui::Rgba) -> Div {
     let Some(thumb) = geometry(handle, item_count) else {
         return div();
     };
+    let base = handle.0.borrow().base_handle.clone();
+    let viewport = f32::from(base.bounds().size.height);
+    let overflow = f32::from(base.max_offset().height);
     div()
         .absolute()
         .top(px(0.))
         .right(px(0.))
         .bottom(px(0.))
         .w(px(HIT_WIDTH))
-        .flex()
-        .justify_end()
-        .pr(px(2.))
+        .occlude()
+        .on_mouse_move(
+            move |event: &MouseMoveEvent, window: &mut Window, _: &mut App| {
+                // A scrollbar drag: the wheel and trackpad keep working because the
+                // list updates its own offset on its events.
+                if !event.dragging() {
+                    return;
+                }
+                let target = drag_offset(
+                    f32::from(event.position.y),
+                    thumb.top,
+                    thumb.height,
+                    viewport,
+                    overflow,
+                );
+                base.set_offset(point(px(0.), px(-target)));
+                window.refresh();
+            },
+        )
         .child(
             div()
                 .w(px(THUMB_WIDTH))
@@ -94,6 +116,19 @@ pub(crate) fn render(handle: &UniformListScrollHandle, item_count: usize, tint: 
                 .rounded_full()
                 .bg(tint),
         )
+}
+
+/// The scroll offset matching a thumb dragged to absolute window `y`.
+///
+/// The thumb's `top` is in track coordinates, so the fraction comes from the
+/// pointer's distance travelled inside the track, scaled to the content.
+fn drag_offset(y: f32, top: f32, height: f32, viewport: f32, overflow: f32) -> f32 {
+    let travel = viewport - height;
+    if travel <= 0. {
+        return 0.;
+    }
+    let fraction = (y - top) / travel;
+    (fraction * overflow).clamp(0., overflow)
 }
 
 #[cfg(test)]

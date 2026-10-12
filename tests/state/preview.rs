@@ -93,6 +93,52 @@ fn previews_bound_text_reject_binary_and_count_folder_contents() {
 }
 
 #[test]
+fn markdown_and_html_get_a_rendered_view_and_everything_else_does_not() {
+    let root = tempfile::tempdir().unwrap();
+    let markdown = "# Title\n\nBody";
+    let html = "<html><head><title>Home</title></head><body><h1>T</h1></body></html>";
+    let cases = [
+        ("notes.md", markdown, true),
+        ("notes.markdown", markdown, true),
+        ("NOTES.MD", markdown, true),
+        ("page.html", html, true),
+        ("page.htm", html, true),
+        ("page.xhtml", html, true),
+        ("PAGE.HTML", html, true),
+    ];
+    for (name, contents, rendered) in cases {
+        let path = root.path().join(name);
+        std::fs::write(&path, contents).unwrap();
+        let entry = Entry {
+            path,
+            name: name.into(),
+            directory: false,
+            bytes: None,
+        };
+        // Both documents open on the rendered view; the extension match is
+        // case-insensitive, unlike the plain `Code` route.
+        assert_eq!(
+            matches!(
+                read_preview(&entry, false),
+                Preview::Markdown(_, true) | Preview::Html(_, true)
+            ),
+            rendered,
+            "{name} opens on its rendered view"
+        );
+    }
+    // A file whose grammar is missing still gets its source view.
+    let path = root.path().join("page.weird");
+    std::fs::write(&path, html).unwrap();
+    let entry = Entry {
+        path,
+        name: "page.weird".into(),
+        directory: false,
+        bytes: None,
+    };
+    assert!(matches!(read_preview(&entry, false), Preview::Code(_)));
+}
+
+#[test]
 fn code_previews_stay_bounded_reject_binary_and_leave_the_file_unchanged() {
     let path = std::env::temp_dir().join(format!("virial-code-preview-{}.rs", std::process::id()));
     let entry = Entry {

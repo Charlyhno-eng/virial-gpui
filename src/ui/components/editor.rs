@@ -273,6 +273,7 @@ impl Render for CodeEditor {
         self.generation += 1;
         let generation = self.generation;
 
+        let entity = cx.entity();
         let body = uniform_list(
             ("editor", generation),
             line_count,
@@ -353,7 +354,30 @@ impl Render for CodeEditor {
             .on_key_down(cx.listener(|view, event, _, cx| {
                 view.key(event, cx);
             }))
-            .child(body)
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(body)
+                    // Painted after the list, so its handler is the one gpui
+                    // keeps: typed characters (WM_CHAR on Windows) land in the
+                    // buffer instead of vanishing when the last painted row was
+                    // outside the viewport.
+                    .child(canvas(
+                        |_, _, _| (),
+                        move |bounds, _, window, cx| {
+                            let view = entity.read(cx);
+                            let focus = view.focus.clone();
+                            let handler = entity.clone();
+                            window.handle_input(
+                                &focus,
+                                ElementInputHandler::new(bounds, handler),
+                                cx,
+                            );
+                        },
+                    )),
+            )
             .child(
                 div()
                     .flex()
@@ -504,12 +528,6 @@ impl Element for EditorRow {
     ) {
         let view = self.view.read(cx);
         let focus = view.focus.clone();
-        // The row is the input surface: clicks and IME land here.
-        window.handle_input(
-            &focus,
-            ElementInputHandler::new(bounds, self.view.clone()),
-            cx,
-        );
         for rect in &prepaint.selection {
             window.paint_quad(fill(*rect, color(SELECTED)));
         }

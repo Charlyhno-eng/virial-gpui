@@ -436,27 +436,24 @@ fn inline(s: &str) -> (String, Vec<(Range<usize>, HighlightStyle)>) {
     (text, spans)
 }
 
-/// A parsed Markdown document: the rendered lines, the syntax-colored source
-/// lines (built once, on the worker) and which view is active. The toggle is
-/// a plain bool, so switching costs nothing.
+/// A parsed Markdown document: the rendered lines and the syntax-colored
+/// source lines, both built once on the worker. Which of the two views is
+/// active lives in the `Preview` variant, so there is a single source of truth
+/// for it and the toggle can never disagree with the renderer.
 pub(crate) struct Document {
     pub(crate) rendered: Vec<MarkdownLine>,
     pub(crate) source: crate::state::code_preview::CodePreview,
-    pub(crate) show_rendered: bool,
 }
 
 impl Document {
     pub(crate) fn new(path: &std::path::Path, source: &str) -> Self {
         Self {
             rendered: parse(source),
+            // A missing grammar must never panic the worker: the source view
+            // then falls back to plain text instead of taking the preview down.
             source: crate::state::code_preview::CodePreview::new(path, source)
-                .expect("a .md path always resolves a syntect syntax"),
-            show_rendered: true,
+                .unwrap_or_else(|| crate::state::code_preview::CodePreview::plain(source)),
         }
-    }
-
-    pub(crate) fn toggle(&mut self) {
-        self.show_rendered = !self.show_rendered;
     }
 }
 

@@ -626,27 +626,13 @@ impl FileManager {
                 crate::state::preview::Preview::Text(_)
                     | crate::state::preview::Preview::Code(_)
                     | crate::state::preview::Preview::Markdown(..)
+                    | crate::state::preview::Preview::Html(..)
             )
             && !modifiers.modified()
             && matches!(key, "up" | "down" | "home" | "end" | "pageup" | "pagedown")
         {
-            let line_count = match &self.preview {
-                crate::state::preview::Preview::Text(text) => text.split('\n').count(),
-                crate::state::preview::Preview::Code(code) => code.lines.len(),
-                crate::state::preview::Preview::Markdown(document, rendered) => {
-                    if *rendered {
-                        document.rendered.len().max(1)
-                    } else {
-                        document.source.lines.len()
-                    }
-                }
-                _ => 1,
-            };
-            let viewport = if matches!(self.preview, crate::state::preview::Preview::Code(_))
-                || matches!(
-                    &self.preview,
-                    crate::state::preview::Preview::Markdown(_, false)
-                ) {
+            let line_count = self.preview.line_count();
+            let viewport = if self.preview_is_source_list() {
                 self.code_preview_scroll.0.borrow().base_handle.bounds()
             } else {
                 self.preview_scroll.bounds()

@@ -133,6 +133,7 @@ impl Language {
             "No content preview available" => "Aucun aperçu du contenu disponible",
             "Rendered view" => "Vue rendue",
             "Source view" => "Vue source",
+            "Page preview" => "Aperçu du site",
             "Workspaces" => "Espaces de travail",
             "New workspace…" => "Nouvel espace de travail…",
             "Workspace name" => "Nom de l’espace de travail",

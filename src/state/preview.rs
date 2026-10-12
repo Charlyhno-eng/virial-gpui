@@ -19,6 +19,8 @@ pub(crate) enum Preview {
     Code(CodePreview),
     /// A Markdown document, parsed on the worker; `bool` = rendered view.
     Markdown(super::markdown::Document, bool),
+    /// An HTML page, parsed on the worker; `bool` = rendered page view.
+    Html(super::html::Document, bool),
     /// The file is open in the editor rather than only previewed.
     Editing,
     Unavailable,
@@ -51,6 +53,41 @@ impl Preview {
             Self::Image(_, metadata) | Self::ArchiveImage(_, metadata) => metadata.as_ref(),
             _ => None,
         }
+    }
+
+    /// The syntax-colored source of the previewed document, whichever format
+    /// it is. `None` for previews that have no source to show.
+    pub(crate) fn source_lines(&self) -> Option<&CodePreview> {
+        match self {
+            Self::Code(code) => Some(code),
+            Self::Markdown(document, _) => Some(&document.source),
+            Self::Html(document, _) => Some(&document.source),
+            _ => None,
+        }
+    }
+
+    /// How many display lines the previewed document has in its current view.
+    pub(crate) fn line_count(&self) -> usize {
+        match self {
+            Self::Text(text) => text.split('\n').count(),
+            Self::Code(code) => code.lines.len(),
+            Self::Markdown(document, rendered) => {
+                if *rendered {
+                    document.rendered.len()
+                } else {
+                    document.source.lines.len()
+                }
+            }
+            Self::Html(document, rendered) => {
+                if *rendered {
+                    document.rendered.len()
+                } else {
+                    document.source.lines.len()
+                }
+            }
+            _ => 1,
+        }
+        .max(1)
     }
 }
 
@@ -214,14 +251,21 @@ fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
         }
         Err(_) => return Preview::Unavailable,
     };
-    // Markdown files get a rendered view alongside the syntax-colored source.
+    // Markdown and HTML get a rendered view alongside the syntax-colored
+    // source, parsed on the worker thread.
     let lower = entry
         .path
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase());
-    if matches!(lower.as_deref(), Some("md" | "markdown")) {
-        return Preview::Markdown(super::markdown::Document::new(&entry.path, text), true);
+    match lower.as_deref() {
+        Some("md" | "markdown") => {
+            return Preview::Markdown(super::markdown::Document::new(&entry.path, text), true);
+        }
+        Some("html" | "htm" | "xhtml") => {
+            return Preview::Html(super::html::Document::new(&entry.path, text), true);
+        }
+        _ => {}
     }
     match CodePreview::new(&entry.path, text) {
         Some(code) => Preview::Code(code),
