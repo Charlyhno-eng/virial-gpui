@@ -32,7 +32,13 @@ pub(crate) fn detect(source: &str) -> Option<&'static str> {
         if engine.is_none()
             && let Some((kind, _)) = split_word(trimmed)
             && let Some(static_kind) = [
-                "neato", "fdp", "sfdp", "twopi", "circo", "patchwork", "osage",
+                "neato",
+                "fdp",
+                "sfdp",
+                "twopi",
+                "circo",
+                "patchwork",
+                "osage",
             ]
             .iter()
             .find(|name| *name == &kind)

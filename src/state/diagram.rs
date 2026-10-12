@@ -19,10 +19,12 @@ pub(crate) struct Caption {
 pub(crate) fn caption(language: &str, body: &str) -> Option<Caption> {
     let lower = language.to_ascii_lowercase();
     match lower.as_str() {
-        "mermaid" => crate::state::mermaid::detect(body)
-            .map(|kind| format!("mermaid · {}", kind.id())),
-        "plantuml" | "uml" | "puml" => crate::state::plantuml::detect(body)
-            .map(|kind| format!("plantuml · {kind}")),
+        "mermaid" => {
+            crate::state::mermaid::detect(body).map(|kind| format!("mermaid · {}", kind.id()))
+        }
+        "plantuml" | "uml" | "puml" => {
+            crate::state::plantuml::detect(body).map(|kind| format!("plantuml · {kind}"))
+        }
         "dot" | "graphviz" | "gv" => {
             crate::state::dot::detect(body).map(|kind| format!("graphviz · {kind}"))
         }
@@ -42,7 +44,9 @@ mod tests {
             "mermaid · sequence"
         );
         assert_eq!(
-            caption("plantuml", "@startuml\nparticipant A").unwrap().text,
+            caption("plantuml", "@startuml\nparticipant A")
+                .unwrap()
+                .text,
             "plantuml · sequence"
         );
         assert_eq!(

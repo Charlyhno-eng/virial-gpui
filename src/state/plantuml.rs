@@ -76,18 +76,19 @@ fn keyword_family(line: &str) -> Option<&'static str> {
         return Some("activity");
     }
     match word {
-        "participant" | "autonumber" | "activate" | "deactivate" | "destroy"
-        | "box" => Some("sequence"),
+        "participant" | "autonumber" | "activate" | "deactivate" | "destroy" | "box" => {
+            Some("sequence")
+        }
         "usecase" => Some("use-case"),
         "class" | "abstract" | "interface" | "enum" => Some("class"),
         "object" => Some("object"),
         "state" => Some("state"),
         "component" => Some("component"),
-        "node" | "artifact" | "agent" | "cloud" | "database" | "folder"
-        | "frame" | "rectangle" | "storage" | "stack" | "card" | "file"
-        | "boundary" | "control" | "queue" => Some("deployment"),
-        "start" | "stop" | "fork" | "split" | "partition" | "repeat"
-        | "detach" => Some("activity"),
+        "node" | "artifact" | "agent" | "cloud" | "database" | "folder" | "frame" | "rectangle"
+        | "storage" | "stack" | "card" | "file" | "boundary" | "control" | "queue" => {
+            Some("deployment")
+        }
+        "start" | "stop" | "fork" | "split" | "partition" | "repeat" | "detach" => Some("activity"),
         "nwdiag" => Some("network"),
         "archimate" => Some("archimate"),
         "salt" => Some("salt"),
