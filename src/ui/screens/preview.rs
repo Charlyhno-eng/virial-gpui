@@ -464,6 +464,8 @@ impl FileManager {
                                             markdown::LineKind::Heading(1) => 20.,
                                             markdown::LineKind::Heading(2) => 17.,
                                             markdown::LineKind::Heading(3) => 15.,
+                                            // The mermaid caption fixes its own size.
+                                            markdown::LineKind::Mermaid => 11.,
                                             _ => 13.,
                                         };
                                         div()
@@ -473,6 +475,7 @@ impl FileManager {
                                             .py(px(match line.kind {
                                                 markdown::LineKind::Heading(_) => 4.,
                                                 markdown::LineKind::Rule => 6.,
+                                                markdown::LineKind::Mermaid => 0.,
                                                 _ => 1.,
                                             }))
                                             .when(line.kind == markdown::LineKind::Rule, |row| {
@@ -482,6 +485,9 @@ impl FileManager {
                                                 line.kind == markdown::LineKind::CodeBlock,
                                                 |row| row.bg(color(SURFACE)),
                                             )
+                                            .when(line.kind == markdown::LineKind::Mermaid, |row| {
+                                                row.pt(px(6.)).text_color(color(ACCENT))
+                                            })
                                             .text_size(px(size))
                                             .child(
                                                 StyledText::new(line.text.clone()).with_highlights(
