@@ -12,51 +12,23 @@ impl FileManager {
     /// readable on a home with hundreds of conversations.
     const MAX_SESSIONS: usize = 5;
 
-    pub(crate) fn details_panel(&self, current_folder: bool, _: &mut Context<Self>) -> Div {
-        let selected = (!current_folder)
-            .then(|| {
-                self.selection
-                    .primary()
-                    .and_then(|index| self.entries.get(index))
-                    .cloned()
-            })
+    /// Extended details belong to the explicit Properties dialog, never the preview.
+    pub(crate) fn details_panel(&self, entry: &crate::domain::models::Entry) -> Div {
+        let package = crate::infrastructure::packages::inspect(&entry.path);
+        let harness = entry
+            .directory
+            .then(|| crate::infrastructure::harness::inspect(&entry.path))
             .flatten();
-        let has_selection = selected.is_some();
-        let package = selected
-            .as_ref()
-            .and_then(|entry| crate::infrastructure::packages::inspect(&entry.path));
-        let harness = selected
-            .as_ref()
-            .filter(|entry| entry.directory)
-            .and_then(|entry| crate::infrastructure::harness::inspect(&entry.path));
-        // What the application stored in that home: conversations, skills and
-        // the MCP servers it is wired to. Read once, on the panel's read path.
         let toolkit = harness
             .as_ref()
             .map(|harness| crate::infrastructure::toolkit::toolkit_with(&harness.home))
             .unwrap_or_default();
-        let modified = self.preview_modified.clone().unwrap_or_else(|| "—".into());
-        let (name, path, kind, size, symbol) = if let Some(entry) = selected {
-            let kind = entry.kind();
-            let symbol = entry.icon();
-            (
-                entry.name,
-                entry.path.display().to_string(),
-                kind,
-                self.language.size(entry.bytes),
-                symbol,
-            )
-        } else {
-            let name = self.location.title(&self.home, self.language);
-            let path = self.location.description(self.language);
-            let kind = if self.location.directory().is_some() {
-                "Folder"
-            } else {
-                "Location"
-            };
-            let size = "—".to_string();
-            (name, path, kind, size, self.location.icon())
-        };
+        let is_previewed = self.preview_path.as_ref() == Some(&entry.path);
+        let name = entry.name.clone();
+        let path = entry.path.display().to_string();
+        let kind = entry.kind();
+        let size = self.language.size(entry.bytes);
+        let symbol = entry.icon();
         div()
             .w_full()
             .flex_shrink_0()
@@ -67,11 +39,7 @@ impl FileManager {
             .pt_5()
             .pb_4()
             .bg(translucent(SURFACE, 0.16))
-            .child(if has_selection {
-                file_icon(symbol, 34.)
-            } else {
-                icon(symbol, 34., ACCENT_BLUE).into_any_element()
-            })
+            .child(file_icon(symbol, 34.))
             .child(div().text_size(px(14.)).text_ellipsis().child(name))
             .child(
                 div()
@@ -81,6 +49,17 @@ impl FileManager {
                     .child(path),
             )
             .child(div().h(px(1.)).my_1().bg(color(BORDER)))
+            .when(is_previewed, |panel| {
+                if let crate::state::preview::Preview::Folder(entries) = &self.preview {
+                    panel.child(
+                        div()
+                            .text_size(px(11.))
+                            .child(self.language.item_count(entries.len())),
+                    )
+                } else {
+                    panel
+                }
+            })
             .child(
                 div()
                     .flex()
@@ -331,7 +310,7 @@ impl FileManager {
                     })
             })
             .when_some(
-                (!current_folder)
+                is_previewed
                     .then(|| self.preview.image_metadata())
                     .flatten(),
                 |panel, metadata| {
@@ -355,55 +334,6 @@ impl FileManager {
                         }),
                     )
                 },
-            )
-            .when(
-                current_folder || matches!(self.preview, crate::state::preview::Preview::Folder(_)),
-                |panel| {
-                    let count = if current_folder {
-                        self.entries.len()
-                    } else if let crate::state::preview::Preview::Folder(count) = self.preview {
-                        count
-                    } else {
-                        0
-                    };
-                    panel.child(
-                        div()
-                            .flex()
-                            .justify_between()
-                            .text_size(px(11.))
-                            .child(self.language.text("Contents"))
-                            .child(
-                                div()
-                                    .text_color(color(MUTED))
-                                    .child(self.language.item_count(count)),
-                            ),
-                    )
-                },
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .text_size(px(11.))
-                    .child(self.language.text("Modified"))
-                    .child(div().text_color(color(MUTED)).child(modified)),
-            )
-            .child(div().h(px(1.)).my_1().bg(color(BORDER)))
-            .child(
-                div()
-                    .text_size(px(10.))
-                    .text_color(color(MUTED))
-                    .child(self.language.text("DETAILS")),
-            )
-            .child(
-                div()
-                    .text_size(px(11.))
-                    .text_color(color(MUTED))
-                    .child(self.language.text(if has_selection {
-                        "Selected item"
-                    } else {
-                        "Current location"
-                    })),
             )
     }
 
@@ -431,6 +361,9 @@ impl FileManager {
             })
             .min_w_0()
             .min_h_0()
+            .when(self.details_open && !self.preview_history.is_empty(), |area| {
+                area.min_w(px(180.))
+            })
             .child(
                 div()
                     .px_4()
@@ -708,7 +641,7 @@ impl FileManager {
                                                     }
                                                 }
                                                 if click_count == 1 && !modifiers.control && !modifiers.shift && view.selection.indices.len() == 1 {
-                                                    view.defer_preview(cx);
+                                                    view.show_preview(cx);
                                                 }
                                                 cx.notify();
                                             },

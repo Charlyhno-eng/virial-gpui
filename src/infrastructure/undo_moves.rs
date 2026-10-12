@@ -1,4 +1,4 @@
-//! Linux rename undo stores inverse moves, never copies or hashes payloads.
+//! Same-device Unix undo stores inverse moves, never copies or hashes payloads.
 //! Inode identity prevents restoring a replacement; edits travel with the item.
 use super::{LIMIT, LOCK, discard_entry, entries, history, invalid, normalized, save};
 use crate::infrastructure::{
@@ -315,14 +315,14 @@ fn prune(history: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn finish_trash(
+fn finish_moves(
     history: &Path,
     directory: &Path,
     moves: &[Move],
     result: io::Result<()>,
 ) -> io::Result<bool> {
     // Bind mounts can reject a rename despite sharing a device number. Restore
-    // any earlier items before falling back to the desktop trash service.
+    // any earlier items before falling back to the snapshot/copy path.
     if result
         .as_ref()
         .is_err_and(|error| error.raw_os_error() == Some(libc::EXDEV))
@@ -347,6 +347,119 @@ fn finish_trash(
         prune(history)?;
     }
     result.map(|_| true)
+}
+
+/// Try atomic moves before the snapshot/copy path. Conflicts and other devices
+/// keep the existing transfer planner; the journal also resumes partial batches.
+pub(super) fn transfer(
+    data: &Path,
+    id: Option<&str>,
+    sources: &[PathBuf],
+    destination_directory: &Path,
+    progress: Option<&Progress>,
+) -> io::Result<bool> {
+    let _guard = LOCK
+        .lock()
+        .map_err(|_| io::Error::other("Undo lock unavailable"))?;
+    let (history, _lock) = history(data)?;
+    let previous = entries(&history)?;
+    let finish = |directory: &Path, moves: &[Move], result| {
+        let done = finish_moves(&history, directory, moves, result)?;
+        if done && let Some(progress) = progress {
+            progress.begin(Phase::Finishing, Some(1));
+            progress.advance(1);
+        }
+        Ok(done)
+    };
+    if let Some((_, directory)) = previous.iter().find(|(_, directory)| {
+        id.is_some_and(|id| {
+            fs::read_to_string(directory.join("operation")).is_ok_and(|saved| saved == id)
+        })
+    }) {
+        let Some(moves) = load(directory)? else {
+            return Ok(false);
+        };
+        return finish(directory, &moves, apply(&moves, progress));
+    }
+    if let Some((_, latest)) = previous.last() {
+        super::load(latest)?;
+    }
+    let directory = destination_directory.canonicalize()?;
+    let metadata = fs::metadata(&directory)?;
+    if !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotADirectory,
+            "Destination is not a folder",
+        ));
+    }
+    let device = metadata.dev();
+    let journals = data.join("virial/operations");
+    let journals = journals.canonicalize().unwrap_or(journals);
+    let mut sources = sources
+        .iter()
+        .map(|source| normalized(source))
+        .collect::<io::Result<Vec<_>>>()?;
+    sources.sort();
+    sources.dedup();
+    let folders = sources
+        .iter()
+        .filter(|source| fs::symlink_metadata(source).is_ok_and(|m| m.is_dir()))
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    sources.retain(|source| {
+        !source
+            .ancestors()
+            .skip(1)
+            .any(|parent| folders.contains(parent))
+    });
+    let mut moves = Vec::new();
+    let mut targets = std::collections::HashSet::new();
+    for source in sources {
+        if let Some(progress) = progress {
+            progress.checkpoint()?;
+        }
+        if [&history, &journals]
+            .iter()
+            .any(|protected| source.starts_with(protected) || protected.starts_with(&source))
+        {
+            return Err(io::Error::other(
+                "Cannot move operation journals or undo history",
+            ));
+        }
+        let metadata = fs::symlink_metadata(&source)?;
+        if metadata.is_dir() && directory.starts_with(source.canonicalize()?) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Cannot transfer a folder into itself",
+            ));
+        }
+        let destination = directory.join(source.file_name().ok_or_else(invalid)?);
+        if destination == source {
+            continue;
+        }
+        if [&history, &journals].iter().any(|protected| {
+            destination.starts_with(protected) || protected.starts_with(&destination)
+        }) {
+            return Err(io::Error::other(
+                "Cannot move into operation journals or undo history",
+            ));
+        }
+        if metadata.dev() != device || !targets.insert(destination.clone()) {
+            return Ok(false);
+        }
+        match fs::symlink_metadata(&destination) {
+            Ok(_) => return Ok(false),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        moves.push(Move::new(&source, &destination, None)?);
+    }
+    if moves.is_empty() {
+        return Ok(true);
+    }
+    let summary = format!("Transfer\t{}", moves.len());
+    let directory = publish(&history, &previous, &moves, id, Some(&summary))?;
+    finish(&directory, &moves, apply(&moves, progress))
 }
 
 pub(super) fn rename(
@@ -385,6 +498,7 @@ pub(super) fn rename(
     result
 }
 
+#[cfg(target_os = "linux")]
 pub(super) fn trash(
     data: &Path,
     id: Option<&str>,
@@ -405,7 +519,7 @@ pub(super) fn trash(
         let Some(moves) = load(directory)? else {
             return Ok(false);
         };
-        return finish_trash(&history, directory, &moves, apply(&moves, progress));
+        return finish_moves(&history, directory, &moves, apply(&moves, progress));
     }
     if let Some((_, latest)) = previous.last() {
         super::load(latest)?;
@@ -461,9 +575,10 @@ pub(super) fn trash(
     for info in reservations {
         info.keep().map_err(|error| error.error)?;
     }
-    finish_trash(&history, &directory, &moves, apply(&moves, progress))
+    finish_moves(&history, &directory, &moves, apply(&moves, progress))
 }
 
+#[cfg(target_os = "linux")]
 pub(super) fn restore(data: &Path, batch: &[(PathBuf, PathBuf, PathBuf)]) -> io::Result<bool> {
     let _guard = LOCK
         .lock()
@@ -557,6 +672,6 @@ pub(super) fn undo(directory: &Path) -> io::Result<bool> {
     Ok(true)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 #[path = "../../tests/infrastructure/undo_moves.rs"]
 mod tests;

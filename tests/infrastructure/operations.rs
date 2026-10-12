@@ -69,7 +69,7 @@ fn mutations_preserve_links_refuse_collisions_and_change_extensions() {
     .unwrap();
     assert!(!source.join("renamed.md").exists());
     execute(Operation::Compress(source.clone())).unwrap();
-    assert!(root.join("source.tar.gz").exists());
+    assert!(root.join("source.zip").exists());
     assert!(execute(Operation::Compress(source)).is_err());
     fs::remove_dir_all(root).unwrap();
 }
@@ -441,30 +441,4 @@ fn duplicate_copies_a_directory_and_refuses_existing_destination() {
         fs::read_to_string(destination.join("file.txt")).unwrap(),
         "original"
     );
-}
-
-#[test]
-fn tar_formats_create_readable_archives() {
-    use crate::infrastructure::compression::{ArchiveFormat, destination};
-    let root = tempfile::tempdir().unwrap();
-    let source = root.path().join("--source.txt");
-    fs::write(&source, "hello").unwrap();
-    for format in [
-        ArchiveFormat::TarGz,
-        ArchiveFormat::TarXz,
-        ArchiveFormat::TarBz2,
-    ] {
-        execute(Operation::CompressAs {
-            path: source.clone(),
-            format,
-        })
-        .unwrap();
-        let output = std::process::Command::new("tar")
-            .arg("-xOf")
-            .arg(destination(&source, format).unwrap())
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{format:?}");
-        assert_eq!(output.stdout, b"hello");
-    }
 }

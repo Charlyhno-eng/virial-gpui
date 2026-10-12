@@ -1,4 +1,29 @@
-use super::line_scroll_offset;
+use super::{default_column_width, line_scroll_offset, resized_columns};
+
+#[test]
+fn files_are_twice_as_wide_as_folders_across_preview_depths() {
+    for parents in 0..30 {
+        let file = default_column_width(1200., parents, true, parents + 1);
+        let folder = default_column_width(1200., parents, true, parents);
+        assert_eq!(file, folder * 2.);
+        let start = crate::state::preview::visible_column_start(parents, true);
+        assert_eq!(file + folder * (parents + 1 - start) as f32, 1200.);
+        let directory = default_column_width(1200., parents, false, parents + 1);
+        assert_eq!(directory, 1200. / (parents + 2).min(4) as f32);
+    }
+}
+
+#[test]
+fn resizing_columns_preserves_total_width_and_minimums() {
+    for delta in [-1000., -120., 0., 120., 1000.] {
+        let (right, left) = resized_columns(300., Some(400.), delta, 800.);
+        let left = left.unwrap();
+        assert!(right >= 160. && left >= 160.);
+        assert_eq!(right + left, 700.);
+    }
+    assert_eq!(resized_columns(300., None, 1000., 600.), (600., None));
+    assert_eq!(resized_columns(300., None, -1000., 600.), (160., None));
+}
 use gpui::{Bounds, point, px, size};
 
 #[test]

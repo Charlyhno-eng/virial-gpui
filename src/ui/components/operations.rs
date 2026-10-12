@@ -18,6 +18,7 @@ fn button(id: &'static str, label: impl Into<gpui::SharedString>) -> Stateful<Di
         .bg(color(HOVER))
         .cursor_pointer()
         .hover(|style| style.bg(color(SELECTED)))
+        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(label.into())
 }
 
@@ -25,10 +26,17 @@ impl FileManager {
     pub(crate) fn operation_panel(&self, cx: &mut Context<Self>) -> Option<Div> {
         let progress = self.transfer_progress.as_ref()?;
         let state = progress.snapshot();
-        let controlled = self
-            .active_operation
-            .as_ref()
-            .is_some_and(|operation| operation.journal.is_some());
+        let compression = self.active_operation.as_ref().is_some_and(|operation| {
+            matches!(
+                operation.operation,
+                Operation::Compress(_) | Operation::CompressAs { .. }
+            )
+        });
+        let controlled = compression
+            || self
+                .active_operation
+                .as_ref()
+                .is_some_and(|operation| operation.journal.is_some());
         let label = self.language.text(if self.queue_failed {
             "Operation needs attention"
         } else if state.paused {
@@ -39,10 +47,12 @@ impl FileManager {
                 Phase::SavingUndo => "Saving undo history…",
                 Phase::Moving => "Moving…",
                 Phase::Copying => "Copying…",
+                Phase::Compressing => "Compressing…",
                 Phase::Finishing => "Finishing transfer…",
             }
         });
         let mut panel = div()
+            .occlude()
             .absolute()
             .bottom(px(38.))
             .right(px(16.))
@@ -108,6 +118,9 @@ impl FileManager {
                         }
                     }),
             );
+        if compression && state.phase == Phase::Compressing {
+            panel = panel.child(self.language.size(Some(state.bytes_done)));
+        }
         if state.files > 0 {
             panel = panel
                 .child(format!(
@@ -263,32 +276,6 @@ impl FileManager {
                     ),
             );
         }
-        let verifying = if controlled {
-            progress.verification()
-        } else {
-            self.verify_transfers
-        };
-        panel = panel.child(
-            button(
-                "verify-transfers",
-                format!(
-                    "{} {}",
-                    if verifying { "☑" } else { "☐" },
-                    self.language.text("Verify copied contents (SHA-256)")
-                ),
-            )
-            .on_click(cx.listener(|view, _, _, cx| {
-                let enabled = view
-                    .transfer_progress
-                    .as_ref()
-                    .map_or(view.verify_transfers, |progress| progress.verification());
-                view.verify_transfers = !enabled;
-                if let Some(progress) = &view.transfer_progress {
-                    progress.set_verification(view.verify_transfers);
-                }
-                cx.notify();
-            })),
-        );
         if !self.operation_queue.is_empty() {
             panel =
                 panel.child(self.language.text("Waiting operations")).child(

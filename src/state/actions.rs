@@ -75,6 +75,7 @@ pub enum Action {
     Rename,
     Trash,
     Compress,
+    Extract,
     CompressAs(crate::infrastructure::compression::ArchiveFormat),
     Duplicate,
     NewFolder,
@@ -97,6 +98,7 @@ impl Action {
             Self::Rename => "Rename…",
             Self::Trash => "Move to Trash…",
             Self::Compress => "Compress",
+            Self::Extract => "Extract",
             Self::CompressAs(format) => format.label(),
             Self::Duplicate => "Duplicate",
             Self::NewFolder => "New folder…",
@@ -219,7 +221,11 @@ impl FileManager {
             || (archive_entry
                 && matches!(
                     action,
-                    Action::Trash | Action::Compress | Action::CompressAs(_) | Action::Duplicate
+                    Action::Trash
+                        | Action::Compress
+                        | Action::CompressAs(_)
+                        | Action::Extract
+                        | Action::Duplicate
                 ))
         {
             cx.notify();
@@ -249,6 +255,7 @@ impl FileManager {
                 | Action::Duplicate
                 | Action::OpenWith
                 | Action::Compress
+                | Action::Extract
                 | Action::CompressAs(_)
                 | Action::Properties
                     if selected.len() > 1 =>
@@ -326,6 +333,7 @@ impl FileManager {
                             }
                         }
                         Action::Compress => self.run_operation(Operation::Compress(entry.path), cx),
+                        Action::Extract => self.run_operation(Operation::Extract(entry.path), cx),
                         Action::CompressAs(format) => self.run_operation(
                             Operation::CompressAs {
                                 path: entry.path,

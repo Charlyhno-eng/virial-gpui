@@ -12,6 +12,18 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Non publié]
 
 ### Ajouts
+- Arrow keys navigate preview columns and select nested files without leaving
+  the main folder. File previews take two of the four visible column units and
+  show content only; metadata remains available through Properties.
+- Preview columns can be resized and closed independently. At most four columns
+  are visible; hidden parents reappear when deeper columns close.
+- Nested folder previews keep each parent visible in its own column; clicking
+  an earlier column changes the branch, with independent scrolling per folder.
+- Folder previews show a navigable list of children, with independent back
+  navigation and file previews inside the panel. Compression can be paused or
+  cancelled; cancellation removes the incomplete archive.
+- Archive extraction from the context menu for ZIP, GZIP and TAR.GZ files,
+  into a new destination without overwriting existing files; supports undo.
 - **Corbeille Windows fonctionnelle** : la vue Corbeille listait toujours une
   erreur « non supportée » sous Windows — le module n'existait pas (stub).
   L'énumération lit les dossiers `$Recycle.Bin\<SID>` de chaque volume (fichiers
@@ -48,6 +60,19 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   le chemin automatique).
 
 ### Corrections
+- Markdown previews render formatted documents with tables and wrapped text;
+  accented characters no longer crash the parser, and the source toggle is removed.
+- Copy controls intercept clicks above the file list, so Pause and Cancel work.
+  Copies on Linux and macOS avoid redundant source-content reads, retaining
+  integrity and recovery checks. The SHA-256 option is removed from the panel.
+- Same-device moves on Linux and macOS use atomic renames and an inverse-move
+  journal instead of scanning, hashing and backing up file contents.
+- Archives cannot be recompressed; extraction uses a dedicated outline icon.
+- Preview clicks no longer wait 400 ms. ZIP and GZIP compression use a fast
+  compression level and bounded streaming buffers; folder compression no longer
+  starts a separate gzip process.
+- Compression now offers only ZIP and GZIP. Regular files use `.gz`; folders
+  use `.tar.gz`. GZIP file compression no longer requires an external command.
 - **Documentation d'installation et de release à jour** — le README pointe vers
   `/releases/latest` avec un tableau court (un seul livrable Linux : le `.deb`),
   `RELEASE.md` décrit le circuit réel (bump de version mergé sur un `main` vert

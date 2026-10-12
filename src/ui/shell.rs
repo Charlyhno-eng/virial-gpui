@@ -132,9 +132,13 @@ impl Render for FileManager {
                             .child(self.toolbar(window, cx))
                             .child(components::folder_transition(
                                 div()
+                                    .id("preview-columns")
                                     .flex()
                                     .flex_1()
                                     .min_h_0()
+                                    .min_w_0()
+                                    .overflow_x_scroll()
+                                    .track_scroll(&self.preview_columns_scroll)
                                     .when(
                                         self.location
                                             == crate::domain::location::Location::Workspaces,
@@ -142,7 +146,10 @@ impl Render for FileManager {
                                     )
                                     .when(
                                         self.location
-                                            != crate::domain::location::Location::Workspaces,
+                                            != crate::domain::location::Location::Workspaces
+                                            && (!self.details_open
+                                                || self.preview_expanded
+                                                || self.visible_preview_column_start() == 0),
                                         |layout| layout.child(self.file_list(cx)),
                                     )
                                     .when(
@@ -151,10 +158,12 @@ impl Render for FileManager {
                                             && self.location
                                                 != crate::domain::location::Location::Workspaces,
                                         |layout| {
-                                            layout.child(components::reveal(
-                                                self.preview_panel(false, window, cx),
-                                                "preview-panel",
-                                            ))
+                                            layout
+                                                .children(self.preview_parent_columns(window, cx))
+                                                .child(components::reveal(
+                                                    self.preview_panel(false, window, cx),
+                                                    "preview-panel",
+                                                ))
                                         },
                                     ),
                                 self.navigation_generation,

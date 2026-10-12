@@ -476,7 +476,7 @@ fn cross_mount_fallback_restores_partial_moves_before_snapshotting() {
     let directory = entries(&history).unwrap().pop().unwrap().1;
     let moves = load(&directory).unwrap().unwrap();
     assert!(
-        !finish_trash(
+        !finish_moves(
             &history,
             &directory,
             &moves,
@@ -489,4 +489,91 @@ fn cross_mount_fallback_restores_partial_moves_before_snapshotting() {
     assert!(entries(&history).unwrap().is_empty());
     assert_eq!(fs::read_dir(data.join("Trash/info")).unwrap().count(), 0);
     assert_eq!(queue::recover(&data).unwrap()[0].id, job.id);
+}
+
+fn interrupted_transfer(root: &Path) -> (PathBuf, queue::Job, PathBuf) {
+    let data = root.join("data");
+    let target = root.join("target");
+    fs::create_dir(&target).unwrap();
+    let sources = [root.join("one"), root.join("two")];
+    for source in &sources {
+        fs::write(source, source.file_name().unwrap().as_encoded_bytes()).unwrap();
+    }
+    let job = queue::enqueue(
+        &data,
+        &Operation::Transfer {
+            sources: sources.to_vec(),
+            directory: target.clone(),
+            cut: true,
+        },
+        false,
+    )
+    .unwrap();
+    let _guard = LOCK.lock().unwrap();
+    let (history, _lock) = history(&data).unwrap();
+    let moves = sources
+        .iter()
+        .map(|source| Move::new(source, &target.join(source.file_name().unwrap()), None).unwrap())
+        .collect::<Vec<_>>();
+    let directory = publish(
+        &history,
+        &entries(&history).unwrap(),
+        &moves,
+        Some(&job.id),
+        Some("Transfer\t2"),
+    )
+    .unwrap();
+    operations::rename(&sources[0], &target.join("one")).unwrap();
+    (data, job, directory)
+}
+
+#[test]
+fn atomic_transfer_recovery_and_cancellation_preserve_one_undo_batch() {
+    for cancel in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let (data, job, _) = interrupted_transfer(root.path());
+        fs::write(root.path().join("target/one"), b"edit after first move").unwrap();
+        let progress = Progress::default();
+        if cancel {
+            progress.cancel();
+        }
+        let result = queue::execute(&data, job, &progress);
+        if cancel {
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+            assert!(root.path().join("two").is_file());
+        } else {
+            result.unwrap();
+            assert!(root.path().join("target/two").is_file());
+        }
+        assert!(queue::recover(&data).unwrap().is_empty());
+        assert_eq!(entries(&data.join("virial/undo")).unwrap().len(), 1);
+        assert!(super::super::undo(&data).unwrap());
+        assert_eq!(
+            fs::read(root.path().join("one")).unwrap(),
+            b"edit after first move"
+        );
+        assert_eq!(fs::read(root.path().join("two")).unwrap(), b"two");
+        assert!(!super::super::undo(&data).unwrap());
+    }
+}
+
+#[test]
+fn atomic_transfer_recovery_refuses_replacements_and_can_retry() {
+    let root = tempfile::tempdir().unwrap();
+    let (data, job, _) = interrupted_transfer(root.path());
+    let first = root.path().join("target/one");
+    let parked = root.path().join("parked");
+    fs::rename(&first, &parked).unwrap();
+    fs::write(&first, b"unrelated replacement").unwrap();
+    assert!(queue::execute(&data, job.clone(), &Progress::default()).is_err());
+    assert!(root.path().join("two").is_file());
+    assert_eq!(queue::recover(&data).unwrap().len(), 1);
+    assert!(super::super::undo(&data).is_err());
+    assert_eq!(fs::read(&first).unwrap(), b"unrelated replacement");
+    fs::remove_file(&first).unwrap();
+    fs::rename(parked, &first).unwrap();
+    queue::execute(&data, job, &Progress::default()).unwrap();
+    assert!(super::super::undo(&data).unwrap());
+    assert_eq!(fs::read(root.path().join("one")).unwrap(), b"one");
+    assert_eq!(fs::read(root.path().join("two")).unwrap(), b"two");
 }

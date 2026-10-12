@@ -18,6 +18,24 @@ fn media_time(seconds: f64) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
+fn resized_columns(right: f32, left: Option<f32>, delta: f32, maximum: f32) -> (f32, Option<f32>) {
+    let delta = delta.clamp(
+        160. - right,
+        left.map_or(maximum - right, |left| left - 160.),
+    );
+    (right + delta, left.map(|left| left - delta))
+}
+
+fn default_column_width(available: f32, parents: usize, file: bool, column: usize) -> f32 {
+    let weight = if file && column == parents + 1 {
+        2.
+    } else {
+        1.
+    };
+    let units = (parents + 2 + usize::from(file)).min(crate::state::preview::MAX_PREVIEW_COLUMNS);
+    (available * weight / units as f32).max(160.)
+}
+
 fn media_button(id: &'static str, label: &'static str) -> gpui::Stateful<Div> {
     div()
         .id(id)
@@ -81,10 +99,7 @@ impl FileManager {
     /// rendered or plain document? Those views share one virtualized list and
     /// therefore one scroll handle, so every keyboard path must agree.
     pub(crate) fn preview_is_source_list(&self) -> bool {
-        matches!(
-            self.preview,
-            Preview::Code(_) | Preview::Markdown(_, false) | Preview::Html(_, false)
-        )
+        matches!(self.preview, Preview::Code(_) | Preview::Html(_, false))
     }
 
     pub(crate) fn scroll_preview_to_line(&self) {
@@ -156,6 +171,7 @@ impl FileManager {
                                 gpui::MouseButton::Left,
                                 cx.listener(move |view, _, window, cx| {
                                     view.preview_focused = true;
+                                    view.preview_active_column = view.preview_history.len() + 1;
                                     view.preview_line = index;
                                     view.focus.focus(window);
                                     cx.notify();
@@ -182,8 +198,10 @@ impl FileManager {
         let width = f32::from(window.viewport_size().width);
         self.layout
             .preview_width
-            .unwrap_or(width * 0.48)
-            .clamp(160., (width - SIDEBAR_WIDTH - 160.).max(160.))
+            .unwrap_or_else(|| {
+                default_column_width(width - self.sidebar_width, 0, self.preview_is_file(), 1)
+            })
+            .clamp(160., (width - self.sidebar_width - 160.).max(160.))
     }
 
     pub(crate) fn resize_preview(
@@ -196,11 +214,20 @@ impl FileManager {
             self.preview_resize = None;
             return;
         }
-        if let Some((start, width)) = self.preview_resize {
+        if let Some((start, width, column, left)) = self.preview_resize {
             let maximum =
-                (f32::from(window.viewport_size().width) - SIDEBAR_WIDTH - 160.).max(160.);
-            self.layout.preview_width =
-                Some((width + f32::from(start - event.position.x)).clamp(160., maximum));
+                (f32::from(window.viewport_size().width) - self.sidebar_width - 160.).max(160.);
+            let delta = f32::from(start - event.position.x);
+            let (right, left) = resized_columns(width, left, delta, maximum);
+            self.preview_column_widths
+                .resize(self.preview_history.len() + 2, None);
+            self.preview_column_widths[column] = Some(right);
+            if let Some(left) = left {
+                self.preview_column_widths[column - 1] = Some(left);
+            }
+            if self.preview_history.is_empty() {
+                self.layout.preview_width = Some(right);
+            }
             cx.notify();
         }
     }
@@ -297,6 +324,234 @@ impl FileManager {
         }
     }
 
+    fn folder_preview(&self, column: Option<usize>, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let entries = if let Some(index) = column {
+            &self.preview_history[index].entries
+        } else if let Preview::Folder(entries) = &self.preview {
+            entries
+        } else {
+            unreachable!()
+        };
+        let scroll = column.map_or_else(
+            || self.code_preview_scroll.clone(),
+            |index| self.preview_history[index].scroll.clone(),
+        );
+        if entries.is_empty() {
+            return div()
+                .id((
+                    "empty-folder-preview",
+                    column.unwrap_or(self.preview_history.len()),
+                ))
+                .flex_1()
+                .p_3()
+                .text_color(color(MUTED))
+                .child(self.language.text("Empty folder"))
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |view, _, window, cx| {
+                        view.preview_active_column =
+                            column.map_or(view.preview_history.len() + 1, |index| index + 1);
+                        view.preview_focused = false;
+                        view.focus.focus(window);
+                        cx.notify();
+                    }),
+                )
+                .into_any_element();
+        }
+        uniform_list(
+            (
+                "folder-preview",
+                column.unwrap_or(self.preview_history.len()),
+            ),
+            entries.len(),
+            cx.processor(move |view, range: std::ops::Range<usize>, _, cx| {
+                let (entries, selected) = if let Some(index) = column {
+                    let Some(parent) = view.preview_history.get(index) else {
+                        return Vec::new();
+                    };
+                    let selected = parent
+                        .selection
+                        .primary()
+                        .and_then(|index| parent.entries.get(index))
+                        .map(|entry| &entry.path);
+                    (&parent.entries, selected)
+                } else if let Preview::Folder(entries) = &view.preview {
+                    (
+                        entries,
+                        view.preview_selection
+                            .primary()
+                            .and_then(|index| entries.get(index))
+                            .map(|entry| &entry.path),
+                    )
+                } else {
+                    return Vec::new();
+                };
+                range
+                    .map(|index| {
+                        let entry = entries[index].clone();
+                        div()
+                            .id(("folder-preview-entry", index))
+                            .h(px(36.))
+                            .px_3()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .cursor_pointer()
+                            .hover(|style| style.bg(color(HOVER)))
+                            .when(selected == Some(&entry.path), |row| row.bg(color(HOVER)))
+                            .child(crate::ui::icons::file_icon(entry.icon(), 18.))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_ellipsis()
+                                    .child(entry.name.clone()),
+                            )
+                            .when(entry.browsable(), |row| {
+                                row.child(crate::ui::icons::icon("forward", 12., MUTED))
+                            })
+                            .on_click(cx.listener(move |view, _, window, cx| {
+                                view.focus.focus(window);
+                                if let Some(index) = column {
+                                    view.preview_column_child(index, entry.clone(), cx);
+                                } else {
+                                    view.preview_child(entry.clone(), cx);
+                                }
+                                cx.stop_propagation();
+                            }))
+                            .into_any_element()
+                    })
+                    .collect()
+            }),
+        )
+        .track_scroll(scroll)
+        .on_mouse_down(
+            gpui::MouseButton::Left,
+            cx.listener(move |view, _, window, cx| {
+                view.preview_active_column =
+                    column.map_or(view.preview_history.len() + 1, |index| index + 1);
+                view.preview_focused = false;
+                view.focus.focus(window);
+                cx.notify();
+            }),
+        )
+        .flex_1()
+        .min_h_0()
+        .into_any_element()
+    }
+
+    pub(crate) fn preview_parent_columns(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<Div> {
+        self.preview_history
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| index + 1 >= self.visible_preview_column_start())
+            .map(|(index, column)| {
+                div()
+                    .relative()
+                    .w(px(self.preview_width_for_column(index + 1, window)))
+                    .flex_shrink_0()
+                    .flex()
+                    .flex_col()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .border_l_1()
+                    .border_color(color(BORDER))
+                    .child(
+                        div()
+                            .id(("preview-parent-header", index))
+                            .h(px(40.))
+                            .px_3()
+                            .flex()
+                            .items_center()
+                            .flex_shrink_0()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_ellipsis()
+                                    .text_color(color(MUTED))
+                                    .child(column.entry.name.clone()),
+                            )
+                            .child(
+                                navigation_button(
+                                    "close-parent-column",
+                                    "close",
+                                    self.language.text("Close"),
+                                    true,
+                                )
+                                .on_click(cx.listener(
+                                    move |view, _, _, cx| {
+                                        view.close_preview_column(index, cx);
+                                        cx.stop_propagation();
+                                    },
+                                )),
+                            ),
+                    )
+                    .child(self.folder_preview(Some(index), cx))
+                    .children(self.column_resize_handle(index + 1, cx))
+            })
+            .collect()
+    }
+
+    pub(crate) fn preview_column_width(&self, window: &Window) -> f32 {
+        self.preview_width_for_column(self.preview_history.len() + 1, window)
+    }
+
+    fn preview_width_for_column(&self, column: usize, window: &Window) -> f32 {
+        if let Some(width) = self.preview_column_widths.get(column).copied().flatten() {
+            return width;
+        }
+        if self.preview_history.is_empty() {
+            return self.preview_width(window);
+        }
+        let width = f32::from(window.viewport_size().width) - self.sidebar_width;
+        default_column_width(
+            width,
+            self.preview_history.len(),
+            self.preview_is_file(),
+            column,
+        )
+    }
+
+    fn column_resize_handle(
+        &self,
+        column: usize,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::Stateful<Div>> {
+        if column <= self.visible_preview_column_start() {
+            return None;
+        }
+        Some(
+            div()
+                .id(("preview-resize", column))
+                .absolute()
+                .left_0()
+                .top_0()
+                .bottom_0()
+                .w(px(6.))
+                .cursor(gpui::CursorStyle::ResizeLeftRight)
+                .hover(|style| style.bg(color(ACCENT)))
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |view, event: &gpui::MouseDownEvent, window, cx| {
+                        let left =
+                            (column > 1).then(|| view.preview_width_for_column(column - 1, window));
+                        view.preview_resize = Some((
+                            event.position.x,
+                            view.preview_width_for_column(column, window),
+                            column,
+                            left,
+                        ));
+                        cx.stop_propagation();
+                    }),
+                ),
+        )
+    }
+
     pub(crate) fn preview_panel(
         &self,
         expanded: bool,
@@ -312,7 +567,7 @@ impl FileManager {
             .when(expanded, |panel| panel.flex_1())
             .when(!expanded, |panel| {
                 panel
-                    .w(px(self.preview_width(window)))
+                    .w(px(self.preview_column_width(window)))
                     .flex_shrink_0()
                     .border_l_1()
                     .border_color(color(BORDER))
@@ -325,6 +580,37 @@ impl FileManager {
                     .p_2()
                     .gap_1()
                     .flex_shrink_0()
+                    .when(!self.preview_history.is_empty(), |toolbar| {
+                        toolbar.child(
+                            navigation_button(
+                                "preview-back",
+                                "back",
+                                self.language.text("Back"),
+                                true,
+                            )
+                            .on_click(cx.listener(|view, _, _, cx| view.preview_back(cx))),
+                        )
+                    })
+                    .when(
+                        matches!(self.preview, Preview::Folder(_))
+                            || !self.preview_history.is_empty(),
+                        |toolbar| {
+                            toolbar.child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .px_2()
+                                    .text_ellipsis()
+                                    .text_color(color(MUTED))
+                                    .child(
+                                        self.preview_path
+                                            .as_ref()
+                                            .map(|path| path.display().to_string())
+                                            .unwrap_or_default(),
+                                    ),
+                            )
+                        },
+                    )
                     .when(
                         matches!(
                             &self.preview,
@@ -389,35 +675,6 @@ impl FileManager {
                             )
                         },
                     )
-                    .when(
-                        matches!(&self.preview, Preview::Markdown(_, _)),
-                        |toolbar| {
-                            toolbar.child(
-                                navigation_button(
-                                    "toggle-markdown",
-                                    "eye",
-                                    if matches!(&self.preview, Preview::Markdown(_, true)) {
-                                        self.language.text("Source view")
-                                    } else {
-                                        self.language.text("Rendered view")
-                                    },
-                                    true,
-                                )
-                                // The variant's flag is the single source of
-                                // truth for the active view: flipping it here
-                                // is what the renderer reads.
-                                .on_click(cx.listener(
-                                    |view, _, window, cx| {
-                                        if let Preview::Markdown(_, rendered) = &mut view.preview {
-                                            *rendered = !*rendered;
-                                        }
-                                        view.focus.focus(window);
-                                        cx.notify();
-                                    },
-                                )),
-                            )
-                        },
-                    )
                     .when(matches!(&self.preview, Preview::Html(_, _)), |toolbar| {
                         toolbar.child(
                             navigation_button(
@@ -463,7 +720,11 @@ impl FileManager {
                             false,
                         )
                         .on_click(cx.listener(|view, _, window, cx| {
-                            view.close_preview(cx);
+                            if view.preview_history.is_empty() {
+                                view.close_preview(cx);
+                            } else {
+                                view.preview_back(cx);
+                            }
                             view.focus.focus(window);
                         })),
                     ),
@@ -502,22 +763,51 @@ impl FileManager {
                     })
                     .flex_1()
                     .min_h_0()
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|view, _, window, cx| {
+                            if view.preview_is_file() && !matches!(view.preview, Preview::Editing) {
+                                view.preview_active_column = view.preview_history.len() + 1;
+                                view.preview_focused = true;
+                                view.focus.focus(window);
+                                cx.notify();
+                            }
+                        }),
+                    )
                     .when(
                         matches!(
                             &self.preview,
-                            Preview::Text(_) | Preview::Code(_) | Preview::Editing
+                            Preview::Text(_)
+                                | Preview::Code(_)
+                                | Preview::Editing
+                                | Preview::Folder(_)
+                                | Preview::Markdown(_)
+                                | Preview::Html(_, _)
                         ),
                         |body| body.flex().flex_col(),
                     )
                     .when(
-                        matches!(&self.preview, Preview::Code(_) | Preview::Editing),
+                        matches!(
+                            &self.preview,
+                            Preview::Code(_)
+                                | Preview::Editing
+                                | Preview::Folder(_)
+                                | Preview::Markdown(_)
+                                | Preview::Html(_, _)
+                        ),
                         |body| body.overflow_hidden(),
                     )
                     // The source views bring their own scroll container, so
                     // the body must not add a second one on top of it.
                     .when(
                         !self.preview_is_source_list()
-                            && !matches!(&self.preview, Preview::Editing | Preview::Markdown(_, _)),
+                            && !matches!(
+                                &self.preview,
+                                Preview::Editing
+                                    | Preview::Markdown(_)
+                                    | Preview::Html(_, _)
+                                    | Preview::Folder(_)
+                            ),
                         |body| body.overflow_y_scroll(),
                     )
                     .map(|mut body| {
@@ -560,58 +850,92 @@ impl FileManager {
                         Preview::Media(media) => self
                             .media_preview_panel(media, expanded, cx)
                             .into_any_element(),
-                        Preview::Markdown(document, show_rendered) => {
-                            if *show_rendered {
-                                let lines =
-                                    document.rendered.iter().enumerate().map(|(index, line)| {
-                                        let size = match line.kind {
-                                            markdown::LineKind::Heading(1) => 20.,
-                                            markdown::LineKind::Heading(2) => 17.,
-                                            markdown::LineKind::Heading(3) => 15.,
-                                            // The mermaid caption fixes its own size.
-                                            markdown::LineKind::Mermaid => 11.,
-                                            _ => 13.,
-                                        };
-                                        div()
+                        Preview::Markdown(document) => {
+                            let lines =
+                                document.rendered.iter().enumerate().map(|(index, line)| {
+                                    let size = match line.kind {
+                                        markdown::LineKind::Heading(1) => 26.,
+                                        markdown::LineKind::Heading(2) => 22.,
+                                        markdown::LineKind::Heading(3) => 18.,
+                                        // The mermaid caption fixes its own size.
+                                        markdown::LineKind::Mermaid => 11.,
+                                        _ => 13.,
+                                    };
+                                    if !line.cells.is_empty() {
+                                        return div()
                                             .id(index)
                                             .w_full()
-                                            .pl(px(12. + line.indent as f32 * 6.))
-                                            .py(px(match line.kind {
-                                                markdown::LineKind::Heading(_) => 4.,
-                                                markdown::LineKind::Rule => 6.,
-                                                markdown::LineKind::Mermaid => 0.,
-                                                _ => 1.,
-                                            }))
-                                            .when(line.kind == markdown::LineKind::Rule, |row| {
-                                                row.h(px(1.)).bg(color(BORDER)).my_2()
-                                            })
+                                            .flex()
+                                            .border_l_1()
+                                            .border_color(color(BORDER))
                                             .when(
-                                                line.kind == markdown::LineKind::CodeBlock,
-                                                |row| row.bg(color(SURFACE)),
+                                                line.kind == markdown::LineKind::TableHeader,
+                                                |row| {
+                                                    row.bg(color(HOVER))
+                                                        .font_weight(gpui::FontWeight::BOLD)
+                                                },
                                             )
-                                            .when(line.kind == markdown::LineKind::Mermaid, |row| {
-                                                row.pt(px(6.)).text_color(color(ACCENT))
-                                            })
-                                            .text_size(px(size))
-                                            .child(
-                                                StyledText::new(line.text.clone()).with_highlights(
-                                                    line.highlights.iter().cloned(),
-                                                ),
-                                            )
-                                            .into_any_element()
-                                    });
-                                div()
-                                    .id("markdown-rendered")
-                                    .flex_1()
-                                    .min_h_0()
-                                    .overflow_y_scroll()
-                                    .track_scroll(&self.preview_scroll)
-                                    .py_3()
-                                    .children(lines)
-                                    .into_any_element()
-                            } else {
-                                self.source_view("markdown-source", cx).into_any_element()
-                            }
+                                            .children(line.cells.iter().map(|cell| {
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .px_2()
+                                                    .py_1()
+                                                    .border_r_1()
+                                                    .border_b_1()
+                                                    .border_color(color(BORDER))
+                                                    .text_size(px(13.))
+                                                    .child(
+                                                        StyledText::new(cell.text.clone())
+                                                            .with_highlights(
+                                                                cell.highlights.iter().cloned(),
+                                                            ),
+                                                    )
+                                            }))
+                                            .into_any_element();
+                                    }
+                                    div()
+                                        .id(index)
+                                        .w_full()
+                                        .pl(px(line.indent as f32 * 6.))
+                                        .pr_2()
+                                        .line_height(px(size * 1.55))
+                                        .when(line.kind == markdown::LineKind::Quote, |row| {
+                                            row.border_l_2()
+                                                .border_color(color(ACCENT))
+                                                .text_color(color(MUTED))
+                                        })
+                                        .py(px(match line.kind {
+                                            markdown::LineKind::Heading(_) => 4.,
+                                            markdown::LineKind::Rule => 6.,
+                                            markdown::LineKind::Mermaid => 0.,
+                                            _ => 1.,
+                                        }))
+                                        .when(line.kind == markdown::LineKind::Rule, |row| {
+                                            row.h(px(1.)).bg(color(BORDER)).my_2()
+                                        })
+                                        .when(line.kind == markdown::LineKind::CodeBlock, |row| {
+                                            row.bg(color(SURFACE))
+                                        })
+                                        .when(line.kind == markdown::LineKind::Mermaid, |row| {
+                                            row.pt(px(6.)).text_color(color(ACCENT))
+                                        })
+                                        .text_size(px(size))
+                                        .child(
+                                            StyledText::new(line.text.clone())
+                                                .with_highlights(line.highlights.iter().cloned()),
+                                        )
+                                        .into_any_element()
+                                });
+                            div()
+                                .id("markdown-rendered")
+                                .flex_1()
+                                .min_h_0()
+                                .overflow_y_scroll()
+                                .track_scroll(&self.preview_scroll)
+                                .p_4()
+                                .children(lines)
+                                .into_any_element()
                         }
                         Preview::Html(document, show_rendered) => {
                             if *show_rendered {
@@ -687,6 +1011,8 @@ impl FileManager {
                                         gpui::MouseButton::Left,
                                         cx.listener(move |view, _, window, cx| {
                                             view.preview_focused = true;
+                                            view.preview_active_column =
+                                                view.preview_history.len() + 1;
                                             view.preview_line = index;
                                             view.focus.focus(window);
                                             cx.notify();
@@ -719,38 +1045,16 @@ impl FileManager {
                             .text_color(color(MUTED))
                             .child(self.language.text("Loading preview…"))
                             .into_any_element(),
-                        Preview::Folder(_) => div().into_any_element(),
+                        Preview::Folder(_) => self.folder_preview(None, cx),
                         Preview::Unavailable => div()
                             .p_3()
                             .text_color(color(MUTED))
                             .child(self.language.text("No content preview available"))
                             .into_any_element(),
-                    })
-                    .when(
-                        !matches!(&self.preview, Preview::Code(_) | Preview::Editing),
-                        |panel| panel.child(self.details_panel(false, cx)),
-                    ),
+                    }),
             )
             .when(!expanded, |panel| {
-                panel.child(
-                    div()
-                        .id("preview-resize")
-                        .absolute()
-                        .left_0()
-                        .top_0()
-                        .w(px(6.))
-                        .h_full()
-                        .cursor(gpui::CursorStyle::ResizeLeftRight)
-                        .hover(|style| style.bg(color(ACCENT)))
-                        .on_mouse_down(
-                            gpui::MouseButton::Left,
-                            cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
-                                view.preview_resize =
-                                    Some((event.position.x, view.preview_width(window)));
-                                cx.stop_propagation();
-                            }),
-                        ),
-                )
+                panel.children(self.column_resize_handle(self.preview_history.len() + 1, cx))
             })
     }
 }

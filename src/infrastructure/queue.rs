@@ -6,6 +6,7 @@ use super::{
     undo,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use std::os::{
     fd::AsRawFd,
@@ -43,6 +44,61 @@ struct Item {
     hash: String,
     files: u64,
     bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_stamp: Option<String>,
+}
+
+/// Observe identity, names, sizes, timestamps and modes without reading payloads.
+/// Content hashes still guard published copies and undo; these stamps replace
+/// repeated source reads during an uninterrupted copy.
+fn source_stamp(source: &Path, progress: &Progress) -> io::Result<String> {
+    fn visit(path: &Path, hash: &mut Sha256, progress: &Progress) -> io::Result<()> {
+        progress.checkpoint()?;
+        let metadata = fs::symlink_metadata(path)?;
+        hash.update(metadata.len().to_le_bytes());
+        hash.update([metadata.is_dir() as u8, metadata.is_symlink() as u8]);
+        #[cfg(unix)]
+        {
+            hash.update(metadata.dev().to_le_bytes());
+            hash.update(metadata.ino().to_le_bytes());
+            hash.update(metadata.mode().to_le_bytes());
+            hash.update(metadata.mtime().to_le_bytes());
+            hash.update(metadata.mtime_nsec().to_le_bytes());
+            hash.update(metadata.ctime().to_le_bytes());
+            hash.update(metadata.ctime_nsec().to_le_bytes());
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            hash.update(metadata.file_attributes().to_le_bytes());
+            hash.update(metadata.creation_time().to_le_bytes());
+            hash.update(metadata.last_write_time().to_le_bytes());
+        }
+        if metadata.is_dir() {
+            let mut entries = fs::read_dir(path)?.collect::<io::Result<Vec<_>>>()?;
+            entries.sort_by_key(|entry| entry.file_name());
+            hash.update((entries.len() as u64).to_le_bytes());
+            for entry in entries {
+                let name = entry.file_name();
+                let bytes = name.as_encoded_bytes();
+                hash.update((bytes.len() as u64).to_le_bytes());
+                hash.update(bytes);
+                visit(&entry.path(), hash, progress)?;
+            }
+        }
+        Ok(())
+    }
+    let mut hash = Sha256::new();
+    visit(source, &mut hash, progress)?;
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+fn source_matches(item: &Item, source: &Path, progress: &Progress) -> io::Result<bool> {
+    if let Some(stamp) = &item.source_stamp {
+        Ok(source_stamp(source, progress)? == *stamp)
+    } else {
+        Ok(undo::fingerprint_controlled(source, progress)? == item.hash)
+    }
 }
 
 fn invalid() -> io::Error {
@@ -345,7 +401,19 @@ fn prepare(data: &Path, job: &Job, progress: &Progress) -> io::Result<Vec<Item>>
                 return Err(io::Error::other("Cannot transfer a folder into itself"));
             }
         }
+        // Unix change times detect edits even when the modification time is restored.
+        // Keep content validation on platforms without that metadata guarantee.
+        let stamp = if cfg!(unix) && !job.cut && directory.is_some() && !job.verify {
+            Some(source_stamp(&source, progress)?)
+        } else {
+            None
+        };
         let hash = undo::fingerprint_controlled(&source, progress)?;
+        if let Some(stamp) = &stamp
+            && source_stamp(&source, progress)? != *stamp
+        {
+            return Err(io::Error::other("Source changed while preparing the copy"));
+        }
         if hash == "-" {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -409,6 +477,7 @@ fn prepare(data: &Path, job: &Job, progress: &Progress) -> io::Result<Vec<Item>>
             hash,
             files,
             bytes,
+            source_stamp: stamp,
         });
     }
     let allocated = (|| -> io::Result<()> {
@@ -628,6 +697,7 @@ fn resume_file(source: &Path, target: &Path, progress: &Progress) -> io::Result<
     if input.metadata()?.len() != metadata.len() || output.metadata()?.len() != metadata.len() {
         return Err(io::Error::other("Source changed during transfer"));
     }
+    progress.checkpoint()?;
     output.set_permissions(metadata.permissions())?;
     output.sync_all()?;
     progress.advance(1);
@@ -731,7 +801,7 @@ fn transfer(item: &Item, cut: bool, verify: bool, progress: &Progress) -> io::Re
     let destination = path(item.destination.as_ref().ok_or_else(invalid)?)?;
     let current = undo::fingerprint_controlled(&destination, progress)?;
     if current == "-" {
-        if undo::fingerprint_controlled(&source, progress)? != item.hash {
+        if !source_matches(item, &source, progress)? {
             return Err(io::Error::other("Source changed since transfer was queued"));
         }
         if cut {
@@ -752,7 +822,7 @@ fn transfer(item: &Item, cut: bool, verify: bool, progress: &Progress) -> io::Re
         }
         let staged = path(item.staging.as_ref().ok_or_else(invalid)?)?.join("contents");
         stage_copy(&source, &staged, progress)?;
-        if undo::fingerprint_controlled(&source, progress)? != item.hash
+        if !source_matches(item, &source, progress)?
             || ((cut || verify || progress.verification())
                 && undo::fingerprint_controlled(&staged, progress)? != item.hash)
         {
@@ -834,6 +904,13 @@ fn validate(job: &Job) -> io::Result<()> {
             if !job.sources.contains(&item.source)
                 || item.hash.len() != 64
                 || !item.hash.bytes().all(|b| b.is_ascii_hexdigit())
+                || item.source_stamp.as_ref().is_some_and(|stamp| {
+                    !cfg!(unix)
+                        || job.cut
+                        || directory.is_none()
+                        || stamp.len() != 64
+                        || !stamp.bytes().all(|b| b.is_ascii_hexdigit())
+                })
             {
                 return Err(invalid());
             }
@@ -951,6 +1028,36 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
     File::open(journal(data, &job)?)?;
     validate(&job)?;
     progress.configure_verification(job.verify);
+    #[cfg(unix)]
+    if job.cut
+        && job.plan.is_none()
+        && let Some(directory) = &job.directory
+    {
+        let sources = job
+            .sources
+            .iter()
+            .map(|source| path(source))
+            .collect::<io::Result<Vec<_>>>()?;
+        match undo::transfer_moves(
+            data,
+            Some(&job.id),
+            &sources,
+            &path(directory)?,
+            Some(progress),
+        ) {
+            Ok(true) => {
+                forget_unlocked(data, &job)?;
+                return Ok(());
+            }
+            Err(error) => {
+                if error.kind() == io::ErrorKind::Interrupted {
+                    forget_unlocked(data, &job)?;
+                }
+                return Err(error);
+            }
+            Ok(false) => {}
+        }
+    }
     #[cfg(target_os = "linux")]
     if job.directory.is_none() && job.plan.is_none() {
         let sources = job

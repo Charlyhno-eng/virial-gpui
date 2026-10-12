@@ -56,6 +56,7 @@ serde_json = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
 webp = { version = "0.3", default-features = false }
 oxipng = { version = "10.2", default-features = false }
+flate2 = "1"
 
 # GPUI is selected per target: Linux keeps the Wayland/X11 backends, macOS
 # needs the Metal one (`macos-blade`), Windows keeps its own default.
