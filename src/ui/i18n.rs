@@ -62,7 +62,6 @@ impl Language {
                 "Le journal et les sauvegardes sont conservés. Résolvez le problème puis réessayez."
             }
             "Retry" => "Réessayer",
-            "Verify copied contents (SHA-256)" => "Vérifier le contenu copié (SHA-256)",
             "Waiting operations" => "Opérations en attente",
             "Waiting operation" => "Opération en attente",
             "Restore deleted items?" => "Restaurer les éléments supprimés ?",
@@ -177,8 +176,9 @@ impl Language {
             "Paste" => "Coller",
             "Rename…" => "Renommer…",
             "Move to Trash…" => "Déplacer à la corbeille…",
-            "Compress (.tar.gz)" => "Compresser (.tar.gz)",
+            "Extract" => "Extraire",
             "Compress" => "Compresser",
+            "Compressing…" => "Compression…",
             "Duplicate" => "Dupliquer",
             "Copy absolute path" => "Copier le chemin absolu",
             "Add to workspace…" => "Ajouter à un espace…",
@@ -277,6 +277,7 @@ impl Language {
             "LOCAL FILES" => "FICHIERS",
             "free" => "libres",
             "Back" => "Précédent",
+            "Empty folder" => "Dossier vide",
             "Forward" => "Suivant",
             "Up" => "Parent",
             "Open" => "Ouvrir",

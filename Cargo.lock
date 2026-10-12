@@ -7135,6 +7135,7 @@ name = "virial-gpui"
 version = "0.1.2"
 dependencies = [
  "chrono",
+ "flate2",
  "futures-lite 2.6.1",
  "gpui",
  "home",

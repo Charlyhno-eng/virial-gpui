@@ -137,11 +137,12 @@ impl FileManager {
                     content.child(format!("{} {count}", self.language.text("Deleted items:")))
                         .child(self.language.text("Restore the entire batch? Existing files and later edits are protected."))
                 },
-                Dialog::Properties { entry, details } => content.child(entry.name.clone()).child(
+                Dialog::Properties { entry, details } => content.child(
                     div()
                         .id("property-details")
-                        .max_h(px(350.))
+                        .max_h(window.viewport_size().height * 0.65)
                         .overflow_y_scroll()
+                        .child(self.details_panel(entry))
                         .child(details.clone()),
                 ),
                 Dialog::Applications {
@@ -289,7 +290,16 @@ impl FileManager {
                 groups.push(vec![Action::AddWorkspace]);
             }
             if single && !archive_entry {
-                groups.push(vec![Action::Compress]);
+                let mut archives = Vec::new();
+                if item.directory || !crate::infrastructure::compression::is_archive(&item.path) {
+                    archives.push(Action::Compress);
+                }
+                if !item.directory && crate::infrastructure::extraction::supported(&item.path) {
+                    archives.push(Action::Extract);
+                }
+                if !archives.is_empty() {
+                    groups.push(archives);
+                }
             }
             if !archive_entry {
                 groups.push(vec![Action::Trash]);
@@ -406,7 +416,7 @@ impl FileManager {
                 (x - width).max(px(0.))
             };
             let submenu_y =
-                (y + px(compression_top + 4.)).min((bounds.height - px(122.)).max(px(0.)));
+                (y + px(compression_top + 4.)).min((bounds.height - px(66.)).max(px(0.)));
             div()
                 .id("compression-submenu")
                 .occlude()
@@ -490,6 +500,7 @@ impl Action {
             Self::Rename => "edit",
             Self::Trash => "trash",
             Self::Compress | Self::CompressAs(_) => "compress",
+            Self::Extract => "extract",
             Self::NewFolder | Self::AddWorkspace => "folder",
             Self::NewFile => "file",
             Self::Properties => "info",

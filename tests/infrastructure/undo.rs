@@ -497,7 +497,7 @@ fn undoes_compression_and_workspace_changes() {
     fs::write(&file, "original").unwrap();
     execute(&data, Operation::Compress(file.clone())).unwrap();
     assert!(undo(&data).unwrap());
-    assert!(!root.path().join("file.tar.gz").exists());
+    assert!(!root.path().join("file.zip").exists());
     assert_eq!(fs::read(file).unwrap(), b"original");
     let workspaces = data.join("virial/workspaces");
     record(&data, vec![workspaces.clone()], || {
@@ -622,4 +622,25 @@ fn undo_removes_zip_and_duplicate_without_changing_sources() {
     assert!(undo(&data).unwrap());
     assert!(!archive.exists());
     assert_eq!(fs::read_to_string(source).unwrap(), "original");
+}
+
+#[test]
+fn extraction_can_be_undone_without_changing_the_archive() {
+    use crate::infrastructure::compression::{self, ArchiveFormat};
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let file = root.path().join("original.txt");
+    fs::write(&file, "original").unwrap();
+    for format in ArchiveFormat::ALL {
+        compression::compress(&file, format).unwrap();
+        let archive = compression::destination(&file, format).unwrap();
+        let before = fs::read(&archive).unwrap();
+        fs::remove_file(&file).unwrap();
+        execute(&data, Operation::Extract(archive.clone())).unwrap();
+        assert_eq!(fs::read(&file).unwrap(), b"original");
+        assert!(undo(&data).unwrap());
+        assert!(!file.exists());
+        assert_eq!(fs::read(archive).unwrap(), before);
+        fs::write(&file, "original").unwrap();
+    }
 }

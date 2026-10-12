@@ -1,6 +1,4 @@
-use crate::infrastructure::storage::{
-    available_space, directory_entry_count, directory_size, read_directory,
-};
+use crate::infrastructure::storage::{available_space, directory_size, read_directory};
 use std::{fs, sync::atomic::AtomicBool};
 
 fn unique_root(tag: &str) -> std::path::PathBuf {
@@ -26,16 +24,16 @@ fn read_directory_reports_sizes_and_separates_folders() {
 }
 
 #[test]
-fn entry_count_matches_read_directory_length() {
+fn listing_counts_immediate_children_and_respects_hidden_files() {
     let root = unique_root("count");
     fs::create_dir_all(root.join("inner")).unwrap();
     fs::write(root.join("inner/one"), b"1").unwrap();
     fs::write(root.join("two"), b"22").unwrap();
     fs::write(root.join(".dot-file"), b"").unwrap();
-    assert_eq!(directory_entry_count(&root, true).unwrap(), 3);
+    assert_eq!(read_directory(&root, true).unwrap().len(), 3);
     // ".dot-file" counts as hidden, so it disappears when hidden=false.
-    assert_eq!(directory_entry_count(&root, false).unwrap(), 2);
-    assert!(directory_entry_count(&root.join("missing"), false).is_err());
+    assert_eq!(read_directory(&root, false).unwrap().len(), 2);
+    assert!(read_directory(&root.join("missing"), false).is_err());
     fs::remove_dir_all(root).unwrap();
 }
 

@@ -21,9 +21,20 @@ use url::Url;
 static LOCK: Mutex<()> = Mutex::new(());
 const LIMIT: usize = 20;
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 #[path = "undo_moves.rs"]
 mod moves;
+
+#[cfg(unix)]
+pub(super) fn transfer_moves(
+    data: &Path,
+    id: Option<&str>,
+    sources: &[PathBuf],
+    directory: &Path,
+    progress: Option<&super::progress::Progress>,
+) -> io::Result<bool> {
+    moves::transfer(data, id, sources, directory, progress)
+}
 
 #[cfg(target_os = "linux")]
 pub(super) fn restore_trash_moves(
@@ -140,8 +151,9 @@ fn affected(operation: &Operation) -> io::Result<Vec<PathBuf>> {
         Operation::Duplicate { destination, .. } => paths.push(mutation_path(destination)?),
         Operation::Compress(source) => paths.push(normalized(&super::compression::destination(
             source,
-            super::compression::ArchiveFormat::TarGz,
+            super::compression::ArchiveFormat::Zip,
         )?)?),
+        Operation::Extract(path) => paths.push(normalized(&super::extraction::destination(path)?)?),
         Operation::CompressAs { path, format } => paths.push(normalized(
             &super::compression::destination(path, *format)?,
         )?),
@@ -704,7 +716,7 @@ pub(crate) fn durable(
             ));
         }
         for (index, record) in records.iter().enumerate() {
-            let current = fingerprint(&record.path)?;
+            let current = fingerprint_controlled(&record.path, progress)?;
             if current != record.before && current != record.after {
                 return Err(io::Error::other(format!(
                     "Cannot resume: {} changed after interruption",
@@ -712,7 +724,8 @@ pub(crate) fn durable(
                 )));
             }
             if record.before != "-"
-                && fingerprint(&directory.join(index.to_string()))? != record.before
+                && fingerprint_controlled(&directory.join(index.to_string()), progress)?
+                    != record.before
             {
                 return Err(io::Error::other("Cannot resume: undo backup is damaged"));
             }
@@ -889,11 +902,23 @@ pub fn execute_with_progress(
     if matches!(operation, Operation::Launch { .. }) {
         return operations::execute(operation);
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     if let Operation::Rename { source, name } = &operation
         && !archive::is_member(source)
     {
         return moves::rename(data, source, name, progress).map(|_| None);
+    }
+    #[cfg(unix)]
+    if let Operation::Transfer {
+        sources,
+        directory,
+        cut: true,
+    } = &operation
+        && archive::split(directory).is_none()
+        && !sources.iter().any(|source| archive::is_member(source))
+        && transfer_moves(data, None, sources, directory, progress)?
+    {
+        return Ok(None);
     }
     #[cfg(target_os = "linux")]
     if let Operation::Trash(sources) = &operation
@@ -1044,7 +1069,7 @@ fn undo_impl(data: &Path, expected: Option<&str>) -> io::Result<bool> {
     if expected.is_some_and(|expected| entry_key(&directory).map_or(true, |key| key != expected)) {
         return Err(io::Error::other("Undo history changed; press Ctrl+Z again"));
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     if moves::undo(&directory)? {
         discard_entry(&directory)?;
         return Ok(true);

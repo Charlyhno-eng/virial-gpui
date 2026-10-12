@@ -14,8 +14,6 @@ use std::{
     time::Duration,
 };
 
-const PREVIEW_CLICK_DELAY: Duration = Duration::from_millis(400);
-
 pub(crate) use crate::state::app_state::FileManager;
 
 impl FileManager {
@@ -64,7 +62,6 @@ impl FileManager {
             queue_running: false,
             queue_failed: false,
             queue_background: false,
-            verify_transfers: false,
             filter_open: false,
             search_open: false,
             extension_filter: String::new(),
@@ -92,12 +89,17 @@ impl FileManager {
             sidebar_width: crate::ui::theme::SIDEBAR_WIDTH,
             sidebar_transition: None,
             preview_expanded: false,
-            pending_preview: None,
-            preview_click_generation: 0,
+            preview_generation: 0,
+            preview_root: None,
+            preview_entry: None,
+            preview_history: Vec::new(),
+            preview_active_column: 0,
+            preview_selection: Default::default(),
+            preview_columns_scroll: gpui::ScrollHandle::new(),
+            preview_column_widths: Vec::new(),
             layout: crate::infrastructure::layout::Layout::load(),
             preview_resize: None,
             preview_path: None,
-            preview_modified: None,
             preview: crate::state::preview::Preview::Unavailable,
             preview_line: 0,
             preview_scroll: gpui::ScrollHandle::new(),
@@ -189,7 +191,11 @@ impl FileManager {
         self.preview_media_updates = None;
         self.preview_image_cache = gpui::RetainAllImageCache::new(cx);
         self.preview_path = None;
-        self.preview_modified = None;
+        self.preview_root = None;
+        self.preview_entry = None;
+        self.preview_history.clear();
+        self.preview_active_column = 0;
+        self.preview_selection.clear();
         self.preview_expanded = false;
         self.details_open = false;
         self.directory_sizes = None;
@@ -434,22 +440,15 @@ impl FileManager {
         if let crate::state::preview::Preview::Media(media) = &self.preview {
             media.control(crate::infrastructure::media::Control::Pause(true));
         }
-        self.preview_click_generation = self.preview_click_generation.wrapping_add(1);
-        self.pending_preview = None;
     }
 
-    pub(crate) fn defer_preview(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn show_preview(&mut self, cx: &mut Context<Self>) {
         self.cancel_pending_preview();
-        let generation = self.preview_click_generation;
-        self.pending_preview = Some(cx.spawn(async move |view, cx| {
-            cx.background_executor().timer(PREVIEW_CLICK_DELAY).await;
-            let _ = view.update(cx, |view, cx| {
-                if view.preview_click_generation == generation {
-                    view.details_open = true;
-                    cx.notify();
-                }
-            });
-        }));
+        self.details_open = true;
+        self.preview_active_column = 0;
+        self.preview_focused = false;
+        self.sync_preview(cx);
+        cx.notify();
     }
 
     pub(crate) fn open(&mut self, entry: Entry, cx: &mut Context<Self>) {
@@ -662,18 +661,9 @@ impl FileManager {
             "right" if modifiers.alt => self.forward(cx),
             "up" if modifiers.alt => self.up(cx),
             "f5" if !modifiers.modified() => self.refresh(cx),
-            "left" | "backspace" if !modifiers.modified() => self.up(cx),
-            "right" if !modifiers.modified() => {
-                if let Some(entry) = self
-                    .selection
-                    .primary()
-                    .and_then(|index| self.entries.get(index))
-                    .filter(|entry| entry.browsable())
-                    .cloned()
-                {
-                    self.open(entry, cx);
-                }
-            }
+            "left" if !modifiers.modified() => self.preview_keyboard_left(cx),
+            "backspace" if !modifiers.modified() => self.up(cx),
+            "right" if !modifiers.modified() => self.preview_keyboard_right(cx),
             "space"
                 if !modifiers.modified()
                     && self.focus.is_focused(window)
@@ -701,11 +691,12 @@ impl FileManager {
                 cx.notify();
             }
             "up" | "down" | "home" | "end" | "pageup" | "pagedown"
-                if !modifiers.control
-                    && !modifiers.alt
-                    && !modifiers.platform
-                    && !self.entries.is_empty() =>
+                if !modifiers.control && !modifiers.alt && !modifiers.platform =>
             {
+                if self.preview_keyboard_select(key, cx) {
+                    cx.stop_propagation();
+                    return;
+                }
                 let height = f32::from(self.scroll.0.borrow().base_handle.bounds().size.height);
                 let page = (height / self.row_height()).floor() as usize;
                 let Some(index) = self
@@ -716,6 +707,11 @@ impl FileManager {
                 };
                 self.selection.click(index, false, modifiers.shift);
                 self.scroll.scroll_to_item(index, ScrollStrategy::Center);
+                if !modifiers.shift {
+                    self.preview_active_column = 0;
+                    self.preview_focused = false;
+                    self.show_preview(cx);
+                }
                 cx.notify();
             }
             _ => return,

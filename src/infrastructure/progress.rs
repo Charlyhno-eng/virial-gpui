@@ -13,6 +13,7 @@ pub enum Phase {
     SavingUndo,
     Moving,
     Copying,
+    Compressing,
     Finishing,
 }
 
@@ -53,7 +54,6 @@ struct State {
     started: Instant,
     elapsed: Duration,
     verifying: bool,
-    verification_touched: bool,
 }
 
 impl Default for State {
@@ -77,7 +77,6 @@ impl Default for State {
             started: Instant::now(),
             elapsed: Duration::ZERO,
             verifying: false,
-            verification_touched: false,
         }
     }
 }
@@ -109,7 +108,7 @@ impl Progress {
 
     pub fn begin(&self, phase: Phase, total: Option<u64>) {
         let mut state = self.0.0.lock().unwrap();
-        if matches!(phase, Phase::Copying | Phase::Moving) {
+        if matches!(phase, Phase::Copying | Phase::Moving | Phase::Compressing) {
             state.started = Instant::now();
             state.elapsed = Duration::ZERO;
         }
@@ -200,16 +199,7 @@ impl Progress {
     }
 
     pub fn configure_verification(&self, enabled: bool) {
-        let mut state = self.0.0.lock().unwrap();
-        if !state.verification_touched {
-            state.verifying = enabled;
-        }
-    }
-
-    pub fn set_verification(&self, enabled: bool) {
-        let mut state = self.0.0.lock().unwrap();
-        state.verification_touched = true;
-        state.verifying = enabled;
+        self.0.0.lock().unwrap().verifying = enabled;
     }
     pub fn verification(&self) -> bool {
         self.0.0.lock().unwrap().verifying

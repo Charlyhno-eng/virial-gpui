@@ -47,16 +47,21 @@ impl FileManager {
         // Serialize preparation without performing any filesystem I/O on the UI.
         self.busy = true;
         self.error = None;
-        if matches!(operation, Operation::Trash(_)) {
+        if matches!(
+            operation,
+            Operation::Trash(_)
+                | Operation::Transfer { .. }
+                | Operation::Compress(_)
+                | Operation::CompressAs { .. }
+        ) {
             // Give mutations priority over speculative recursive size scans.
             self.directory_sizes = None;
             self.cancel_pending_preview();
         }
         let data = self.data_home.clone();
-        let verify = self.verify_transfers;
         let task = cx
             .background_executor()
-            .spawn(async move { QueuedOperation::prepare(&data, operation, verify) });
+            .spawn(async move { QueuedOperation::prepare(&data, operation, false) });
         cx.spawn(async move |view, cx| {
             let result = task.await;
             let _ = view.update(cx, |view, cx| {

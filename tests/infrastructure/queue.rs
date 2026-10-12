@@ -32,6 +32,160 @@ fn transfer_job(data: &Path, sources: Vec<PathBuf>, directory: &Path, cut: bool)
     .unwrap()
 }
 
+fn fast_copy_job(data: &Path, sources: Vec<PathBuf>, directory: &Path) -> Job {
+    enqueue(
+        data,
+        &Operation::Transfer {
+            sources,
+            directory: directory.into(),
+            cut: false,
+        },
+        false,
+    )
+    .unwrap()
+}
+
+#[test]
+fn actual_copy_waits_for_resume_and_cancels_while_paused() {
+    for cancel in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&target).unwrap();
+        fs::write(source.join("payload"), vec![42; 1024 * 1024]).unwrap();
+        let job = fast_copy_job(&data, vec![source.clone()], &target);
+        let progress = Progress::default();
+        progress.toggle_pause();
+        let (tx, rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| tx.send(execute(&data, job, &progress)).unwrap());
+            assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+            assert!(!target.join("source").exists());
+            assert_eq!(progress.snapshot().bytes_done, 0);
+            if cancel {
+                progress.cancel();
+            } else {
+                progress.toggle_pause();
+            }
+            let result = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            if cancel {
+                assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+            } else {
+                result.unwrap();
+            }
+        });
+        assert!(recover(&data).unwrap().is_empty());
+        assert!(source.join("payload").is_file());
+        if cancel {
+            assert!(!target.join("source").exists());
+            assert!(!undo::undo(&data).unwrap());
+        } else {
+            assert_eq!(
+                fs::read(target.join("source/payload")).unwrap(),
+                fs::read(source.join("payload")).unwrap()
+            );
+            assert!(undo::undo(&data).unwrap());
+            assert!(!target.join("source").exists());
+        }
+    }
+}
+
+#[test]
+fn fast_copy_rejects_source_changes_and_corrupted_partial_files() {
+    for corruption in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let data = root.path().join("data");
+        let source = root.path().join("file");
+        let target = root.path().join("target");
+        fs::create_dir(&target).unwrap();
+        fs::write(&source, vec![42; 512 * 1024]).unwrap();
+        let modified = fs::metadata(&source).unwrap().modified().unwrap();
+        let mut job = fast_copy_job(&data, vec![source.clone()], &target);
+        let progress = Progress::default();
+        job.plan = Some(prepare(&data, &job, &progress).unwrap());
+        assert_eq!(
+            job.plan.as_ref().unwrap()[0].source_stamp.is_some(),
+            cfg!(unix)
+        );
+        save(&data, &job).unwrap();
+        if corruption {
+            let staged = path(job.plan.as_ref().unwrap()[0].staging.as_ref().unwrap())
+                .unwrap()
+                .join("contents");
+            fs::write(staged, vec![99; 128 * 1024]).unwrap();
+        } else {
+            fs::write(&source, vec![99; 512 * 1024]).unwrap();
+            File::options()
+                .write(true)
+                .open(&source)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+        }
+        let error = execute(&data, job.clone(), &Progress::default()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains(if corruption { "integrity" } else { "changed" })
+        );
+        assert!(!target.join("file").exists());
+        assert!(source.is_file());
+        assert_eq!(recover(&data).unwrap().len(), 1);
+        let cancelled = Progress::default();
+        cancelled.cancel();
+        assert_eq!(
+            execute(&data, job, &cancelled).unwrap_err().kind(),
+            io::ErrorKind::Interrupted
+        );
+        assert!(recover(&data).unwrap().is_empty());
+    }
+}
+
+#[test]
+#[ignore = "manual benchmark comparing repeated source reads with metadata stamps"]
+fn copy_speed_benchmark() {
+    use std::time::Instant;
+    let root = tempfile::tempdir().unwrap();
+    let mut durations = Vec::new();
+    for legacy in [true, false] {
+        let base = root.path().join(if legacy { "legacy" } else { "fast" });
+        let data = base.join("data");
+        let source = base.join("source");
+        let target = base.join("target");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir(&target).unwrap();
+        for index in 0..8 {
+            fs::write(source.join(index.to_string()), vec![42; 4 * 1024 * 1024]).unwrap();
+        }
+        let mut job = fast_copy_job(&data, vec![source.clone()], &target);
+        let progress = Progress::default();
+        let start = Instant::now();
+        let mut plan = prepare(&data, &job, &progress).unwrap();
+        if legacy {
+            for item in &mut plan {
+                item.source_stamp = None;
+            }
+        }
+        job.plan = Some(plan);
+        save(&data, &job).unwrap();
+        execute(&data, job, &progress).unwrap();
+        durations.push(start.elapsed());
+        assert_eq!(
+            undo::fingerprint(&source).unwrap(),
+            undo::fingerprint(&target.join("source")).unwrap()
+        );
+        assert!(undo::undo(&data).unwrap());
+    }
+    eprintln!(
+        "32 MiB copy: previous {:?}, metadata stamps {:?}, {:.2}x faster",
+        durations[0],
+        durations[1],
+        durations[0].as_secs_f64() / durations[1].as_secs_f64()
+    );
+}
+
 fn wait_conflict(progress: &Progress) -> Conflict {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
@@ -105,6 +259,118 @@ fn same_folder_move_skips_reading_the_unchanged_tree() {
     assert!(source.is_dir());
     assert!(fs::symlink_metadata(fifo).is_ok());
     assert!(recover(&data).unwrap().is_empty());
+}
+
+#[test]
+fn same_device_moves_do_not_read_payloads_and_undo_keeps_edits() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let source = root.path().join("folder");
+    let target = root.path().join("target");
+    fs::create_dir(&source).unwrap();
+    fs::create_dir(&target).unwrap();
+    // Reading this tree would either hash a terabyte or reject its FIFO.
+    let large = File::create(source.join("large")).unwrap();
+    large.set_len(1024 * 1024 * 1024 * 1024).unwrap();
+    let inode = large.metadata().unwrap().ino();
+    let fifo = std::ffi::CString::new(source.join("fifo").as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+    let link = root.path().join("link");
+    symlink("missing", &link).unwrap();
+    let job = transfer_job(
+        &data,
+        vec![source.clone(), source.join("large"), link.clone()],
+        &target,
+        true,
+    );
+    let progress = Progress::default();
+    execute(&data, job, &progress).unwrap();
+    assert!(!source.exists());
+    assert_eq!(
+        fs::metadata(target.join("folder/large")).unwrap().ino(),
+        inode
+    );
+    assert_eq!(
+        fs::read_link(target.join("link")).unwrap(),
+        Path::new("missing")
+    );
+    assert_eq!(progress.snapshot().bytes_done, 0);
+    assert_eq!(progress.snapshot().files_done, 2);
+    assert!(recover(&data).unwrap().is_empty());
+    let journal = fs::read_dir(data.join("virial/undo"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .unwrap()
+        .path();
+    assert!(journal.join("moves.json").is_file());
+    assert!(!journal.join("0").exists());
+    fs::write(target.join("folder/new.txt"), b"edited after moving").unwrap();
+    assert!(undo::undo(&data).unwrap());
+    assert_eq!(fs::metadata(source.join("large")).unwrap().ino(), inode);
+    assert_eq!(
+        fs::read(source.join("new.txt")).unwrap(),
+        b"edited after moving"
+    );
+    assert_eq!(fs::read_link(link).unwrap(), Path::new("missing"));
+    assert!(fs::read_dir(target).unwrap().next().is_none());
+}
+
+#[test]
+fn cancelling_a_same_device_move_before_start_keeps_sources_and_no_undo() {
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let target = root.path().join("target");
+    fs::create_dir(&target).unwrap();
+    let source = root.path().join("file");
+    fs::write(&source, b"original").unwrap();
+    let job = transfer_job(&data, vec![source.clone()], &target, true);
+    let progress = Progress::default();
+    progress.cancel();
+    assert_eq!(
+        execute(&data, job, &progress).unwrap_err().kind(),
+        io::ErrorKind::Interrupted
+    );
+    assert_eq!(fs::read(source).unwrap(), b"original");
+    assert!(fs::read_dir(target).unwrap().next().is_none());
+    assert!(recover(&data).unwrap().is_empty());
+    assert!(!undo::undo(&data).unwrap());
+}
+
+#[test]
+#[ignore = "manual benchmark comparing the snapshot planner with atomic moves"]
+fn same_device_move_benchmark() {
+    use std::time::Instant;
+    let root = tempfile::tempdir().unwrap();
+    let mut results = Vec::new();
+    for legacy in [true, false] {
+        let base = root.path().join(if legacy { "legacy" } else { "fast" });
+        let data = base.join("data");
+        let source = base.join("source");
+        let target = base.join("target");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir(&target).unwrap();
+        for index in 0..8 {
+            fs::write(source.join(index.to_string()), vec![42; 4 * 1024 * 1024]).unwrap();
+        }
+        let mut job = transfer_job(&data, vec![source.clone()], &target, true);
+        let progress = Progress::default();
+        let start = Instant::now();
+        if legacy {
+            job.plan = Some(prepare(&data, &job, &progress).unwrap());
+            save(&data, &job).unwrap();
+        }
+        execute(&data, job, &progress).unwrap();
+        results.push(start.elapsed());
+        assert!(undo::undo(&data).unwrap());
+        assert!(source.join("0").is_file());
+    }
+    eprintln!(
+        "32 MiB folder: snapshot {:?}, atomic {:?}, {:.1}x faster",
+        results[0],
+        results[1],
+        results[0].as_secs_f64() / results[1].as_secs_f64()
+    );
 }
 
 #[test]

@@ -262,6 +262,19 @@ pub fn materialize(path: &Path, limit: u64) -> io::Result<Materialized> {
     })
 }
 
+/// Extract validated ZIP contents into an existing, private staging directory.
+pub(super) fn extract_all(path: &Path, target: &Path) -> io::Result<()> {
+    let mut zip = open(path)?;
+    let members = inventory(&mut zip)?;
+    for source in members
+        .keys()
+        .filter(|path| path.parent() == Some(Path::new("")))
+    {
+        extract(&mut zip, &members, source, &target.join(source))?;
+    }
+    Ok(())
+}
+
 fn extract(
     zip: &mut ZipArchive<File>,
     members: &BTreeMap<PathBuf, Member>,

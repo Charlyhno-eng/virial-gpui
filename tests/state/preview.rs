@@ -1,6 +1,152 @@
 use super::*;
 
 #[test]
+fn files_take_two_units_and_closing_them_reveals_the_previous_parent() {
+    for depth in 0..30 {
+        let start = visible_column_start(depth, true);
+        let folders = depth + 1 - start;
+        assert_eq!(folders, (depth + 1).min(2));
+        assert!(folders + 2 <= MAX_PREVIEW_COLUMNS);
+        if depth > 0 {
+            // Closing the file returns to the cached folder and restores parents.
+            assert_eq!(
+                visible_column_start(depth - 1, false),
+                start.saturating_sub(2)
+            );
+        }
+    }
+}
+
+#[test]
+fn keyboard_selection_previews_nested_markdown_and_retains_each_branch_selection() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("folder/deep/empty")).unwrap();
+    std::fs::write(
+        root.path().join("folder/deep/readme.md"),
+        "# Résumé\n\n**Document**",
+    )
+    .unwrap();
+    let entry = Entry {
+        path: root.path().to_path_buf(),
+        name: "root".into(),
+        directory: true,
+        bytes: None,
+    };
+    let mut columns = Vec::new();
+    let mut current = entry.clone();
+    for _ in 0..3 {
+        let Preview::Folder(entries) = read_preview(&current, true) else {
+            panic!("folder preview")
+        };
+        let mut column = PreviewColumn {
+            entry: current,
+            entries,
+            scroll: gpui::UniformListScrollHandle::new(),
+            selection: Default::default(),
+        };
+        current = keyboard_preview_entry(
+            &mut column.selection,
+            &column.entries,
+            &column.scroll,
+            "down",
+        )
+        .unwrap();
+        columns.push(column);
+    }
+    assert_eq!(current.name, "empty");
+    assert!(matches!(read_preview(&current, true), Preview::Folder(entries) if entries.is_empty()));
+    let column = columns.last_mut().unwrap();
+    let markdown = keyboard_preview_entry(
+        &mut column.selection,
+        &column.entries,
+        &column.scroll,
+        "down",
+    )
+    .unwrap();
+    assert_eq!(markdown.name, "readme.md");
+    assert!(
+        matches!(read_preview(&markdown, true), Preview::Markdown(document) if !document.rendered.is_empty())
+    );
+    assert_eq!(columns[0].selection.primary(), Some(0));
+    assert_eq!(columns[1].selection.primary(), Some(0));
+    assert_eq!(columns[2].selection.primary(), Some(1));
+    assert_eq!(columns[0].entry.path, entry.path);
+    PreviewColumn::branch(&mut columns, 1);
+    assert_eq!(columns.len(), 2);
+    assert_eq!(columns[1].selection.primary(), Some(0));
+    let column = columns.last_mut().unwrap();
+    let deep = keyboard_preview_entry(&mut column.selection, &column.entries, &column.scroll, "up")
+        .unwrap();
+    assert_eq!(deep.name, "deep");
+    assert!(matches!(read_preview(&deep, true), Preview::Folder(entries) if entries.len() == 2));
+    assert!(
+        keyboard_preview_entry(
+            &mut Default::default(),
+            &[],
+            &gpui::UniformListScrollHandle::new(),
+            "down"
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn real_project_readme_is_a_formatted_document() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
+    let entry = Entry {
+        path,
+        name: "README.md".into(),
+        directory: false,
+        bytes: None,
+    };
+    let Preview::Markdown(document) = read_preview(&entry, true) else {
+        panic!("formatted README")
+    };
+    assert!(
+        document
+            .rendered
+            .iter()
+            .any(|line| matches!(line.kind, super::super::markdown::LineKind::Heading(_)))
+    );
+    assert!(!document.rendered.is_empty());
+}
+
+#[test]
+fn deep_navigation_hides_parents_and_reveals_them_when_closing_levels() {
+    for depth in 0..30 {
+        let start = visible_column_start(depth, false);
+        let shown = (start..depth + 2).collect::<Vec<_>>();
+        assert_eq!(shown.len(), (depth + 2).min(4));
+        assert_eq!(shown.last(), Some(&(depth + 1)));
+    }
+    let root = tempfile::tempdir().unwrap();
+    let mut path = root.path().to_path_buf();
+    let mut columns = Vec::new();
+    for _ in 0..6 {
+        path.push("child");
+        std::fs::create_dir(&path).unwrap();
+        columns.push(PreviewColumn {
+            entry: Entry {
+                path: path.clone(),
+                name: "child".into(),
+                directory: true,
+                bytes: None,
+            },
+            entries: Vec::new(),
+            scroll: gpui::UniformListScrollHandle::new(),
+            selection: Default::default(),
+        });
+    }
+    let original = columns[0].entry.path.clone();
+    assert!(visible_column_start(columns.len(), false) > 1);
+    while columns.len() > 1 {
+        columns.pop();
+    }
+    assert_eq!(visible_column_start(columns.len(), false), 0);
+    assert_eq!(columns[0].entry.path, original);
+}
+
+#[test]
 fn zip_previews_count_folders_highlight_code_and_keep_images_alive() {
     use std::io::Write;
     use zip::{ZipWriter, write::SimpleFileOptions};
@@ -30,12 +176,12 @@ fn zip_previews_count_folders_highlight_code_and_keep_images_alive() {
         bytes: None,
     };
     assert!(entry.browsable());
-    assert!(matches!(read_preview(&entry, true), Preview::Folder(5)));
+    assert!(matches!(read_preview(&entry, true), Preview::Folder(entries) if entries.len() == 5));
     let entries = crate::infrastructure::storage::read_directory(&archive, true).unwrap();
     let find = |name: &str| entries.iter().find(|entry| entry.name == name).unwrap();
     assert!(matches!(
         read_preview(find("folder"), true),
-        Preview::Folder(1)
+        Preview::Folder(entries) if entries.len() == 1
     ));
     assert!(
         matches!(read_preview(find("text.txt"), true), Preview::Text(text) if text.len() == 64 * 1024)
@@ -85,10 +231,10 @@ fn previews_bound_text_reject_binary_and_count_folder_contents() {
         path: root.clone(),
         ..entry
     };
-    assert!(matches!(read_preview(&folder, false), Preview::Folder(1)));
+    assert!(matches!(read_preview(&folder, false), Preview::Folder(entries) if entries.len() == 1));
     std::fs::write(root.join(".hidden"), "hidden").unwrap();
-    assert!(matches!(read_preview(&folder, false), Preview::Folder(1)));
-    assert!(matches!(read_preview(&folder, true), Preview::Folder(2)));
+    assert!(matches!(read_preview(&folder, false), Preview::Folder(entries) if entries.len() == 1));
+    assert!(matches!(read_preview(&folder, true), Preview::Folder(entries) if entries.len() == 2));
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -120,7 +266,7 @@ fn markdown_and_html_get_a_rendered_view_and_everything_else_does_not() {
         assert_eq!(
             matches!(
                 read_preview(&entry, false),
-                Preview::Markdown(_, true) | Preview::Html(_, true)
+                Preview::Markdown(_) | Preview::Html(_, true)
             ),
             rendered,
             "{name} opens on its rendered view"
@@ -320,4 +466,97 @@ fn media_previews_route_local_and_zip_audio_and_video_and_reject_special_files()
         read_preview(&special, false),
         Preview::Unavailable
     ));
+}
+
+#[test]
+fn folder_previews_can_follow_children_and_preview_their_files() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("child/grandchild/empty")).unwrap();
+    std::fs::write(root.path().join("child/grandchild/note.txt"), "document").unwrap();
+    let selected = Entry {
+        path: root.path().to_path_buf(),
+        name: "root".into(),
+        directory: true,
+        bytes: None,
+    };
+    let Preview::Folder(children) = read_preview(&selected, true) else {
+        panic!("folder listing")
+    };
+    assert_eq!(children[0].name, "child");
+    let Preview::Folder(grandchildren) = read_preview(&children[0], true) else {
+        panic!("child listing")
+    };
+    assert_eq!(grandchildren[0].name, "grandchild");
+    let Preview::Folder(contents) = read_preview(&grandchildren[0], true) else {
+        panic!("grandchild listing")
+    };
+    assert_eq!(contents[0].name, "empty");
+    assert!(
+        matches!(read_preview(&contents[0], true), Preview::Folder(entries) if entries.is_empty())
+    );
+    assert!(matches!(read_preview(&contents[1], true), Preview::Text(text) if text == "document"));
+    // Reading a nested preview leaves the original selection available.
+    assert_eq!(selected.path, root.path());
+    assert!(
+        matches!(read_preview(&selected, true), Preview::Folder(entries) if entries[0].name == "child")
+    );
+}
+
+#[test]
+fn nested_columns_keep_parent_contents_and_scroll_when_switching_branches() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("first/deeper/last")).unwrap();
+    std::fs::create_dir_all(root.path().join("second/other")).unwrap();
+    let folder = |path: std::path::PathBuf| Entry {
+        name: path.file_name().unwrap().to_string_lossy().into_owned(),
+        path,
+        directory: true,
+        bytes: None,
+    };
+    let selected = folder(root.path().to_path_buf());
+    let mut columns = Vec::new();
+    for entry in [
+        selected.clone(),
+        folder(root.path().join("first")),
+        folder(root.path().join("first/deeper")),
+    ] {
+        let Preview::Folder(entries) = read_preview(&entry, true) else {
+            panic!("folder listing")
+        };
+        columns.push(PreviewColumn {
+            entry,
+            entries,
+            scroll: gpui::UniformListScrollHandle::new(),
+            selection: Default::default(),
+        });
+    }
+    let scroll = columns[0].scroll.clone();
+    scroll
+        .0
+        .borrow()
+        .base_handle
+        .set_offset(gpui::point(gpui::px(0.), gpui::px(-36.)));
+    assert_eq!(columns[0].entry.path, selected.path);
+    assert_eq!(columns[1].entries[0].name, "deeper");
+    assert_eq!(columns[2].entries[0].name, "last");
+    // Clicking another child in the first column removes only deeper columns.
+    let sibling = columns[0]
+        .entries
+        .iter()
+        .find(|entry| entry.name == "second")
+        .unwrap()
+        .clone();
+    PreviewColumn::branch(&mut columns, 0);
+    assert_eq!(columns.len(), 1);
+    assert_eq!(columns[0].entry.path, selected.path);
+    assert_eq!(columns[0].entries.len(), 2);
+    assert_eq!(
+        columns[0].scroll.0.borrow().base_handle.offset().y,
+        gpui::px(-36.)
+    );
+    assert!(
+        matches!(read_preview(&sibling, true), Preview::Folder(entries) if entries[0].name == "other")
+    );
+    // Returning uses the retained parent without disturbing the main selection.
+    assert_eq!(columns.pop().unwrap().entry.path, selected.path);
 }

@@ -7,7 +7,7 @@ use std::{fs::File, io::Read, path::PathBuf};
 
 pub(crate) enum Preview {
     Loading,
-    Folder(usize),
+    Folder(Vec<Entry>),
     Image(PathBuf, Option<ImageMetadata>),
     ArchiveImage(
         crate::infrastructure::archive::Materialized,
@@ -17,13 +17,48 @@ pub(crate) enum Preview {
     Media(crate::infrastructure::media::Media),
     Text(String),
     Code(CodePreview),
-    /// A Markdown document, parsed on the worker; `bool` = rendered view.
-    Markdown(super::markdown::Document, bool),
+    /// A formatted Markdown document, parsed on the worker.
+    Markdown(super::markdown::Document),
     /// An HTML page, parsed on the worker; `bool` = rendered page view.
     Html(super::html::Document, bool),
     /// The file is open in the editor rather than only previewed.
     Editing,
     Unavailable,
+}
+
+/// A retained parent column, including its independent scroll position.
+pub(crate) struct PreviewColumn {
+    pub entry: Entry,
+    pub entries: Vec<Entry>,
+    pub scroll: gpui::UniformListScrollHandle,
+    pub selection: super::selection::Selection,
+}
+
+impl PreviewColumn {
+    pub fn branch(columns: &mut Vec<Self>, index: usize) {
+        columns.truncate(index + 1);
+    }
+}
+
+pub(crate) const MAX_PREVIEW_COLUMNS: usize = 4;
+
+/// Global column zero is the main file list; a file takes two width units.
+pub(crate) fn visible_column_start(parents: usize, file: bool) -> usize {
+    (parents + 2 + usize::from(file)).saturating_sub(MAX_PREVIEW_COLUMNS)
+}
+
+fn keyboard_preview_entry(
+    selection: &mut super::selection::Selection,
+    entries: &[Entry],
+    scroll: &gpui::UniformListScrollHandle,
+    key: &str,
+) -> Option<Entry> {
+    let page =
+        (f32::from(scroll.0.borrow().base_handle.bounds().size.height) / 36.).floor() as usize;
+    let index = selection.keyboard_target(key, entries.len(), page)?;
+    selection.click(index, false, false);
+    scroll.scroll_to_item(index, gpui::ScrollStrategy::Center);
+    entries.get(index).cloned()
 }
 
 /// Header-only metadata: no pixel buffer is decoded for the details panel.
@@ -60,7 +95,6 @@ impl Preview {
     pub(crate) fn source_lines(&self) -> Option<&CodePreview> {
         match self {
             Self::Code(code) => Some(code),
-            Self::Markdown(document, _) => Some(&document.source),
             Self::Html(document, _) => Some(&document.source),
             _ => None,
         }
@@ -71,13 +105,7 @@ impl Preview {
         match self {
             Self::Text(text) => text.split('\n').count(),
             Self::Code(code) => code.lines.len(),
-            Self::Markdown(document, rendered) => {
-                if *rendered {
-                    document.rendered.len()
-                } else {
-                    document.source.lines.len()
-                }
-            }
+            Self::Markdown(document) => document.rendered.len(),
             Self::Html(document, rendered) => {
                 if *rendered {
                     document.rendered.len()
@@ -93,7 +121,7 @@ impl Preview {
 
 fn read_preview(entry: &Entry, hidden: bool) -> Preview {
     if entry.browsable() {
-        return crate::infrastructure::storage::directory_entry_count(&entry.path, hidden)
+        return crate::infrastructure::storage::read_directory(&entry.path, hidden)
             .map(Preview::Folder)
             .unwrap_or(Preview::Unavailable);
     }
@@ -251,8 +279,7 @@ fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
         }
         Err(_) => return Preview::Unavailable,
     };
-    // Markdown and HTML get a rendered view alongside the syntax-colored
-    // source, parsed on the worker thread.
+    // Parse formatted documents on the worker; HTML also retains its source view.
     let lower = entry
         .path
         .extension()
@@ -260,7 +287,7 @@ fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
         .map(|e| e.to_ascii_lowercase());
     match lower.as_deref() {
         Some("md" | "markdown") => {
-            return Preview::Markdown(super::markdown::Document::new(&entry.path, text), true);
+            return Preview::Markdown(super::markdown::Document::new(&entry.path, text));
         }
         Some("html" | "htm" | "xhtml") => {
             return Preview::Html(super::html::Document::new(&entry.path, text), true);
@@ -274,6 +301,93 @@ fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
 }
 
 impl FileManager {
+    pub(crate) fn preview_is_file(&self) -> bool {
+        self.preview_entry
+            .as_ref()
+            .is_some_and(|entry| !entry.browsable())
+    }
+
+    pub(crate) fn visible_preview_column_start(&self) -> usize {
+        visible_column_start(self.preview_history.len(), self.preview_is_file())
+    }
+
+    /// Move within the focused directory without changing the main location.
+    pub(crate) fn preview_keyboard_select(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let column = self.preview_active_column;
+        if !self.details_open || column == 0 {
+            return false;
+        }
+        let (selection, entries, scroll) =
+            if let Some(parent) = self.preview_history.get_mut(column - 1) {
+                (&mut parent.selection, &parent.entries, &parent.scroll)
+            } else if let Preview::Folder(entries) = &self.preview {
+                (
+                    &mut self.preview_selection,
+                    entries,
+                    &self.code_preview_scroll,
+                )
+            } else {
+                // An empty, loading or unsupported preview must never steer the main list.
+                return true;
+            };
+        if let Some(entry) = keyboard_preview_entry(selection, entries, scroll, key) {
+            if column <= self.preview_history.len() {
+                self.preview_column_child(column - 1, entry, cx);
+            } else {
+                self.preview_child(entry, cx);
+            }
+        }
+        true
+    }
+
+    pub(crate) fn preview_keyboard_right(&mut self, cx: &mut Context<Self>) {
+        if !self.details_open || self.preview_active_column == 0 {
+            if self.selection.primary().is_some() {
+                self.show_preview(cx);
+                self.preview_active_column = 1;
+                self.preview_focused = self.preview_history.is_empty() && self.preview_is_file();
+                cx.notify();
+            }
+            return;
+        }
+        if self.preview_active_column <= self.preview_history.len() {
+            self.preview_active_column += 1;
+        } else if let Preview::Folder(entries) = &self.preview {
+            let index = self.preview_selection.primary().unwrap_or(0);
+            if let Some(entry) = entries.get(index).cloned() {
+                self.preview_child(entry, cx);
+                self.preview_active_column += 1;
+            }
+        }
+        self.preview_focused =
+            self.preview_active_column == self.preview_history.len() + 1 && self.preview_is_file();
+        cx.notify();
+    }
+
+    pub(crate) fn preview_keyboard_left(&mut self, cx: &mut Context<Self>) {
+        if !self.details_open || self.preview_active_column == 0 {
+            if self.details_open {
+                self.close_preview(cx);
+            } else {
+                self.up(cx);
+            }
+            return;
+        }
+        let parent = self.preview_active_column - 1;
+        if parent == 0 {
+            // Retain the main selection so another Right immediately reopens it.
+            let selection = self.selection.clone();
+            self.close_preview(cx);
+            self.selection = selection;
+        } else {
+            self.preview_history.truncate(parent);
+            self.preview_back(cx);
+        }
+        self.preview_active_column = parent;
+        self.preview_focused = false;
+        cx.notify();
+    }
+
     pub(crate) fn image_export_dialog(
         &mut self,
         edit: ImageEdit,
@@ -336,12 +450,114 @@ impl FileManager {
             })
             .flatten();
         let path = entry.map(|entry| entry.path.clone());
-        if path == self.preview_path {
+        if path == self.preview_root && (path.is_none() || self.preview_path.is_some()) {
             return;
         }
         let entry = entry.cloned();
-        self.preview_path = path;
-        self.preview_modified = None;
+        self.preview_root = path;
+        self.preview_history.clear();
+        self.preview_active_column = 0;
+        self.preview_column_widths.clear();
+        self.preview_columns_scroll = gpui::ScrollHandle::new();
+        self.load_preview(entry, cx);
+    }
+
+    pub(crate) fn preview_child(&mut self, entry: Entry, cx: &mut Context<Self>) {
+        self.preview_active_column = self.preview_history.len() + 1;
+        if let Some(current) = self.preview_entry.clone()
+            && matches!(self.preview, Preview::Folder(_))
+        {
+            let Preview::Folder(entries) = std::mem::replace(&mut self.preview, Preview::Loading)
+            else {
+                unreachable!()
+            };
+            if let Some(index) = entries.iter().position(|child| child.path == entry.path) {
+                self.preview_selection.click(index, false, false);
+            }
+            self.preview_history.push(PreviewColumn {
+                entry: current,
+                entries,
+                scroll: self.code_preview_scroll.clone(),
+                selection: std::mem::take(&mut self.preview_selection),
+            });
+        }
+        self.open_preview_child(entry, cx);
+    }
+
+    pub(crate) fn preview_column_child(
+        &mut self,
+        index: usize,
+        entry: Entry,
+        cx: &mut Context<Self>,
+    ) {
+        if index >= self.preview_history.len() {
+            return;
+        }
+        self.preview_active_column = index + 1;
+        if let Some(child) = self.preview_history[index]
+            .entries
+            .iter()
+            .position(|child| child.path == entry.path)
+        {
+            self.preview_history[index]
+                .selection
+                .click(child, false, false);
+        }
+        PreviewColumn::branch(&mut self.preview_history, index);
+        self.open_preview_child(entry, cx);
+    }
+
+    fn open_preview_child(&mut self, entry: Entry, cx: &mut Context<Self>) {
+        self.cancel_pending_preview();
+        let expanded = self.preview_expanded;
+        let changed_kind = self.preview_is_file() == entry.browsable();
+        self.load_preview(Some(entry), cx);
+        self.preview_expanded = expanded;
+        self.preview_column_widths
+            .resize(self.preview_history.len() + 2, None);
+        if changed_kind {
+            self.preview_column_widths[self.preview_history.len() + 1] = None;
+        }
+        self.preview_columns_scroll
+            .scroll_to_item(self.preview_history.len() + 1 - self.visible_preview_column_start());
+    }
+
+    pub(crate) fn preview_back(&mut self, cx: &mut Context<Self>) {
+        if let Some(column) = self.preview_history.pop() {
+            self.cancel_pending_preview();
+            let expanded = self.preview_expanded;
+            self.load_preview(Some(column.entry), cx);
+            // Show the cached parent immediately and retain its scroll position.
+            self.preview = Preview::Folder(column.entries);
+            self.code_preview_scroll = column.scroll;
+            self.preview_selection = column.selection;
+            self.preview_active_column = self
+                .preview_active_column
+                .min(self.preview_history.len() + 1);
+            self.preview_expanded = expanded;
+            self.preview_column_widths
+                .truncate(self.preview_history.len() + 2);
+            self.preview_columns_scroll.scroll_to_item(
+                self.preview_history.len() + 1 - self.visible_preview_column_start(),
+            );
+        }
+    }
+
+    pub(crate) fn close_preview_column(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index == 0 {
+            self.close_preview(cx);
+        } else {
+            self.preview_history.truncate(index);
+            self.preview_back(cx);
+        }
+    }
+
+    fn load_preview(&mut self, entry: Option<Entry>, cx: &mut Context<Self>) {
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        let generation = self.preview_generation;
+        self.preview_path = entry.as_ref().map(|entry| entry.path.clone());
+        self.preview_entry = entry.clone();
+        self.preview_selection.clear();
         self.preview_media_updates = None;
         // A cache scoped to the current preview releases decoded pixels and GPU
         // textures when switching files, instead of retaining every opened image.
@@ -356,26 +572,41 @@ impl FileManager {
         }
         self.preview = Preview::Loading;
         let Some(entry) = entry else {
+            self.preview = Preview::Unavailable;
             return;
         };
-        self.load_directory_sizes(cx);
+        // Folder previews list immediate children only: recursive size scans
+        // compete with previews and compression for disk access.
         let hidden = true;
+        let remote = self.location.remote().cloned();
+        let store = self.ssh.store.clone();
+        let runtime = self.ssh.runtime.handle().clone();
         let read = cx.background_executor().spawn(async move {
-            let modified = std::fs::metadata(&entry.path)
-                .ok()
-                .and_then(|metadata| metadata.modified().ok())
-                .map(|modified| {
-                    chrono::DateTime::<chrono::Utc>::from(modified)
-                        .format("%Y-%m-%d %H:%M UTC")
-                        .to_string()
-                });
-            (read_preview(&entry, hidden), modified)
+            if let Some(host) = remote {
+                let preview = if entry.directory {
+                    store
+                        .browse(&host, &entry.path, Some(runtime))
+                        .await
+                        .map(|mut entries| {
+                            super::browser::sort_by_name(&mut entries);
+                            Preview::Folder(entries)
+                        })
+                        .unwrap_or(Preview::Unavailable)
+                } else {
+                    Preview::Unavailable
+                };
+                return preview;
+            }
+            read_preview(&entry, hidden)
         });
+        cx.notify();
         self.preview_task = Some(cx.spawn(async move |view, cx| {
-            let (preview, modified) = read.await;
+            let preview = read.await;
             let _ = view.update(cx, |view, cx| {
+                if view.preview_generation != generation || !view.details_open {
+                    return;
+                }
                 view.preview = preview;
-                view.preview_modified = modified;
                 if matches!(view.preview, Preview::Media(_)) {
                     view.monitor_preview_media(cx);
                 }
@@ -430,7 +661,12 @@ impl FileManager {
         self.details_open = false;
         self.selection.clear();
         self.preview_path = None;
-        self.preview_modified = None;
+        self.preview_root = None;
+        self.preview_entry = None;
+        self.preview_history.clear();
+        self.preview_active_column = 0;
+        self.preview_selection.clear();
+        self.preview_generation = self.preview_generation.wrapping_add(1);
         self.preview_task = None;
         self.preview = Preview::Unavailable;
         self.preview_media_updates = None;

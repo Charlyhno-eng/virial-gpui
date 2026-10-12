@@ -1,9 +1,9 @@
 use super::*;
 
 #[test]
-fn media_interface_icons_are_embedded_outline_assets() {
+fn media_and_extraction_interface_icons_are_embedded_outline_assets() {
     let assets = IconAssets;
-    for name in ["image", "music", "video"] {
+    for name in ["image", "music", "video", "extract"] {
         let path = format!("icons/{}.svg", interface_icon_name(name));
         let bytes = assets.load(&path).unwrap().unwrap();
         let document = roxmltree::Document::parse(std::str::from_utf8(&bytes).unwrap()).unwrap();

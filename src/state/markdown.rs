@@ -6,7 +6,7 @@
 //! colored code preview uses. This keeps the feature inside the app's own
 //! theme and avoids pulling a markdown crate into the binary.
 //!
-//! Deliberate limits: no nested lists, no tables, no images, no raw HTML and
+//! Deliberate limits: no images, no raw HTML and
 //! no multi-line quotes. They render as ordinary paragraphs — plain but
 //! correct, never a crash.
 
@@ -62,6 +62,13 @@ pub(crate) enum LineKind {
     Mermaid,
     /// `---` thematic break.
     Rule,
+    TableHeader,
+    TableRow,
+}
+
+pub(crate) struct MarkdownCell {
+    pub text: SharedString,
+    pub highlights: Vec<(Range<usize>, HighlightStyle)>,
 }
 
 /// One rendered line: text, left indent, block style and inline spans.
@@ -71,6 +78,7 @@ pub(crate) struct MarkdownLine {
     pub(crate) indent: usize,
     pub(crate) kind: LineKind,
     pub(crate) highlights: Vec<(Range<usize>, HighlightStyle)>,
+    pub(crate) cells: Vec<MarkdownCell>,
 }
 
 fn plain(text: impl Into<SharedString>, kind: LineKind, indent: usize) -> MarkdownLine {
@@ -79,6 +87,7 @@ fn plain(text: impl Into<SharedString>, kind: LineKind, indent: usize) -> Markdo
         indent,
         kind,
         highlights: Vec::new(),
+        cells: Vec::new(),
     }
 }
 
@@ -179,8 +188,10 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
     // Info string of the open diagram block (kept across body lines).
     let mut pending_language = String::new();
     let mut blank_streak = 0;
+    let raw_lines: Vec<_> = source.split('\n').collect();
+    let mut table = false;
 
-    for raw in source.split('\n') {
+    for (index, raw) in raw_lines.iter().enumerate() {
         let line = raw.trim_end();
         let trimmed = line.trim_start();
 
@@ -242,6 +253,7 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
 
         // Collapse consecutive blank lines into a single spacer.
         if trimmed.is_empty() {
+            table = false;
             blank_streak += 1;
             if blank_streak == 1 {
                 out.push(plain("", LineKind::Body, 0));
@@ -249,6 +261,45 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
             continue;
         }
         blank_streak = 0;
+
+        let table_header = trimmed.contains('|')
+            && raw_lines
+                .get(index + 1)
+                .is_some_and(|line| table_separator(line));
+        if table && table_separator(trimmed) {
+            continue;
+        }
+        if table_header || (table && trimmed.contains('|')) {
+            table = true;
+            let cells = table_cells(trimmed)
+                .into_iter()
+                .map(|cell| {
+                    let (text, highlights) = inline(cell);
+                    MarkdownCell {
+                        text: text.into(),
+                        highlights,
+                    }
+                })
+                .collect::<Vec<_>>();
+            let text = cells
+                .iter()
+                .map(|cell| cell.text.as_ref())
+                .collect::<Vec<_>>()
+                .join("  ");
+            out.push(MarkdownLine {
+                text: text.into(),
+                indent: 0,
+                kind: if table_header {
+                    LineKind::TableHeader
+                } else {
+                    LineKind::TableRow
+                },
+                highlights: Vec::new(),
+                cells,
+            });
+            continue;
+        }
+        table = false;
 
         // ATX heading: 1..=6 '#' followed by a space.
         let hashes = trimmed.chars().take_while(|c| *c == '#').count();
@@ -262,6 +313,7 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
                 indent: (level as usize - 1) * 2,
                 kind: LineKind::Heading(level),
                 highlights: spans,
+                cells: Vec::new(),
             });
             continue;
         }
@@ -281,6 +333,7 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
                 indent: 2,
                 kind: LineKind::Quote,
                 highlights: spans,
+                cells: Vec::new(),
             });
             continue;
         }
@@ -310,6 +363,7 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
                 indent: pad,
                 kind: LineKind::Body,
                 highlights,
+                cells: Vec::new(),
             });
             continue;
         }
@@ -320,9 +374,27 @@ pub(crate) fn parse(source: &str) -> Vec<MarkdownLine> {
             indent: 0,
             kind: LineKind::Body,
             highlights: spans,
+            cells: Vec::new(),
         });
     }
     out
+}
+
+fn table_cells(line: &str) -> Vec<&str> {
+    line.trim()
+        .trim_matches('|')
+        .split('|')
+        .map(str::trim)
+        .collect()
+}
+
+fn table_separator(line: &str) -> bool {
+    let cells = table_cells(line);
+    line.contains('|')
+        && cells.iter().all(|cell| {
+            let separator = cell.trim_matches(':');
+            separator.len() >= 3 && separator.bytes().all(|b| b == b'-')
+        })
 }
 
 /// Inline styling over one line: `**bold**`, `*italic*`, `_italic_`,
@@ -416,7 +488,13 @@ fn inline(s: &str) -> (String, Vec<(Range<usize>, HighlightStyle)>) {
             } else {
                 (1, false)
             };
-            let closing = if bold { "**" } else { "*" };
+            let closing = if bold {
+                "**"
+            } else if b == b'_' {
+                "_"
+            } else {
+                "*"
+            };
             if let Some(rel) = s[i + marker_len..].find(closing) {
                 let close = i + marker_len + rel;
                 if close > i + marker_len {
@@ -430,29 +508,21 @@ fn inline(s: &str) -> (String, Vec<(Range<usize>, HighlightStyle)>) {
                 }
             }
         }
-        i += 1;
+        i += s[i..].chars().next().unwrap().len_utf8();
     }
     text.push_str(&s[consumed..]);
     (text, spans)
 }
 
-/// A parsed Markdown document: the rendered lines and the syntax-colored
-/// source lines, both built once on the worker. Which of the two views is
-/// active lives in the `Preview` variant, so there is a single source of truth
-/// for it and the toggle can never disagree with the renderer.
+/// A formatted document, prepared once on the worker.
 pub(crate) struct Document {
     pub(crate) rendered: Vec<MarkdownLine>,
-    pub(crate) source: crate::state::code_preview::CodePreview,
 }
 
 impl Document {
-    pub(crate) fn new(path: &std::path::Path, source: &str) -> Self {
+    pub(crate) fn new(_path: &std::path::Path, source: &str) -> Self {
         Self {
             rendered: parse(source),
-            // A missing grammar must never panic the worker: the source view
-            // then falls back to plain text instead of taking the preview down.
-            source: crate::state::code_preview::CodePreview::new(path, source)
-                .unwrap_or_else(|| crate::state::code_preview::CodePreview::plain(source)),
         }
     }
 }
@@ -460,6 +530,38 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_readme_renders_formatted_text_and_tables_without_panicking() {
+        let lines = parse(
+            "# Prévisualisation 📄\n\nTexte **accentué** et _italique_ en 中文.\n\n| Fonction | État |\n| :--- | ---: |\n| Aperçu | **Prêt** ✅ |\n\n> Citation française",
+        );
+        assert_eq!(lines[0].kind, LineKind::Heading(1));
+        assert_eq!(lines[0].text, "Prévisualisation 📄");
+        assert_eq!(lines[2].text, "Texte accentué et italique en 中文.");
+        let header = lines
+            .iter()
+            .find(|line| line.kind == LineKind::TableHeader)
+            .unwrap();
+        assert_eq!(header.cells[1].text, "État");
+        let row = lines
+            .iter()
+            .find(|line| line.kind == LineKind::TableRow)
+            .unwrap();
+        assert_eq!(row.cells[1].text, "Prêt ✅");
+        assert!(
+            row.cells[1]
+                .highlights
+                .iter()
+                .any(|(_, style)| style.font_weight == Some(gpui::FontWeight::BOLD))
+        );
+        for line in &lines {
+            for (range, _) in &line.highlights {
+                assert!(line.text.is_char_boundary(range.start));
+                assert!(line.text.is_char_boundary(range.end));
+            }
+        }
+    }
 
     fn text_of(lines: &[MarkdownLine]) -> Vec<String> {
         lines.iter().map(|l| l.text.to_string()).collect()
@@ -687,12 +789,17 @@ mod tests {
     fn mermaid_captions_survive_tilde_fences_and_the_source_view_is_untouched() {
         let lines = parse("~~~mermaid\npie title P\n~~~");
         assert_eq!(text_of(&lines), ["mermaid · pie", "pie title P"]);
-        // The source view still shows the original text with the fence.
+        // Fenced content remains visible in the formatted document.
         let document = Document::new(
             std::path::Path::new("doc.md"),
             "```mermaid\ngraph TD\n a-->b\n```",
         );
-        assert!(document.source.text.contains("```mermaid"));
+        assert!(
+            document
+                .rendered
+                .iter()
+                .any(|line| line.kind == LineKind::CodeBlock)
+        );
     }
 
     #[test]

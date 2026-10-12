@@ -33,6 +33,7 @@ pub enum Operation {
     },
     Trash(Vec<PathBuf>),
     Compress(PathBuf),
+    Extract(PathBuf),
     CompressAs {
         path: PathBuf,
         format: super::compression::ArchiveFormat,
@@ -549,10 +550,15 @@ pub(super) fn execute_with_progress(
             source,
             destination,
         } => copy(&source, &destination),
-        Operation::Compress(path) => {
-            super::compression::compress(&path, super::compression::ArchiveFormat::TarGz)
+        Operation::Compress(path) => super::compression::compress_with_progress(
+            &path,
+            super::compression::ArchiveFormat::Zip,
+            progress,
+        ),
+        Operation::CompressAs { path, format } => {
+            super::compression::compress_with_progress(&path, format, progress)
         }
-        Operation::CompressAs { path, format } => super::compression::compress(&path, format),
+        Operation::Extract(path) => super::extraction::extract(&path),
     }
     .map(|_| None)
 }
