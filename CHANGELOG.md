@@ -29,6 +29,23 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   Windows arrivent par `WM_CHAR` au handler, pas par `on_key_down`) : saisir,
   effacer, coller fonctionne ; flèches, undo/redo et Ctrl+S étaient déjà
   opérationnels.
+- **Reconnaissance des diagrammes mermaid** : un bloc ```` ```mermaid ````
+  dans l'aperçu rendu d'un fichier Markdown affiche maintenant une petite
+  légende au-dessus de son corps — `mermaid · sequence`, `mermaid · gantt`,
+  `mermaid · flowchart-v2`… — nommant le type de diagramme tel que mermaid.js
+  le reconnaîtrait (les 34 types officiels vérifiés dans le code source
+  d'upstream, y compris la génération béta : `sankey-beta`, `xychart-beta`,
+  `radar-beta`, `ishikawa`, `railroad-*-beta`…, avec le même ordre de
+  détection et le même prétraitement — frontmatter YAML, directives,
+  commentaires). Sans dépendance : détection par préfixes en temps linéaire,
+  18 tests unitaires dédiés.
+### Ajouts
+- **Publication : le README se met à jour tout seul à chaque release** — un job
+  `docs-sync` régénère le tableau d'installation avec les vrais assets de la
+  release : chaque plateforme affiche son nom de fichier exact en lien cliquable
+  vers le téléchargement (noms et URLs lus depuis l'API GitHub après
+  publication, commit mécanique du bot directement sur `main`, uniquement sur
+  le chemin automatique).
 
 ### Corrections
 - **Documentation d'installation et de release à jour** — le README pointe vers
