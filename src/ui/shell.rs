@@ -4,6 +4,8 @@ use gpui::{Context, Decorations, Render, Window, div, prelude::*, px};
 
 impl Render for FileManager {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        self.reclaim_memory_when_idle(cx);
         if self.search_return_focus {
             self.search_return_focus = false;
             self.focus.focus(window);

@@ -124,28 +124,97 @@ struct StoredItem {
     kind: u8, // 0: file, 1: directory, 2: symlink
 }
 
+// One allocation for all raw names in a directory, rather than one per file.
+// The serialized representation remains the v1 array of {name, kind} objects.
+struct StoredNames {
+    bytes: Box<[u8]>,
+    // Each name is followed by its kind byte; a terminal offset closes the last.
+    offsets: Box<[usize]>,
+}
+
+#[derive(Serialize)]
+struct StoredItemRef<'a> {
+    name: &'a [u8],
+    kind: u8,
+}
+
+impl StoredNames {
+    fn get(&self, index: usize) -> StoredItemRef<'_> {
+        let end = self.offsets[index + 1] - 1;
+        StoredItemRef {
+            name: &self.bytes[self.offsets[index]..end],
+            kind: self.bytes[end],
+        }
+    }
+
+    fn iter(&self) -> impl ExactSizeIterator<Item = StoredItemRef<'_>> {
+        (0..self.offsets.len() - 1).map(|index| self.get(index))
+    }
+
+    fn matches(&self, items: &[StoredItem]) -> bool {
+        self.offsets.len() - 1 == items.len()
+            && self
+                .iter()
+                .zip(items)
+                .all(|(a, b)| a.kind == b.kind && a.name == b.name.as_ref())
+    }
+}
+
+impl FromIterator<StoredItem> for StoredNames {
+    fn from_iter<T: IntoIterator<Item = StoredItem>>(items: T) -> Self {
+        let items: Vec<_> = items.into_iter().collect();
+        let mut bytes = Vec::with_capacity(items.iter().map(|item| item.name.len() + 1).sum());
+        let mut offsets = Vec::with_capacity(items.len() + 1);
+        offsets.push(0);
+        for item in items {
+            bytes.extend_from_slice(&item.name);
+            bytes.push(item.kind);
+            offsets.push(bytes.len());
+        }
+        Self {
+            bytes: bytes.into_boxed_slice(),
+            offsets: offsets.into_boxed_slice(),
+        }
+    }
+}
+
+impl Serialize for StoredNames {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.iter())
+    }
+}
+
+impl<'de> Deserialize<'de> for StoredNames {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Vec::<StoredItem>::deserialize(deserializer)?
+            .into_iter()
+            .collect())
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct StoredDirectory {
     path: Vec<u8>,
     stamp: Stamp,
-    items: Box<[StoredItem]>,
+    items: StoredNames,
 }
 
 // Store only the matching key and an index into the cached raw names. Parent
 // paths are shared by all items; full paths are allocated only for final results.
 struct Item {
-    name_key: Box<str>,
-    // Vec indices cannot use the highest bit: Rust allocations fit in isize.
-    // Share that bit with the hidden flag, and avoid u128's 16-byte alignment.
+    name_key: std::ops::Range<usize>,
+    // Item allocations fit in isize and each Item occupies multiple words.
+    // Use the two otherwise unreachable index bits for hidden/raw-key flags.
     stored_index: usize,
     letters: [u64; 2],
 }
 
 impl Item {
     const HIDDEN_BIT: usize = 1 << (usize::BITS - 1);
+    const RAW_KEY_BIT: usize = 1 << (usize::BITS - 2);
 
     fn raw_index(&self) -> usize {
-        self.stored_index & !Self::HIDDEN_BIT
+        self.stored_index & !(Self::HIDDEN_BIT | Self::RAW_KEY_BIT)
     }
 
     fn hidden(&self) -> bool {
@@ -157,6 +226,7 @@ struct Directory {
     stored: StoredDirectory,
     path: PathBuf,
     path_key: String,
+    keys: Box<str>,
     items: Box<[Item]>,
 }
 
@@ -180,44 +250,65 @@ impl Directory {
             path_key.push('/');
         }
         let parent_letters = letter_mask(&path_key);
+        let mut keys = String::new();
         let mut items: Vec<_> = stored
             .items
             .iter()
             .enumerate()
             .map(|(stored_index, item)| {
-                let name = bytes_to_os(&item.name)
+                let name = bytes_to_os(item.name)
                     .as_os_str()
                     .to_string_lossy()
                     .into_owned();
-                let name_key = name.to_lowercase().into_boxed_str();
+                let name_key = name.to_lowercase();
                 let letters = parent_letters | letter_mask(&name_key);
                 let hidden = hidden_parent || name.starts_with('.');
+                let raw_key = item.name == name_key.as_bytes();
+                let start = keys.len();
+                if !raw_key {
+                    keys.push_str(&name_key);
+                }
                 Item {
                     letters: [letters as u64, (letters >> 64) as u64],
-                    name_key,
-                    stored_index: stored_index | if hidden { Item::HIDDEN_BIT } else { 0 },
+                    name_key: start..keys.len(),
+                    stored_index: stored_index
+                        | if hidden { Item::HIDDEN_BIT } else { 0 }
+                        | if raw_key { Item::RAW_KEY_BIT } else { 0 },
                 }
             })
             .collect();
-        items.sort_unstable_by(|a, b| {
-            (&a.name_key, &stored.items[a.raw_index()].name)
-                .cmp(&(&b.name_key, &stored.items[b.raw_index()].name))
-        });
-        Self {
+        let mut directory = Self {
             stored,
             path,
             path_key,
-            items: items.into_boxed_slice(),
+            keys: keys.into_boxed_str(),
+            items: Box::default(),
+        };
+        items.sort_unstable_by(|a, b| {
+            (directory.name_key(a), directory.raw_item(a).name)
+                .cmp(&(directory.name_key(b), directory.raw_item(b).name))
+        });
+        directory.items = items.into_boxed_slice();
+        directory
+    }
+
+    fn name_key(&self, item: &Item) -> &str {
+        if item.stored_index & Item::RAW_KEY_BIT != 0 {
+            // SAFETY: RAW_KEY_BIT is set only after byte-for-byte comparison
+            // with a lowercase String. Both the names and flags are immutable.
+            unsafe { std::str::from_utf8_unchecked(self.raw_item(item).name) }
+        } else {
+            &self.keys[item.name_key.clone()]
         }
     }
 
-    fn raw_item(&self, item: &Item) -> &StoredItem {
-        &self.stored.items[item.raw_index()]
+    fn raw_item(&self, item: &Item) -> StoredItemRef<'_> {
+        self.stored.items.get(item.raw_index())
     }
 
     fn item_path(&self, item: &Item) -> PathBuf {
         self.path
-            .join(bytes_to_os(&self.raw_item(item).name).as_os_str())
+            .join(bytes_to_os(self.raw_item(item).name).as_os_str())
     }
 }
 
@@ -337,13 +428,15 @@ impl Ord for Match<'_> {
             .cmp(&other.rank)
             .then_with(|| {
                 if std::ptr::eq(self.directory, other.directory) {
-                    self.item.name_key.cmp(&other.item.name_key)
+                    self.directory
+                        .name_key(self.item)
+                        .cmp(other.directory.name_key(other.item))
                 } else {
                     joined_key_cmp(
                         self.directory.path_key.as_bytes(),
-                        self.item.name_key.as_bytes(),
+                        self.directory.name_key(self.item).as_bytes(),
                         other.directory.path_key.as_bytes(),
-                        other.item.name_key.as_bytes(),
+                        other.directory.name_key(other.item).as_bytes(),
                     )
                 }
             })
@@ -413,11 +506,11 @@ impl SearchHandle {
                 // finish without scoring every path, even with millions of files.
                 let start = directory
                     .items
-                    .partition_point(|item| item.name_key.as_ref() < term.as_str());
+                    .partition_point(|item| directory.name_key(item) < term.as_str());
                 let mut retained = 0;
                 for (index, item) in directory.items[start..]
                     .iter()
-                    .take_while(|item| item.name_key.starts_with(term))
+                    .take_while(|item| directory.name_key(item).starts_with(term))
                     .enumerate()
                 {
                     if index % 256 == 0 && cancelled.load(Ordering::Relaxed) {
@@ -426,7 +519,7 @@ impl SearchHandle {
                     if hidden || !item.hidden() {
                         if !retain_match(
                             &mut best,
-                            usize::from(item.name_key.as_ref() != term),
+                            usize::from(directory.name_key(item) != term),
                             item,
                             directory,
                         ) {
@@ -461,8 +554,8 @@ impl SearchHandle {
                     }
                     path_key.clear();
                     path_key.push_str(&directory.path_key);
-                    path_key.push_str(&item.name_key);
-                    if let Some(rank) = score(&item.name_key, &path_key, &terms) {
+                    path_key.push_str(directory.name_key(item));
+                    if let Some(rank) = score(directory.name_key(item), &path_key, &terms) {
                         retain_match(&mut best, rank, item, directory);
                     }
                 }
@@ -479,7 +572,7 @@ impl SearchHandle {
             let directory = raw.kind == 1 || (raw.kind == 2 && path.is_dir());
             entries.push(Entry {
                 path,
-                name: bytes_to_os(&raw.name)
+                name: bytes_to_os(raw.name)
                     .as_os_str()
                     .to_string_lossy()
                     .into_owned(),
@@ -809,7 +902,7 @@ impl Inventory {
             }
             stored.sort_unstable_by(|a, b| a.name.cmp(&b.name));
             if let Some(previous) = previous.as_ref().filter(|previous| {
-                previous.stored.stamp == stamp && previous.stored.items.as_ref() == stored
+                previous.stored.stamp == stamp && previous.stored.items.matches(&stored)
             }) {
                 previous.clone()
             } else {
@@ -817,7 +910,7 @@ impl Inventory {
                     StoredDirectory {
                         path: path_bytes(path.as_path()),
                         stamp,
-                        items: stored.into_boxed_slice(),
+                        items: stored.into_iter().collect(),
                     },
                     &self.roots,
                 ));
@@ -837,7 +930,7 @@ impl Inventory {
                 .items
                 .iter()
                 .filter(|item| item.kind == 1)
-                .map(|item| &item.name)
+                .map(|item| item.name)
                 .collect();
             for child in previous
                 .stored
@@ -845,7 +938,7 @@ impl Inventory {
                 .iter()
                 .filter(|item| item.kind == 1 && !children.contains(&item.name))
             {
-                self.remove_tree(&path.join(bytes_to_os(&child.name).as_os_str()));
+                self.remove_tree(&path.join(bytes_to_os(child.name).as_os_str()));
             }
         }
         let known = self.handle.0.read().unwrap();
@@ -854,7 +947,7 @@ impl Inventory {
             .items
             .iter()
             .filter(|item| item.kind == 1)
-            .map(|item| path.join(bytes_to_os(&item.name).as_os_str()))
+            .map(|item| path.join(bytes_to_os(item.name).as_os_str()))
             .filter(|path| self.full_scan || !known.directories.contains_key(path))
             .collect();
         drop(known);

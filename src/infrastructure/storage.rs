@@ -29,7 +29,8 @@ pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
             continue;
         }
         // Follow directory symlinks, but retain broken links in the listing.
-        let metadata = fs::metadata(item.path()).ok();
+        let entry_path = item.path();
+        let metadata = fs::metadata(&entry_path).ok();
         let directory = metadata.as_ref().is_some_and(|m| m.is_dir());
         let bytes = metadata.and_then(|metadata| {
             if metadata.is_file() {
@@ -39,7 +40,7 @@ pub fn read_directory(path: &Path, hidden: bool) -> io::Result<Vec<Entry>> {
             }
         });
         entries.push(Entry {
-            path: item.path(),
+            path: entry_path,
             name: item.file_name().to_string_lossy().into_owned(),
             directory,
             bytes,

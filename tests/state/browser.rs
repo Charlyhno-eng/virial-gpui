@@ -1,6 +1,18 @@
 use super::*;
 
 #[test]
+fn compact_timestamps_preserve_listing_and_saved_date_formats() {
+    let time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+    assert_eq!(
+        Modified::Local(time).display(),
+        chrono::DateTime::<chrono::Local>::from(time)
+            .format("%Y-%m-%d %H:%M")
+            .to_string()
+    );
+    assert_eq!(Modified::Saved(time).display(), "2023-11-14 22:13 UTC");
+}
+
+#[test]
 fn name_sort_keeps_folders_first_and_preserves_selection_paths() {
     let entry = |name: &str, directory| Entry {
         path: format!("/test/{name}").into(),

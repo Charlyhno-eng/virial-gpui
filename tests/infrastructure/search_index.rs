@@ -426,18 +426,9 @@ fn compact_catalog_shares_long_parent_paths_and_retains_original_names() {
         &[PathBuf::from("/")],
     );
     let allocated = std::mem::size_of_val(snapshot.items.as_ref())
-        + snapshot
-            .items
-            .iter()
-            .map(|item| item.name_key.len())
-            .sum::<usize>()
-        + std::mem::size_of_val(snapshot.stored.items.as_ref())
-        + snapshot
-            .stored
-            .items
-            .iter()
-            .map(|item| item.name.len())
-            .sum::<usize>();
+        + snapshot.keys.len()
+        + std::mem::size_of_val(snapshot.stored.items.offsets.as_ref())
+        + snapshot.stored.items.bytes.len();
     // Per-file payload must stay independent of a 560-byte parent path.
     assert!(allocated < 100 * 1024, "catalog payload: {allocated}");
     assert_eq!(
@@ -460,6 +451,38 @@ fn compact_catalog_keeps_existing_cache_format_and_non_utf8_names() {
             .as_bytes(),
         b"/test/\xff.txt"
     );
+}
+
+#[test]
+fn packed_names_share_lowercase_keys_and_keep_expanding_unicode_keys() {
+    let stored = StoredDirectory {
+        path: b"/test".to_vec(),
+        stamp: Stamp(0, 0, 0, 0, 0, 0),
+        items: ["lower.txt", "İ.TXT", "Été.txt"]
+            .into_iter()
+            .enumerate()
+            .map(|(kind, name)| StoredItem {
+                name: name.as_bytes().into(),
+                kind: kind as u8,
+            })
+            .collect(),
+    };
+    let saved = serde_json::to_string(&stored).unwrap();
+    let directory = Directory::new(stored, &[PathBuf::from("/")]);
+    assert_eq!(serde_json::to_string(&directory.stored).unwrap(), saved);
+    for item in &directory.items {
+        let raw = directory.raw_item(item);
+        let name = std::str::from_utf8(raw.name).unwrap();
+        assert_eq!(directory.name_key(item), name.to_lowercase());
+        assert_eq!(
+            item.stored_index & Item::RAW_KEY_BIT != 0,
+            name == name.to_lowercase()
+        );
+    }
+    assert_eq!(directory.keys.len(), "i\u{307}.txtété.txt".len());
+    assert_eq!(directory.stored.items.get(0).kind, 0);
+    assert_eq!(directory.stored.items.get(1).kind, 1);
+    assert_eq!(directory.stored.items.get(2).kind, 2);
 }
 
 // Depends on the inotify watcher, which only the Linux build has.

@@ -18,6 +18,10 @@ mod ui;
 #[path = "../vendor/gpui/src/platform/blade/retired_resources.rs"]
 mod retired_resources;
 
+#[cfg(all(test, target_os = "linux"))]
+#[path = "../tests/performance/memory.rs"]
+mod memory;
+
 use app::FileManager;
 use gpui::{
     App, Application, Bounds, WindowBackgroundAppearance, WindowDecorations, WindowOptions,

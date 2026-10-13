@@ -155,7 +155,7 @@ impl FileManager {
                                     .pr_3()
                                     .text_right()
                                     .text_color(color(CODE_GUTTER))
-                                    .child(line.number.clone()),
+                                    .child((index + 1).to_string()),
                             )
                             .child(
                                 div()
@@ -164,7 +164,7 @@ impl FileManager {
                                     .text_color(color(CODE_TEXT))
                                     .child(
                                         StyledText::new(line.text.clone())
-                                            .with_highlights(line.highlights.iter().cloned()),
+                                            .with_highlights(line.styled_highlights()),
                                     ),
                             )
                             .on_mouse_down(
@@ -388,17 +388,25 @@ impl FileManager {
                 };
                 range
                     .map(|index| {
-                        let entry = entries[index].clone();
+                        let entry = &entries[index];
+                        let path: std::sync::Arc<std::path::Path> = entry.path.as_path().into();
+                        let active = view.preview_active_column
+                            == column.map_or(view.preview_history.len() + 1, |index| index + 1);
                         div()
                             .id(("folder-preview-entry", index))
                             .h(px(36.))
+                            .border_l_2()
+                            .border_color(gpui::transparent_black())
                             .px_3()
                             .flex()
                             .items_center()
                             .gap_2()
                             .cursor_pointer()
                             .hover(|style| style.bg(color(HOVER)))
-                            .when(selected == Some(&entry.path), |row| row.bg(color(HOVER)))
+                            .when(selected == Some(&entry.path), |row| {
+                                row.bg(color(if active { SELECTED } else { HOVER }))
+                                    .when(active, |row| row.border_color(color(ACCENT)))
+                            })
                             .child(crate::ui::icons::file_icon(entry.icon(), 18.))
                             .child(
                                 div()
@@ -411,11 +419,25 @@ impl FileManager {
                                 row.child(crate::ui::icons::icon("forward", 12., MUTED))
                             })
                             .on_click(cx.listener(move |view, _, window, cx| {
+                                let entry = if let Some(column) = column {
+                                    view.preview_history
+                                        .get(column)
+                                        .and_then(|parent| parent.entries.get(index))
+                                } else if let Preview::Folder(entries) = &view.preview {
+                                    entries.get(index)
+                                } else {
+                                    None
+                                }
+                                .filter(|entry| entry.path == path.as_ref())
+                                .cloned();
+                                let Some(entry) = entry else {
+                                    return;
+                                };
                                 view.focus.focus(window);
                                 if let Some(index) = column {
-                                    view.preview_column_child(index, entry.clone(), cx);
+                                    view.preview_column_child(index, entry, cx);
                                 } else {
-                                    view.preview_child(entry.clone(), cx);
+                                    view.preview_child(entry, cx);
                                 }
                                 cx.stop_propagation();
                             }))
@@ -464,6 +486,12 @@ impl FileManager {
                         div()
                             .id(("preview-parent-header", index))
                             .h(px(40.))
+                            .border_b_1()
+                            .border_color(color(if self.preview_active_column == index + 1 {
+                                ACCENT
+                            } else {
+                                BORDER
+                            }))
                             .px_3()
                             .flex()
                             .items_center()
@@ -578,6 +606,14 @@ impl FileManager {
                     .items_center()
                     .justify_end()
                     .p_2()
+                    .border_b_1()
+                    .border_color(color(
+                        if self.preview_active_column == self.preview_history.len() + 1 {
+                            ACCENT
+                        } else {
+                            BORDER
+                        },
+                    ))
                     .gap_1()
                     .flex_shrink_0()
                     .when(!self.preview_history.is_empty(), |toolbar| {

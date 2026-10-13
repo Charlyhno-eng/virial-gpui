@@ -10,7 +10,7 @@ Workflow `.github/workflows/ci.yaml`, five jobs:
 
 | Job | Content |
 |---|---|
-| `lint` | `cargo fmt --all --check` · `cargo clippy --locked --all-targets -- -D warnings` · job-set guard (the five jobs must exist in `ci.yaml`) · CHANGELOG entry under « Non publié » (PR only) |
+| `lint` | Actions workflow validation (`actionlint`) · `cargo fmt --all --check` · `cargo clippy --locked --all-targets -- -D warnings` · job-set guard (the five jobs must exist in `ci.yaml`) · CHANGELOG entry under « Non publié » (PR only) |
 | `linux` | `cargo test --locked` (debug) |
 | `windows` | `cargo test --locked` (debug) |
 | `macos` | `cargo test --locked` (debug, Metal backend) |

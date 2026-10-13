@@ -26,6 +26,8 @@ impl FileManager {
         focus.focus(window);
         let data_home = crate::infrastructure::recent::data_home(&home);
         let mut view = Self {
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            idle_memory: Default::default(),
             history: History::new(path.clone().into()),
             location: path.clone().into(),
             language: Language::system(),
@@ -243,15 +245,14 @@ impl FileManager {
                 // Directory, ZIP and Trash readers already sort by name.
                 // Apply the direction on the worker before restoring selection.
                 crate::state::browser::apply_name_direction(&mut entries, descending);
-                let modified = if local_metadata {
+                let modified: std::collections::HashMap<_, _> = if local_metadata {
                     entries
                         .iter()
                         .filter_map(|entry| {
                             let modified = std::fs::metadata(&entry.path).ok()?.modified().ok()?;
-                            let date = chrono::DateTime::<chrono::Local>::from(modified);
                             Some((
                                 entry.path.clone(),
-                                date.format("%Y-%m-%d %H:%M").to_string(),
+                                crate::state::browser::Modified::Local(modified),
                             ))
                         })
                         .collect()
@@ -270,10 +271,11 @@ impl FileManager {
             let _ = view.update(cx, |view, cx| {
                 view.loading = false;
                 match result {
-                    Ok((mut entries, workspaces, modified)) => {
+                    Ok((mut entries, workspaces, mut modified)) => {
                         if descending != view.name_descending {
                             crate::state::browser::apply_name_direction(&mut entries, true);
                         }
+                        let unfiltered_count = entries.len();
                         entries.retain(|entry| {
                             if local_metadata {
                                 crate::state::browser::matches_file_filter(
@@ -287,19 +289,31 @@ impl FileManager {
                                 )
                             }
                         });
+                        if entries.len() < unfiltered_count {
+                            let visible_paths: std::collections::HashSet<_> =
+                                entries.iter().map(|entry| &entry.path).collect();
+                            modified.retain(|path, _| visible_paths.contains(path));
+                            modified.shrink_to_fit();
+                            entries.shrink_to_fit();
+                        }
                         view.workspaces = workspaces;
-                        let selected_paths: std::collections::HashSet<_> =
-                            view.selected_paths().into_iter().collect();
+                        let selected_paths: std::collections::HashSet<_> = view
+                            .selection
+                            .indices
+                            .iter()
+                            .filter_map(|index| view.entries.get(*index))
+                            .map(|entry| &entry.path)
+                            .collect();
                         let focus_path = view
                             .selection
                             .focus
                             .and_then(|index| view.entries.get(index))
-                            .map(|entry| entry.path.clone());
+                            .map(|entry| &entry.path);
                         let anchor_path = view
                             .selection
                             .anchor
                             .and_then(|index| view.entries.get(index))
-                            .map(|entry| entry.path.clone());
+                            .map(|entry| &entry.path);
                         let changed = view.location != location;
                         view.marquee = None;
                         view.selection.clear();
@@ -314,10 +328,10 @@ impl FileManager {
                                 .collect();
                             view.selection.focus = entries
                                 .iter()
-                                .position(|entry| Some(&entry.path) == focus_path.as_ref());
+                                .position(|entry| Some(&entry.path) == focus_path);
                             view.selection.anchor = entries
                                 .iter()
-                                .position(|entry| Some(&entry.path) == anchor_path.as_ref());
+                                .position(|entry| Some(&entry.path) == anchor_path);
                         }
                         if let Some(index) = history_index {
                             view.history.restore(index);
@@ -396,6 +410,11 @@ impl FileManager {
                     .timer(Duration::from_millis(30))
                     .await;
             }
+            let _ = view.update(cx, |view, _| {
+                if view.navigation_generation == generation {
+                    view.directory_sizes = None;
+                }
+            });
         });
         self.directory_sizes = Some(DirectorySizeTask {
             _task: task,

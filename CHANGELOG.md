@@ -60,6 +60,16 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   le chemin automatique).
 
 ### Corrections
+- Validate Actions workflows in CI, install Linux build dependencies for lint
+  and release tests, and fix release job dependencies, artifact checks and
+  authentication for automatic README updates.
+- Folder preview arrows immediately select a child in the active column;
+  a highlighted column header shows keyboard focus, including in empty folders.
+- Reduce retained row copies and date strings. On Linux with glibc, return freed
+  allocator pages after the interface and filesystem operations settle.
+- Reduce RAM used by the search catalog, syntax colors and large editor undo
+  steps. Raster previews retain pixels with lossless compression when beneficial,
+  preserving pixels and timing. Search scope and the 500-step undo history are unchanged.
 - Markdown previews render formatted documents with tables and wrapped text;
   accented characters no longer crash the parser, and the source toggle is removed.
 - Copy controls intercept clicks above the file list, so Pause and Cancel work.

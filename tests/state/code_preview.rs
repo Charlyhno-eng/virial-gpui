@@ -5,7 +5,7 @@ fn color_at(code: &CodePreview, needle: &str) -> gpui::Hsla {
     code.highlights
         .iter()
         .find(|(range, _)| range.contains(&offset))
-        .and_then(|(_, style)| style.color)
+        .map(|(_, color)| rgb(*color).into())
         .unwrap()
 }
 
@@ -180,7 +180,6 @@ fn prepared_lines_preserve_utf8_colors_blank_lines_and_trailing_newline() {
     assert_eq!(code.lines.len(), 5);
     assert_eq!(code.lines[2].text.as_ref(), "");
     assert_eq!(code.lines[4].text.as_ref(), "");
-    assert_eq!(code.lines[4].number.as_ref(), "5");
     let mut offset = 0;
     for line in &code.lines {
         for (range, style) in &line.highlights {
@@ -191,7 +190,7 @@ fn prepared_lines_preserve_utf8_colors_blank_lines_and_trailing_newline() {
                 .iter()
                 .find(|(span, _)| span.contains(&(offset + range.start)))
                 .unwrap();
-            assert_eq!(style.color, original.1.color);
+            assert_eq!(*style, original.1);
         }
         offset += line.text.len() + 1;
     }

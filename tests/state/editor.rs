@@ -14,6 +14,89 @@ fn make(text: &str) -> Editor {
 }
 
 #[test]
+fn line_edits_match_text_replacement_at_every_utf8_boundary() {
+    for source in ["", "a\nb", "é🔥\nhello\n", "\n\n"] {
+        let boundaries: Vec<_> = (0..=source.len())
+            .filter(|&n| source.is_char_boundary(n))
+            .collect();
+        for &start in &boundaries {
+            for &end in boundaries.iter().filter(|&&end| end >= start) {
+                for after in ["", "été", "\n", "x\ny\n"] {
+                    let mut buffer = Buffer::new(source, format());
+                    assert_eq!(buffer.text_in(start..end), &source[start..end]);
+                    let change = buffer.replace(start..end, after);
+                    assert_eq!(change.before, &source[start..end]);
+                    assert_eq!(
+                        buffer.text(),
+                        format!("{}{after}{}", &source[..start], &source[end..])
+                    );
+                    buffer.replace_raw(start..start + after.len(), &change.before);
+                    assert_eq!(buffer.text(), source);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_local_edit_retains_untouched_line_allocations() {
+    let mut buffer = Buffer::new("unchanged first\nedit here\nunchanged last", format());
+    let first = buffer.line(0).as_ptr();
+    let last = buffer.line(2).as_ptr();
+    let start = buffer.line_start(1);
+    buffer.replace(start..start + 4, "changed");
+    assert_eq!(buffer.line(0).as_ptr(), first);
+    assert_eq!(buffer.line(2).as_ptr(), last);
+    assert_eq!(
+        buffer.text(),
+        "unchanged first\nchanged here\nunchanged last"
+    );
+}
+
+#[test]
+fn large_compressed_edits_preserve_unicode_undo_redo_and_branching() {
+    let source = "café 中文 🔥\n".repeat(4096);
+    let replacement = "été 🌍\n".repeat(4096);
+    let mut editor = make(&source);
+    editor.select_all();
+    editor.insert(&replacement);
+    assert!(matches!(
+        editor.history.undo.last(),
+        Some(HistoryEdit::Compressed(_))
+    ));
+    editor.undo();
+    assert_eq!(editor.text(), source);
+    assert!(!editor.is_dirty());
+    editor.redo();
+    assert_eq!(editor.text(), replacement);
+    editor.mark_saved();
+    assert!(!editor.is_dirty());
+    editor.undo();
+    assert!(editor.is_dirty());
+    editor.insert("new branch");
+    assert!(!editor.can_redo());
+}
+
+#[test]
+fn large_history_keeps_all_five_hundred_steps() {
+    let source = "repeated large edit\n".repeat(1024);
+    let mut editor = make(&source);
+    for version in 0..505 {
+        editor.select_all();
+        editor.insert(&format!("{version}\n{source}"));
+    }
+    for _ in 0..500 {
+        editor.undo();
+    }
+    assert_eq!(editor.text(), format!("4\n{source}"));
+    assert!(!editor.can_undo());
+    for _ in 0..500 {
+        editor.redo();
+    }
+    assert_eq!(editor.text(), format!("504\n{source}"));
+}
+
+#[test]
 fn round_trips_exactly_and_keeps_the_trailing_newline() {
     for text in ["", "\n", "a\n", "a\nb", "a\n\nb\n", "\n\n\n"] {
         assert_eq!(make(text).text(), text, "round trip {text:?}");

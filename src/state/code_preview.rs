@@ -54,8 +54,23 @@ fn syntax_color(value: u32) -> Color {
 
 pub(crate) struct CodeLine {
     pub(crate) text: SharedString,
-    pub(crate) number: SharedString,
-    pub(crate) highlights: Vec<(Range<usize>, HighlightStyle)>,
+    pub(crate) highlights: Box<[(Range<usize>, u32)]>,
+}
+
+impl CodeLine {
+    pub(crate) fn styled_highlights(
+        &self,
+    ) -> impl Iterator<Item = (Range<usize>, HighlightStyle)> + '_ {
+        self.highlights.iter().map(|(range, color)| {
+            (
+                range.clone(),
+                HighlightStyle {
+                    color: Some(rgb(*color).into()),
+                    ..Default::default()
+                },
+            )
+        })
+    }
 }
 
 pub(crate) struct CodePreview {
@@ -66,7 +81,7 @@ pub(crate) struct CodePreview {
     #[cfg(test)]
     pub(crate) line_numbers: SharedString,
     #[cfg(test)]
-    pub(crate) highlights: Vec<(Range<usize>, HighlightStyle)>,
+    pub(crate) highlights: Vec<(Range<usize>, u32)>,
 }
 
 /// GPUI renders spaces literally; expand tabs to four-column stops and
@@ -96,16 +111,12 @@ fn normalize(source: &str) -> String {
 
 /// Split the worker-produced spans once, instead of scanning the entire
 /// document for every rendered line on each keyboard event.
-fn split_lines(
-    text: &str,
-    highlights: &[(Range<usize>, HighlightStyle)],
-) -> (Vec<CodeLine>, usize) {
+fn split_lines(text: &str, highlights: &[(Range<usize>, u32)]) -> (Vec<CodeLine>, usize) {
     let mut offset = 0;
     let mut span = 0;
     let lines: Vec<_> = text
         .split('\n')
-        .enumerate()
-        .map(|(index, line)| {
+        .map(|line| {
             let start = offset;
             let end = start + line.len();
             offset = end + 1;
@@ -123,7 +134,6 @@ fn split_lines(
                 .collect();
             CodeLine {
                 text: line.to_owned().into(),
-                number: (index + 1).to_string().into(),
                 highlights: colors,
             }
         })
@@ -139,7 +149,7 @@ fn split_lines(
 
 impl CodePreview {
     /// Assemble the line table from prepared text and its spans.
-    fn assemble(text: String, highlights: Vec<(Range<usize>, HighlightStyle)>) -> Self {
+    fn assemble(text: String, highlights: Vec<(Range<usize>, u32)>) -> Self {
         let (lines, widest_line) = split_lines(&text, &highlights);
         #[cfg(test)]
         let line_numbers = (1..=text.split('\n').count())
@@ -189,7 +199,7 @@ impl CodePreview {
         let text = normalize(source);
 
         let mut highlighter = HighlightLines::new(syntax, &THEME);
-        let mut highlights = Vec::new();
+        let mut highlights: Vec<(Range<usize>, u32)> = Vec::new();
         let mut offset = 0;
         for line in LinesWithEndings::from(&text) {
             // Keep the text readable even if a grammar cannot parse a line.
@@ -199,18 +209,17 @@ impl CodePreview {
                     let end = start + token.len();
                     if start < end {
                         let foreground = style.foreground;
-                        highlights.push((
-                            start..end,
-                            HighlightStyle {
-                                color: Some(
-                                    rgb((u32::from(foreground.r) << 16)
-                                        | (u32::from(foreground.g) << 8)
-                                        | u32::from(foreground.b))
-                                    .into(),
-                                ),
-                                ..Default::default()
-                            },
-                        ));
+                        let color = (u32::from(foreground.r) << 16)
+                            | (u32::from(foreground.g) << 8)
+                            | u32::from(foreground.b);
+                        if let Some((range, previous)) = highlights.last_mut()
+                            && range.end == start
+                            && *previous == color
+                        {
+                            range.end = end;
+                        } else {
+                            highlights.push((start..end, color));
+                        }
                     }
                     start = end;
                 }

@@ -124,6 +124,8 @@ impl CodeEditor {
         {
             return Some(code.clone());
         }
+        // Release obsolete spans before preparing the next revision.
+        self.highlighted = None;
         let code = CodePreview::new(&self.path, &self.editor.text())?;
         let code = Arc::new(code);
         self.highlighted = Some((revision, code.clone()));
@@ -561,8 +563,7 @@ fn highlight_runs(
 ) -> Vec<TextRun> {
     let empty = CodeLine {
         text: SharedString::default(),
-        number: SharedString::default(),
-        highlights: Vec::new(),
+        highlights: Box::default(),
     };
     let prepared = code.and_then(|code| code.lines.get(line)).unwrap_or(&empty);
     let mut runs = Vec::new();
@@ -571,7 +572,11 @@ fn highlight_runs(
         if range.start > offset {
             runs.push(plain_run(offset..range.start, font, None));
         }
-        runs.push(plain_run(range.start..range.end, font, style.color));
+        runs.push(plain_run(
+            range.start..range.end,
+            font,
+            Some(rgb(*style).into()),
+        ));
         offset = range.end;
     }
     if offset < text.len() {

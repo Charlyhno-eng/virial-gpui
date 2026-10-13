@@ -6,6 +6,7 @@ use std::{
     borrow::Cow,
     fmt,
     hash::Hash,
+    io::{Read, Write},
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 
@@ -44,7 +45,65 @@ pub struct RenderImage {
     pub id: ImageId,
     /// The scale factor of this image on render.
     pub(crate) scale_factor: f32,
-    data: SmallVec<[Frame; 1]>,
+    data: SmallVec<[ImageFrame; 1]>,
+}
+
+struct ImageFrame {
+    width: u32,
+    height: u32,
+    delay: Delay,
+    pixels: ImagePixels,
+}
+
+enum ImagePixels {
+    Raw(Vec<u8>),
+    Deflated { bytes: Vec<u8>, len: usize },
+}
+
+impl ImageFrame {
+    fn new(frame: Frame, compact: bool) -> Self {
+        let (width, height) = frame.buffer().dimensions();
+        let delay = frame.delay();
+        let bytes = frame.into_buffer().into_raw();
+        let len = bytes.len();
+        let pixels = if compact && len >= 64 * 1024 {
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+            if encoder.write_all(&bytes).is_ok()
+                && let Ok(compressed) = encoder.finish()
+                // Keep raw pixels for noisy frames where compression saves little.
+                && compressed.len() < len - len / 8
+            {
+                ImagePixels::Deflated {
+                    bytes: compressed,
+                    len,
+                }
+            } else {
+                ImagePixels::Raw(bytes)
+            }
+        } else {
+            ImagePixels::Raw(bytes)
+        };
+        Self {
+            width,
+            height,
+            delay,
+            pixels,
+        }
+    }
+
+    fn bytes(&self) -> Cow<'_, [u8]> {
+        match &self.pixels {
+            ImagePixels::Raw(bytes) => Cow::Borrowed(bytes),
+            ImagePixels::Deflated { bytes, len } => {
+                let mut decoded = Vec::with_capacity(*len);
+                flate2::read::DeflateDecoder::new(bytes.as_slice())
+                    .read_to_end(&mut decoded)
+                    .expect("image pixels were compressed in memory");
+                Cow::Owned(decoded)
+            }
+        }
+    }
 }
 
 impl PartialEq for RenderImage {
@@ -58,25 +117,46 @@ impl Eq for RenderImage {}
 impl RenderImage {
     /// Create a new image from the given data.
     pub fn new(data: impl Into<SmallVec<[Frame; 1]>>) -> Self {
+        let data = data.into();
+        let compact = data.len() > 1;
+        Self::from_image_frames(
+            data.into_iter()
+                .map(|frame| ImageFrame::new(frame, compact))
+                .collect(),
+        )
+    }
+
+    /// Retain asset frames losslessly, compressing each before decoding the next.
+    /// Frames must already use BGRA pixels, as for `new`.
+    pub fn from_compact_frames(
+        frames: impl IntoIterator<Item = image::ImageResult<Frame>>,
+    ) -> image::ImageResult<Self> {
+        let data = frames
+            .into_iter()
+            .map(|frame| frame.map(|frame| ImageFrame::new(frame, true)))
+            .collect::<image::ImageResult<SmallVec<[ImageFrame; 1]>>>()?;
+        Ok(Self::from_image_frames(data))
+    }
+
+    fn from_image_frames(data: SmallVec<[ImageFrame; 1]>) -> Self {
         static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
         Self {
             id: ImageId(NEXT_ID.fetch_add(1, SeqCst)),
             scale_factor: 1.0,
-            data: data.into(),
+            data,
         }
     }
 
-    /// Convert this image into a byte slice.
-    pub fn as_bytes(&self, frame_index: usize) -> Option<&[u8]> {
-        self.data
-            .get(frame_index)
-            .map(|frame| frame.buffer().as_raw().as_slice())
+    /// Access BGRA pixels, decoding compact frames only when their pixels are needed.
+    pub fn as_bytes(&self, frame_index: usize) -> Option<Cow<'_, [u8]>> {
+        self.data.get(frame_index).map(ImageFrame::bytes)
     }
 
     /// Get the size of this image, in pixels.
     pub fn size(&self, frame_index: usize) -> Size<DevicePixels> {
-        let (width, height) = self.data[frame_index].buffer().dimensions();
+        let frame = &self.data[frame_index];
+        let (width, height) = (frame.width, frame.height);
         size(width.into(), height.into())
     }
 
@@ -88,7 +168,7 @@ impl RenderImage {
 
     /// Get the delay of this frame from the previous
     pub fn delay(&self, frame_index: usize) -> Delay {
-        self.data[frame_index].delay()
+        self.data[frame_index].delay
     }
 
     /// Get the number of frames for this image.

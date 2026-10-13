@@ -61,6 +61,18 @@ fn keyboard_preview_entry(
     entries.get(index).cloned()
 }
 
+/// Enter a column with a visible cursor, without opening its first child.
+fn enter_preview_folder(
+    selection: &mut super::selection::Selection,
+    count: usize,
+    scroll: &gpui::UniformListScrollHandle,
+) {
+    if selection.primary().is_none() && count > 0 {
+        selection.click(0, false, false);
+        scroll.scroll_to_item(0, gpui::ScrollStrategy::Center);
+    }
+}
+
 /// Header-only metadata: no pixel buffer is decoded for the details panel.
 pub(crate) struct ImageMetadata {
     pub format: String,
@@ -301,6 +313,22 @@ fn text_preview(entry: &Entry, bytes: &[u8]) -> Preview {
 }
 
 impl FileManager {
+    fn focus_active_preview_folder(&mut self) {
+        if let Some(index) = self.preview_active_column.checked_sub(1) {
+            if let Some(parent) = self.preview_history.get_mut(index) {
+                enter_preview_folder(&mut parent.selection, parent.entries.len(), &parent.scroll);
+            } else if index == self.preview_history.len()
+                && let Preview::Folder(entries) = &self.preview
+            {
+                enter_preview_folder(
+                    &mut self.preview_selection,
+                    entries.len(),
+                    &self.code_preview_scroll,
+                );
+            }
+        }
+    }
+
     pub(crate) fn preview_is_file(&self) -> bool {
         self.preview_entry
             .as_ref()
@@ -345,6 +373,7 @@ impl FileManager {
             if self.selection.primary().is_some() {
                 self.show_preview(cx);
                 self.preview_active_column = 1;
+                self.focus_active_preview_folder();
                 self.preview_focused = self.preview_history.is_empty() && self.preview_is_file();
                 cx.notify();
             }
@@ -361,6 +390,7 @@ impl FileManager {
         }
         self.preview_focused =
             self.preview_active_column == self.preview_history.len() + 1 && self.preview_is_file();
+        self.focus_active_preview_folder();
         cx.notify();
     }
 
@@ -376,7 +406,7 @@ impl FileManager {
         let parent = self.preview_active_column - 1;
         if parent == 0 {
             // Retain the main selection so another Right immediately reopens it.
-            let selection = self.selection.clone();
+            let selection = std::mem::take(&mut self.selection);
             self.close_preview(cx);
             self.selection = selection;
         } else {
@@ -464,8 +494,8 @@ impl FileManager {
 
     pub(crate) fn preview_child(&mut self, entry: Entry, cx: &mut Context<Self>) {
         self.preview_active_column = self.preview_history.len() + 1;
-        if let Some(current) = self.preview_entry.clone()
-            && matches!(self.preview, Preview::Folder(_))
+        if matches!(self.preview, Preview::Folder(_))
+            && let Some(current) = self.preview_entry.take()
         {
             let Preview::Folder(entries) = std::mem::replace(&mut self.preview, Preview::Loading)
             else {
@@ -607,6 +637,7 @@ impl FileManager {
                     return;
                 }
                 view.preview = preview;
+                view.focus_active_preview_folder();
                 if matches!(view.preview, Preview::Media(_)) {
                     view.monitor_preview_media(cx);
                 }

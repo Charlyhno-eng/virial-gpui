@@ -151,7 +151,7 @@ impl FileManager {
                                 view.error = None;
                                 view.entry_modified.insert(
                                     path,
-                                    chrono::Utc::now().format("%Y-%m-%d %H:%M UTC").to_string(),
+                                    super::browser::Modified::Saved(std::time::SystemTime::now()),
                                 );
                             }
                             Err(error) => {

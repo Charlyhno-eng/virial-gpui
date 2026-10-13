@@ -2,6 +2,26 @@
 use crate::{app::FileManager, domain::models::Entry, state::selection::Selection};
 use gpui::{Context, ScrollStrategy};
 
+/// Keep timestamps compact; only visible rows need a formatted date string.
+#[derive(Clone, Copy)]
+pub(crate) enum Modified {
+    Local(std::time::SystemTime),
+    Saved(std::time::SystemTime),
+}
+
+impl Modified {
+    pub(crate) fn display(self) -> String {
+        match self {
+            Self::Local(time) => chrono::DateTime::<chrono::Local>::from(time)
+                .format("%Y-%m-%d %H:%M")
+                .to_string(),
+            Self::Saved(time) => chrono::DateTime::<chrono::Utc>::from(time)
+                .format("%Y-%m-%d %H:%M UTC")
+                .to_string(),
+        }
+    }
+}
+
 pub(crate) fn matches_extension(entry: &Entry, extension: &str) -> bool {
     extension.is_empty()
         || entry.directory

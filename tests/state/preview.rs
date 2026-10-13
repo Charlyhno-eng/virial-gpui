@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn entering_a_folder_selects_its_first_child_without_opening_it() {
+    let scroll = gpui::UniformListScrollHandle::new();
+    let mut selection = super::super::selection::Selection::default();
+    enter_preview_folder(&mut selection, 3, &scroll);
+    assert_eq!(selection.primary(), Some(0));
+    assert_eq!(selection.keyboard_target("down", 3, 1), Some(1));
+    selection.click(2, false, false);
+    enter_preview_folder(&mut selection, 3, &scroll);
+    assert_eq!(selection.primary(), Some(2));
+    let mut empty = super::super::selection::Selection::default();
+    enter_preview_folder(&mut empty, 0, &scroll);
+    assert_eq!(empty.primary(), None);
+}
+
+#[test]
 fn files_take_two_units_and_closing_them_reveals_the_previous_parent() {
     for depth in 0..30 {
         let start = visible_column_start(depth, true);

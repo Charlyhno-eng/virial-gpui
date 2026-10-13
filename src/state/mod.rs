@@ -10,6 +10,8 @@ pub(crate) mod editor_session;
 pub(crate) mod global_search;
 pub(crate) mod html;
 pub(crate) mod markdown;
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+pub(crate) mod memory;
 pub(crate) mod mermaid;
 pub(crate) mod mouse;
 pub(crate) mod operations;

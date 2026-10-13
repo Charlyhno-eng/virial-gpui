@@ -632,39 +632,21 @@ impl Asset for ImageAssetLoader {
             };
 
             let data = if let Ok(format) = image::guess_format(&bytes) {
-                let data = match format {
+                let data: SmallVec<[Frame; 1]> = match format {
                     ImageFormat::Gif => {
                         let decoder = GifDecoder::new(Cursor::new(&bytes))?;
-                        let mut frames = SmallVec::new();
-
-                        for frame in decoder.into_frames() {
-                            let mut frame = frame?;
-                            // Convert from RGBA to BGRA.
-                            for pixel in frame.buffer_mut().chunks_exact_mut(4) {
-                                pixel.swap(0, 2);
-                            }
-                            frames.push(frame);
-                        }
-
-                        frames
+                        return Ok(Arc::new(RenderImage::from_compact_frames(
+                            decoder.into_frames().map(|frame| frame.map(bgra_frame)),
+                        )?));
                     }
                     ImageFormat::WebP => {
                         let mut decoder = WebPDecoder::new(Cursor::new(&bytes))?;
 
                         if decoder.has_animation() {
                             let _ = decoder.set_background_color(Rgba([0, 0, 0, 0]));
-                            let mut frames = SmallVec::new();
-
-                            for frame in decoder.into_frames() {
-                                let mut frame = frame?;
-                                // Convert from RGBA to BGRA.
-                                for pixel in frame.buffer_mut().chunks_exact_mut(4) {
-                                    pixel.swap(0, 2);
-                                }
-                                frames.push(frame);
-                            }
-
-                            frames
+                            return Ok(Arc::new(RenderImage::from_compact_frames(
+                                decoder.into_frames().map(|frame| frame.map(bgra_frame)),
+                            )?));
                         } else {
                             let mut data = DynamicImage::from_decoder(decoder)?.into_rgba8();
 
@@ -689,7 +671,7 @@ impl Asset for ImageAssetLoader {
                     }
                 };
 
-                RenderImage::new(data)
+                RenderImage::from_compact_frames(data.into_iter().map(Ok))?
             } else {
                 let pixmap =
                     // TODO: Can we make svgs always rescale?
@@ -710,6 +692,13 @@ impl Asset for ImageAssetLoader {
             Ok(Arc::new(data))
         }
     }
+}
+
+fn bgra_frame(mut frame: Frame) -> Frame {
+    for pixel in frame.buffer_mut().chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    frame
 }
 
 /// An error that can occur when interacting with the image cache.

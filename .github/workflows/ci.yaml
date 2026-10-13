@@ -35,11 +35,20 @@ jobs:
   lint:
     # Gate for every PR merge: formatting, clippy and the changelog rule.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libfontconfig1-dev libwayland-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libasound2-dev libvulkan-dev
+      - name: Validate GitHub Actions workflows
+        shell: bash
+        run: |
+          GOBIN="$RUNNER_TEMP/actionlint" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$RUNNER_TEMP/actionlint/actionlint" .github/workflows/*.yaml
       - name: Install Rust stable with lint components
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy

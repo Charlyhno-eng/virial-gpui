@@ -7,7 +7,11 @@
 //! edit needs to special-case the end of the file.
 
 use crate::infrastructure::editor_io::{DocumentFormat, LineEnding};
-use std::ops::Range;
+use std::{
+    borrow::Cow,
+    io::{Read, Write},
+    ops::Range,
+};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// One replaced span plus the text before and after it, so undo and redo are
@@ -30,10 +34,109 @@ const MAX_HISTORY: usize = 500;
 /// A run of typed characters longer than this becomes several undo steps.
 const COALESCE_LIMIT: usize = 64;
 
+// Keep every undo step, compressing only large payloads when doing so saves RAM.
+// Small typing edits stay directly accessible for coalescing.
+#[derive(Clone, Debug)]
+enum HistoryEdit {
+    Plain(Edit),
+    Compressed(CompressedEdit),
+}
+
+#[derive(Clone, Debug)]
+struct CompressedEdit {
+    bytes: Box<[u8]>,
+    changes: Box<[CompressedChange]>,
+}
+
+#[derive(Clone, Debug)]
+struct CompressedChange {
+    range: Range<usize>,
+    before_len: usize,
+    after_len: usize,
+}
+
+impl HistoryEdit {
+    fn new(edit: Edit) -> Self {
+        let size: usize = edit
+            .changes
+            .iter()
+            .map(|c| c.before.len() + c.after.len())
+            .sum();
+        if size >= 16 * 1024 {
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+            if edit
+                .changes
+                .iter()
+                .try_for_each(|change| {
+                    encoder.write_all(change.before.as_bytes())?;
+                    encoder.write_all(change.after.as_bytes())
+                })
+                .is_ok()
+                && let Ok(bytes) = encoder.finish()
+                && bytes.len() < size
+            {
+                return Self::Compressed(CompressedEdit {
+                    bytes: bytes.into_boxed_slice(),
+                    changes: edit
+                        .changes
+                        .iter()
+                        .map(|change| CompressedChange {
+                            range: change.range.clone(),
+                            before_len: change.before.len(),
+                            after_len: change.after.len(),
+                        })
+                        .collect(),
+                });
+            }
+        }
+        Self::Plain(edit)
+    }
+
+    fn edit(&self) -> Cow<'_, Edit> {
+        match self {
+            Self::Plain(edit) => Cow::Borrowed(edit),
+            Self::Compressed(edit) => {
+                let size = edit
+                    .changes
+                    .iter()
+                    .map(|change| change.before_len + change.after_len)
+                    .sum();
+                let mut bytes = Vec::with_capacity(size);
+                flate2::read::DeflateDecoder::new(edit.bytes.as_ref())
+                    .read_to_end(&mut bytes)
+                    .expect("undo text was compressed in memory");
+                let mut offset = 0;
+                let changes = edit
+                    .changes
+                    .iter()
+                    .map(|change| {
+                        let before_end = offset + change.before_len;
+                        let after_end = before_end + change.after_len;
+                        let before = std::str::from_utf8(&bytes[offset..before_end])
+                            .unwrap()
+                            .to_owned();
+                        let after = std::str::from_utf8(&bytes[before_end..after_end])
+                            .unwrap()
+                            .to_owned();
+                        offset = after_end;
+                        Change {
+                            range: change.range.clone(),
+                            before,
+                            after,
+                        }
+                    })
+                    .collect();
+                Cow::Owned(Edit { changes })
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct History {
-    undo: Vec<Edit>,
-    redo: Vec<Edit>,
+    undo: Vec<HistoryEdit>,
+    redo: Vec<HistoryEdit>,
 }
 
 impl History {
@@ -45,7 +148,7 @@ impl History {
         }
         self.redo.clear();
         if typing
-            && let Some(last) = self.undo.last_mut()
+            && let Some(HistoryEdit::Plain(last)) = self.undo.last_mut()
             && edit.changes.len() == 1
             && last.changes.len() == 1
         {
@@ -61,7 +164,7 @@ impl History {
                 return;
             }
         }
-        self.undo.push(edit);
+        self.undo.push(HistoryEdit::new(edit));
         if self.undo.len() > MAX_HISTORY {
             self.undo.remove(0);
         }
@@ -78,7 +181,7 @@ impl History {
 
 /// The document: lines without terminators, plus the format to save it with.
 pub struct Buffer {
-    lines: Vec<String>,
+    lines: Vec<Box<str>>,
     pub format: DocumentFormat,
     /// Bumped on every change so the view knows a re-highlight is due.
     pub revision: u64,
@@ -91,7 +194,7 @@ impl Buffer {
                 .replace("\r\n", "\n")
                 .replace('\r', "\n")
                 .split('\n')
-                .map(str::to_owned)
+                .map(Box::<str>::from)
                 .collect(),
             format,
             revision: 0,
@@ -103,17 +206,21 @@ impl Buffer {
     }
 
     pub fn line(&self, index: usize) -> &str {
-        self.lines.get(index).map_or("", String::as_str)
+        self.lines.get(index).map_or("", |line| line.as_ref())
     }
 
     #[allow(dead_code)]
-    pub fn lines(&self) -> &[String] {
+    pub fn lines(&self) -> &[Box<str>] {
         &self.lines
     }
 
     /// The exact text to save; `lines.join("\n")` is the whole document.
     pub fn text(&self) -> String {
         self.lines.join("\n")
+    }
+
+    fn byte_len(&self) -> usize {
+        self.lines.iter().map(|line| line.len()).sum::<usize>() + self.lines.len() - 1
     }
 
     /// Byte offset where a line starts, the unit every range is expressed in.
@@ -140,7 +247,7 @@ impl Buffer {
 
     /// Clamp a byte offset into the buffer and off any newline.
     pub fn clamp_offset(&self, offset: usize) -> usize {
-        let offset = offset.min(self.text().len());
+        let offset = offset.min(self.byte_len());
         let line = self.line_of(offset);
         let start = self.line_start(line);
         let inside = (offset - start).min(self.line(line).len());
@@ -165,45 +272,54 @@ impl Buffer {
 
     /// Apply one replacement, returning the change so it can be undone.
     pub fn replace(&mut self, range: Range<usize>, after: &str) -> Change {
-        let text = self.text();
         let start = self.clamp_offset(range.start);
         let end = self.clamp_offset(range.end).max(start);
         let change = Change {
             range: start..end,
-            before: text[start..end].to_owned(),
+            before: self.text_in(start..end),
             after: after.to_owned(),
         };
-        let head = &text[..start];
-        let tail = &text[end..];
-        let joined = format!("{head}{}{tail}", change.after.replace("\r\n", "\n"));
-        self.lines = joined.split('\n').map(str::to_owned).collect::<Vec<_>>();
-        self.revision = self.revision.wrapping_add(1);
+        self.replace_raw(start..end, after);
         change
     }
 
     /// Replace without clamping: undo and redo spans are computed against the
     /// previous text, where the recorded offsets are exact.
-    pub fn replace_raw(&mut self, range: Range<usize>, after: &str) -> Change {
-        let text = self.text();
-        let end = range.end.min(text.len());
-        let change = Change {
-            range: range.start..end,
-            before: text[range.start..end].to_owned(),
-            after: after.to_owned(),
-        };
-        let head = &text[..range.start];
-        let tail = &text[end..];
-        let joined = format!("{head}{}{tail}", change.after.replace("\r\n", "\n"));
-        self.lines = joined.split('\n').map(str::to_owned).collect::<Vec<_>>();
+    fn replace_raw(&mut self, range: Range<usize>, after: &str) {
+        let end = range.end.min(self.byte_len());
+        let first = self.line_of(range.start);
+        let last = self.line_of(end);
+        let head = &self.line(first)[..range.start - self.line_start(first)];
+        let tail = &self.line(last)[end - self.line_start(last)..];
+        let after = after.replace("\r\n", "\n");
+        let mut joined = String::with_capacity(head.len() + after.len() + tail.len());
+        joined.push_str(head);
+        joined.push_str(&after);
+        joined.push_str(tail);
+        // Preserve untouched lines and their allocations, including during undo.
+        self.lines
+            .splice(first..=last, joined.split('\n').map(Box::<str>::from));
         self.revision = self.revision.wrapping_add(1);
-        change
     }
 
     pub fn text_in(&self, range: Range<usize>) -> String {
-        let text = self.text();
         let start = self.clamp_offset(range.start);
         let end = self.clamp_offset(range.end).max(start);
-        text[start..end].to_owned()
+        let first = self.line_of(start);
+        let last = self.line_of(end);
+        let mut selected = String::with_capacity(end - start);
+        let mut offset = self.line_start(first);
+        for line in first..=last {
+            if line != first {
+                selected.push('\n');
+            }
+            let text = self.line(line);
+            let from = start.saturating_sub(offset).min(text.len());
+            let to = end.saturating_sub(offset).min(text.len());
+            selected.push_str(&text[from..to]);
+            offset += text.len() + 1;
+        }
+        selected
     }
 }
 
@@ -276,7 +392,12 @@ impl Editor {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.text() != self.saved
+        !self
+            .buffer
+            .lines
+            .iter()
+            .map(|line| line.as_ref())
+            .eq(self.saved.split('\n'))
     }
 
     pub fn can_undo(&self) -> bool {
@@ -449,12 +570,12 @@ impl Editor {
             return;
         };
         let mut cursor = None;
-        for change in edit.changes.iter().rev() {
+        for change in edit.edit().changes.iter().rev() {
             // An insertion is reverted over the span its text occupies now,
             // not over the empty range it once replaced.
             let span = change.range.start..change.range.start + change.after.len();
-            let applied = self.buffer.replace_raw(span, &change.before);
-            cursor = Some(applied.range.start);
+            self.buffer.replace_raw(span, &change.before);
+            cursor = Some(change.range.start);
         }
         self.history.redo.push(edit);
         let cursor = cursor.unwrap_or(self.cursor);
@@ -467,10 +588,10 @@ impl Editor {
             return;
         };
         let mut cursor = None;
-        for change in edit.changes.iter().rev() {
+        for change in edit.edit().changes.iter().rev() {
             let span = change.range.start..change.range.start + change.before.len();
-            let applied = self.buffer.replace_raw(span, &change.after);
-            cursor = Some(applied.range.start + applied.after.len());
+            self.buffer.replace_raw(span, &change.after);
+            cursor = Some(change.range.start + change.after.len());
         }
         self.history.undo.push(edit);
         let cursor = cursor.unwrap_or(self.cursor);
@@ -557,7 +678,7 @@ impl Editor {
 
     pub fn select_all(&mut self) {
         self.anchor = 0;
-        self.cursor = self.text().len();
+        self.cursor = self.buffer.byte_len();
     }
 }
 

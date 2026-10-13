@@ -24,6 +24,8 @@ impl Drop for DirectorySizeTask {
 }
 
 pub struct FileManager {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    pub(crate) idle_memory: super::memory::IdleMemory,
     pub(crate) location: Location,
     pub(crate) language: Language,
     pub(crate) data_home: PathBuf,
@@ -34,7 +36,7 @@ pub struct FileManager {
     pub(crate) device_monitor: Option<Task<()>>,
     pub(crate) device_generation: usize,
     pub(crate) entries: Vec<Entry>,
-    pub(crate) entry_modified: std::collections::HashMap<PathBuf, String>,
+    pub(crate) entry_modified: std::collections::HashMap<PathBuf, super::browser::Modified>,
     pub(crate) workspaces: Vec<crate::infrastructure::workspaces::Summary>,
     pub(crate) folder_count: usize,
     pub(crate) history: History,

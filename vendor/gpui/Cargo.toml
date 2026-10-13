@@ -157,6 +157,9 @@ package = "gpui_http_client"
 [dependencies.image]
 version = "0.25.1"
 
+[dependencies.flate2]
+version = "1"
+
 [dependencies.inventory]
 version = "0.3.19"
 

@@ -478,7 +478,8 @@ impl FileManager {
                         let paths = view.selected_paths().into();
                         range
                             .map(|index| {
-                                let entry = view.entries[index].clone();
+                                let entry = &view.entries[index];
+                                let row_path: std::sync::Arc<std::path::Path> = entry.path.as_path().into();
                                 let recent = view.location
                                     == crate::domain::location::Location::Recent;
                                 let row_height = if recent {
@@ -537,7 +538,7 @@ impl FileManager {
                                         .child(entry.name.clone())
                                 };
                                 let row = div()
-                                    .id(std::sync::Arc::<std::path::Path>::from(entry.path.clone()))
+                                    .id(row_path.clone())
                                     .flex_1()
                                     .min_w_0()
                                     .h(px(row_height))
@@ -571,17 +572,21 @@ impl FileManager {
                                             .child(view.language.size(entry.bytes)),
                                     )
                                     .child(div().w(px(150.)).flex_shrink_0().text_size(px(10.)).text_color(color(MUTED))
-                                        .child(view.entry_modified.get(&entry.path).cloned().unwrap_or_else(|| "—".into())))
+                                        .child(view.entry_modified.get(&entry.path).map(|date| date.display()).unwrap_or_else(|| "—".into())))
                                     .on_mouse_down(gpui::MouseButton::Right, {
-                                        let entry = entry.clone();
+                                        let row_path = row_path.clone();
                                         cx.listener(
                                             move |view,
                                                   event: &gpui::MouseDownEvent,
                                                   window,
                                                   cx| {
                                                 cx.stop_propagation();
+                                                let entry = view.entries.get(index)
+                                                    .filter(|entry| entry.path == row_path.as_ref())
+                                                    .cloned();
+                                                let Some(entry) = entry else { return; };
                                                 view.show_menu(
-                                                    Some(entry.clone()),
+                                                    Some(entry),
                                                     event.position,
                                                     window,
                                                     cx,
@@ -636,8 +641,12 @@ impl FileManager {
                                                 if !modifiers.control && !modifiers.shift {
                                                     view.details_open = false;
                                                     view.preview_expanded = false;
-                                                    if click_count >= 2 {
-                                                        view.open(entry.clone(), cx);
+                                                    if click_count >= 2
+                                                        && let Some(entry) = view.entries.get(index)
+                                                            .filter(|entry| entry.path == row_path.as_ref())
+                                                            .cloned()
+                                                        {
+                                                            view.open(entry, cx);
                                                     }
                                                 }
                                                 if click_count == 1 && !modifiers.control && !modifiers.shift && view.selection.indices.len() == 1 {
