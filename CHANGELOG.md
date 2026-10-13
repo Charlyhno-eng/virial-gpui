@@ -60,6 +60,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   le chemin automatique).
 
 ### Corrections
+- Fix the macOS CI rename undo test to expect preserved edits, matching the
+  existing Unix behavior.
 - Fix macOS compilation of move undo and Windows TAR.GZ extraction when tar
   lists accented filenames using a non-UTF-8 encoding.
 - Validate Actions workflows in CI, install Linux build dependencies for lint

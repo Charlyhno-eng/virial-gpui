@@ -228,24 +228,13 @@ fn preserves_rename_edits_and_refuses_name_collisions_without_losing_history() {
     )
     .unwrap();
     fs::write(root.path().join("renamed"), "edited").unwrap();
-    #[cfg(not(target_os = "linux"))]
-    {
-        assert!(undo(&data).is_err());
-        fs::write(root.path().join("renamed"), "original").unwrap();
-    }
+    // Unix rename undo preserves edits by moving the same inode back.
     symlink("missing", &file).unwrap();
     assert!(undo(&data).is_err());
     assert_eq!(fs::read_link(&file).unwrap(), Path::new("missing"));
     fs::remove_file(&file).unwrap();
     assert!(undo(&data).unwrap());
-    assert_eq!(
-        fs::read(file).unwrap(),
-        if cfg!(target_os = "linux") {
-            b"edited".as_slice()
-        } else {
-            b"original".as_slice()
-        }
-    );
+    assert_eq!(fs::read(file).unwrap(), b"edited");
 }
 
 #[test]
