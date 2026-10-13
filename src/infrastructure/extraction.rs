@@ -2,7 +2,7 @@
 use std::{
     fs::{self, File},
     io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -112,32 +112,42 @@ fn tar_command() -> Command {
     command
 }
 
-fn listing(path: &Path, flag: &str) -> io::Result<String> {
+fn listing(path: &Path, flag: &str) -> io::Result<Vec<u8>> {
     let output = tar_command().arg(flag).arg(path).output()?;
     if !output.status.success() {
         return Err(io::Error::other(
             String::from_utf8_lossy(&output.stderr).trim(),
         ));
     }
-    String::from_utf8(output.stdout).map_err(io::Error::other)
+    Ok(output.stdout)
 }
 
 fn validate_tar(path: &Path) -> io::Result<()> {
+    validate_tar_listings(&listing(path, "-tvf")?, &listing(path, "-tf")?)
+}
+
+fn validate_tar_listings(verbose: &[u8], names: &[u8]) -> io::Result<()> {
     // GNU tar and bsdtar both list the entry kind first. Refuse links and
     // special files before extraction, including links used as parent folders.
-    for line in listing(path, "-tvf")?.lines() {
-        if !matches!(line.as_bytes().first(), Some(b'-' | b'd')) {
+    for line in verbose
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+    {
+        if !matches!(line.first(), Some(b'-' | b'd')) {
             return Err(io::Error::other(
                 "Archive links and special files cannot be extracted",
             ));
         }
     }
-    for name in listing(path, "-tf")?.lines() {
-        let path = Path::new(name);
-        if name.contains(['\\', ':'])
-            || path
-                .components()
-                .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
+    // Windows tar can use a local code page rather than UTF-8. Check ASCII
+    // path syntax in the original bytes; extraction never uses this listing
+    // to reconstruct or rename archive members.
+    for name in names.split(|byte| *byte == b'\n') {
+        let name = name.strip_suffix(b"\r").unwrap_or(name);
+        if name.contains(&b'\\')
+            || name.contains(&b':')
+            || name.starts_with(b"/")
+            || name.split(|byte| *byte == b'/').any(|part| part == b"..")
         {
             return Err(io::Error::other("Unsafe archive member path"));
         }

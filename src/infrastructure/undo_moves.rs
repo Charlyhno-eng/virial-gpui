@@ -15,6 +15,10 @@ use std::{
 };
 use url::Url;
 
+// MetadataExt::mode() is u32, while libc's mask is u16 on macOS.
+#[allow(clippy::unnecessary_cast)]
+const FILE_TYPE_MASK: u32 = libc::S_IFMT as u32;
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Move {
@@ -94,7 +98,7 @@ impl Move {
             destination: uri(destination)?,
             device: metadata.dev(),
             inode: metadata.ino(),
-            kind: metadata.mode() & libc::S_IFMT,
+            kind: metadata.mode() & FILE_TYPE_MASK,
             info: info.map(uri).transpose()?,
             restored_info: None,
         })
@@ -104,7 +108,7 @@ impl Move {
         match fs::symlink_metadata(location) {
             Ok(metadata) => Ok(metadata.dev() == self.device
                 && metadata.ino() == self.inode
-                && metadata.mode() & libc::S_IFMT == self.kind),
+                && metadata.mode() & FILE_TYPE_MASK == self.kind),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error),
         }

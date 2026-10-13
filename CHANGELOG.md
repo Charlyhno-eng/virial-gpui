@@ -60,6 +60,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   le chemin automatique).
 
 ### Corrections
+- Fix macOS compilation of move undo and Windows TAR.GZ extraction when tar
+  lists accented filenames using a non-UTF-8 encoding.
 - Validate Actions workflows in CI, install Linux build dependencies for lint
   and release tests, and fix release job dependencies, artifact checks and
   authentication for automatic README updates.

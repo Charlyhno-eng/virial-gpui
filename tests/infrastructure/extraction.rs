@@ -132,6 +132,29 @@ fn tar_gz(path: &Path, name: &str, kind: u8) {
 }
 
 #[test]
+fn tar_listings_accept_local_encoding_and_keep_safety_checks() {
+    // Windows tar's café.txt listing in a local code page, with CRLF lines.
+    let verbose = b"drwxrwxrwx 0 0 0 folder/\r\n-rw-rw-rw- 0 0 5 folder/caf\xe9.txt\r\n";
+    let names = b"folder/\r\nfolder/caf\xe9.txt\r\n";
+    validate_tar_listings(verbose, names).unwrap();
+    validate_tar_listings(verbose, "folder/café.txt\n".as_bytes()).unwrap();
+    for name in [
+        &b"../caf\xe9.txt\r\n"[..],
+        &b"folder/../../caf\xe9.txt\r\n"[..],
+        &b"/caf\xe9.txt\r\n"[..],
+        &b"C:/caf\xe9.txt\r\n"[..],
+        &b"folder\\caf\xe9.txt\r\n"[..],
+    ] {
+        assert!(validate_tar_listings(verbose, name).is_err());
+    }
+    for kind in *b"lhpbc" {
+        let mut listing = verbose.to_vec();
+        listing[0] = kind;
+        assert!(validate_tar_listings(&listing, names).is_err());
+    }
+}
+
+#[test]
 fn tar_rejects_traversal_links_and_special_files_before_publishing() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("bad.tar.gz");
