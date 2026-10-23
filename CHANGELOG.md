@@ -11,6 +11,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Corrections
+- Prepare the 0.1.3 release with automatic Linux, macOS and Windows builds.
+
+## [0.1.3] - 2026-10-23
+
 ### Ajouts
 - Arrow keys navigate preview columns and select nested files without leaving
   the main folder. File previews take two of the four visible column units and
@@ -60,6 +65,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   le chemin automatique).
 
 ### Corrections
+- Double-click folders at any depth in preview columns to open them. Delay
+  single-click previews briefly so a double-click opens without showing a preview.
 - Fix the macOS CI rename undo test to expect preserved edits, matching the
   existing Unix behavior.
 - Fix macOS compilation of move undo and Windows TAR.GZ extraction when tar

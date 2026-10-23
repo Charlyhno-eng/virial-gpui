@@ -418,29 +418,46 @@ impl FileManager {
                             .when(entry.browsable(), |row| {
                                 row.child(crate::ui::icons::icon("forward", 12., MUTED))
                             })
-                            .on_click(cx.listener(move |view, _, window, cx| {
-                                let entry = if let Some(column) = column {
-                                    view.preview_history
-                                        .get(column)
-                                        .and_then(|parent| parent.entries.get(index))
-                                } else if let Preview::Folder(entries) = &view.preview {
-                                    entries.get(index)
-                                } else {
-                                    None
-                                }
-                                .filter(|entry| entry.path == path.as_ref())
-                                .cloned();
-                                let Some(entry) = entry else {
-                                    return;
-                                };
-                                view.focus.focus(window);
-                                if let Some(index) = column {
-                                    view.preview_column_child(index, entry, cx);
-                                } else {
-                                    view.preview_child(entry, cx);
-                                }
-                                cx.stop_propagation();
-                            }))
+                            .on_click(cx.listener(
+                                move |view, event: &gpui::ClickEvent, window, cx| {
+                                    if !event.standard_click() {
+                                        return;
+                                    }
+                                    cx.stop_propagation();
+                                    let entry = if let Some(column) = column {
+                                        view.preview_history
+                                            .get(column)
+                                            .and_then(|parent| parent.entries.get(index))
+                                    } else if let Preview::Folder(entries) = &view.preview {
+                                        entries.get(index)
+                                    } else {
+                                        None
+                                    }
+                                    .filter(|entry| entry.path == path.as_ref())
+                                    .cloned();
+                                    let Some(entry) = entry else {
+                                        return;
+                                    };
+                                    view.focus.focus(window);
+                                    if event.click_count() >= 2 && !event.is_keyboard() {
+                                        view.open(entry, cx);
+                                    } else if event.is_keyboard() {
+                                        if let Some(index) = column {
+                                            view.preview_column_child(index, entry, cx);
+                                        } else {
+                                            view.preview_child(entry, cx);
+                                        }
+                                    } else {
+                                        view.schedule_preview(cx, move |view, cx| {
+                                            if let Some(index) = column {
+                                                view.preview_column_child(index, entry, cx);
+                                            } else {
+                                                view.preview_child(entry, cx);
+                                            }
+                                        });
+                                    }
+                                },
+                            ))
                             .into_any_element()
                     })
                     .collect()
@@ -450,6 +467,7 @@ impl FileManager {
         .on_mouse_down(
             gpui::MouseButton::Left,
             cx.listener(move |view, _, window, cx| {
+                view.cancel_pending_preview();
                 view.preview_active_column =
                     column.map_or(view.preview_history.len() + 1, |index| index + 1);
                 view.preview_focused = false;
