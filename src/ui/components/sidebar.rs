@@ -82,7 +82,51 @@ impl FileManager {
                         )
                     })
                     .child(section_label(self.language.text("WORKSPACES")))
-                    .child(self.place(103, "Workspaces", "view", Location::Workspaces, cx)),
+                    .child(self.place(103, "Workspaces", "view", Location::Workspaces, cx))
+                    .child(section_label(self.language.text("TAGS")))
+                    .children(crate::domain::tag::Tag::ALL.into_iter().enumerate().map(
+                        |(index, tag)| {
+                            let active = self.location == Location::Tag(tag);
+                            div()
+                                .id(("sidebar-tag", index))
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .h(px(28.))
+                                .mb(px(2.))
+                                .rounded_md()
+                                .cursor_pointer()
+                                .text_size(px(10.5))
+                                .text_color(color(if active { tag.color() } else { TEXT }))
+                                .when(active, |row| row.bg(color(SELECTED)))
+                                .hover(|style| {
+                                    style.bg(color(if active { SELECTED } else { HOVER }))
+                                })
+                                .child(
+                                    div()
+                                        .size(px(10.))
+                                        .mx(px(3.))
+                                        .flex_shrink_0()
+                                        .rounded_full()
+                                        .bg(color(tag.color())),
+                                )
+                                .child(div().flex_1().child(self.language.text(tag.label())))
+                                .when(active, |row| {
+                                    row.child(
+                                        div()
+                                            .w(px(3.))
+                                            .h(px(12.))
+                                            .rounded_full()
+                                            .bg(color(tag.color())),
+                                    )
+                                })
+                                .on_click(cx.listener(move |view, _, window, cx| {
+                                    view.focus.focus(window);
+                                    view.navigate_location(Location::Tag(tag), cx);
+                                }))
+                        },
+                    )),
             )
             .child(
                 div()

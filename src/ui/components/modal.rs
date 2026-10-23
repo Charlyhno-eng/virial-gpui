@@ -289,6 +289,9 @@ impl FileManager {
             if workspace {
                 groups.push(vec![Action::AddWorkspace]);
             }
+            if !archive_entry {
+                groups.push(vec![Action::Tags]);
+            }
             if single && !archive_entry {
                 let mut archives = Vec::new();
                 if item.directory || !crate::infrastructure::compression::is_archive(&item.path) {
@@ -340,6 +343,11 @@ impl FileManager {
             .take_while(|action| **action != Some(Action::Compress))
             .map(|action| if action.is_some() { 28. } else { 9. })
             .sum::<f32>();
+        let tags_top = actions
+            .iter()
+            .take_while(|action| **action != Some(Action::Tags))
+            .map(|action| if action.is_some() { 28. } else { 9. })
+            .sum::<f32>();
         let x = menu.position.x.min(bounds.width - px(220.)).max(px(0.));
         let y = menu.position.y.min(bounds.height - px(height)).max(px(0.));
         let panel = div()
@@ -378,8 +386,10 @@ impl FileManager {
                     .on_hover(cx.listener(move |view, hovered, _, cx| {
                         if *hovered && let Some(menu) = view.menu.as_mut() {
                             let open = action == Action::Compress;
-                            if menu.compression_open != open {
+                            let tags_open = action == Action::Tags;
+                            if menu.compression_open != open || menu.tags_open != tags_open {
                                 menu.compression_open = open;
+                                menu.tags_open = tags_open;
                                 cx.notify();
                             }
                         }
@@ -393,13 +403,14 @@ impl FileManager {
                             .text_ellipsis()
                             .child(self.language.text(action.label())),
                     )
-                    .when(action == Action::Compress, |row| {
+                    .when(matches!(action, Action::Compress | Action::Tags), |row| {
                         row.child(icon("forward", 12., MUTED))
                     })
                     .on_click(cx.listener(move |view, _, window, cx| {
-                        if action == Action::Compress {
+                        if matches!(action, Action::Compress | Action::Tags) {
                             if let Some(menu) = view.menu.as_mut() {
-                                menu.compression_open = true;
+                                menu.compression_open = action == Action::Compress;
+                                menu.tags_open = action == Action::Tags;
                             }
                             cx.notify();
                         } else {
@@ -457,6 +468,94 @@ impl FileManager {
                         }),
                 )
         });
+        let tags_submenu = menu.tags_open.then(|| {
+            let width = px(190.);
+            let submenu_x = if x + px(220.) + width <= bounds.width {
+                x + px(220.)
+            } else {
+                (x - width).max(px(0.))
+            };
+            let submenu_y = (y + px(tags_top + 4.)).min((bounds.height - px(278.)).max(px(0.)));
+            let paths = self.selected_paths();
+            let any = paths.iter().any(|path| !self.tags.colors(path).is_empty());
+            div()
+                .id("tags-submenu")
+                .occlude()
+                .absolute()
+                .left(submenu_x)
+                .top(submenu_y)
+                .w(width)
+                .p_1()
+                .rounded_md()
+                .bg(color(SURFACE))
+                .border_1()
+                .border_color(color(BORDER))
+                .shadow_md()
+                .children(crate::domain::tag::Tag::ALL.into_iter().enumerate().map(
+                    |(index, tag)| {
+                        let count = paths
+                            .iter()
+                            .filter(|path| self.tags.colors(path).contains(&tag))
+                            .count();
+                        let all = !paths.is_empty() && count == paths.len();
+                        div()
+                            .id(("tag-color", index))
+                            .h(px(28.))
+                            .px_3()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .hover(|style| style.bg(color(HOVER)))
+                            .child(
+                                div()
+                                    .size(px(10.))
+                                    .flex_shrink_0()
+                                    .rounded_full()
+                                    .bg(color(tag.color())),
+                            )
+                            .child(div().flex_1().child(self.language.text(tag.label())))
+                            .when(count > 0, |row| {
+                                row.child(icon(
+                                    if all { "check" } else { "minus" },
+                                    13.,
+                                    tag.color(),
+                                ))
+                            })
+                            .on_click(
+                                cx.listener(move |view, _, _, cx| view.edit_tags(Some(tag), cx)),
+                            )
+                    },
+                ))
+                .child(
+                    div()
+                        .h(px(9.))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .child(div().w_full().h(px(1.)).bg(color(BORDER))),
+                )
+                .child(
+                    div()
+                        .id("clear-tags")
+                        .h(px(28.))
+                        .px_3()
+                        .flex()
+                        .items_center()
+                        .rounded_sm()
+                        .text_color(color(if any { TEXT } else { MUTED }))
+                        .when(any, |row| {
+                            row.cursor_pointer().hover(|style| style.bg(color(HOVER)))
+                        })
+                        .child(self.language.text("Remove all tags"))
+                        .on_click(cx.listener(move |view, _, _, cx| {
+                            if any {
+                                view.edit_tags(None, cx);
+                            }
+                        })),
+                )
+        });
         Some(
             div()
                 .absolute()
@@ -483,7 +582,8 @@ impl FileManager {
                         ),
                 )
                 .child(reveal(panel, "menu-reveal"))
-                .children(submenu),
+                .children(submenu)
+                .children(tags_submenu),
         )
     }
 }
@@ -501,6 +601,7 @@ impl Action {
             Self::Trash => "trash",
             Self::Compress | Self::CompressAs(_) => "compress",
             Self::Extract => "extract",
+            Self::Tags => "tag",
             Self::NewFolder | Self::AddWorkspace => "folder",
             Self::NewFile => "file",
             Self::Properties => "info",

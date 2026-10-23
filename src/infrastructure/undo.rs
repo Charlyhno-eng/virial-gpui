@@ -928,13 +928,41 @@ pub fn execute_with_progress(
         return Ok(None);
     }
     let paths = affected(&operation)?;
-    if progress.is_some() {
-        record_with_progress(data, paths, progress, || {
-            operations::execute_with_progress(operation, progress)
-        })
-    } else {
-        record(data, paths, || operations::execute(operation))
-    }
+    let relocations = match &operation {
+        Operation::Rename { source, name } if !archive::is_member(source) => {
+            vec![(
+                source.clone(),
+                operations::named_path(source.parent().ok_or_else(invalid)?, name)?,
+            )]
+        }
+        Operation::Transfer {
+            sources,
+            directory,
+            cut: true,
+        } if archive::split(directory).is_none() => sources
+            .iter()
+            .filter(|source| !archive::is_member(source))
+            .map(|source| {
+                Ok((
+                    source.clone(),
+                    directory.join(source.file_name().ok_or_else(invalid)?),
+                ))
+            })
+            .collect::<io::Result<Vec<_>>>()?,
+        _ => Vec::new(),
+    };
+    record_with_progress(data, paths, progress, || {
+        let result = operations::execute_with_progress(operation, progress);
+        for (source, destination) in relocations {
+            if fs::symlink_metadata(&source)
+                .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+                && fs::symlink_metadata(&destination).is_ok()
+            {
+                super::tags::relocate(data, &source, &destination)?;
+            }
+        }
+        result
+    })
 }
 
 struct StagedSnapshot(PathBuf);
@@ -1106,6 +1134,24 @@ fn undo_impl(data: &Path, expected: Option<&str>) -> io::Result<bool> {
                 &record.before,
                 &record.after,
             )?;
+        }
+    }
+    // Reverse label paths for snapshot-based moves after the full restore succeeds.
+    for source in &records {
+        if source.before == "-" || source.after != "-" {
+            continue;
+        }
+        let candidates: Vec<_> = records
+            .iter()
+            .filter(|target| target.before == "-" && target.after == source.before)
+            .collect();
+        if let Some(target) = candidates
+            .iter()
+            .find(|target| target.path.file_name() == source.path.file_name())
+            .copied()
+            .or_else(|| (candidates.len() == 1).then(|| candidates[0]))
+        {
+            super::tags::relocate(data, &target.path, &source.path)?;
         }
     }
     discard_entry(&directory)?;

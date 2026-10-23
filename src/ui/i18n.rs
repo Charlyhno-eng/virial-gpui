@@ -37,6 +37,23 @@ impl Language {
             return english;
         }
         match english {
+            "TAGS" => "TAGS",
+            "Tags" => "Tags",
+            "Red" => "Rouge",
+            "Orange" => "Orange",
+            "Yellow" => "Jaune",
+            "Green" => "Vert",
+            "Blue" => "Bleu",
+            "Purple" => "Violet",
+            "Pink" => "Rose",
+            "Gray" => "Gris",
+            "Remove all tags" => "Retirer tous les tags",
+            "No tagged items" => "Aucun élément avec ce tag",
+            "Right-click a file or folder and choose Tags to add a color" => {
+                "Faites un clic droit sur un fichier ou dossier, puis choisissez Tags pour ajouter une couleur"
+            }
+            "Cannot read tags" => "Impossible de lire les tags",
+            "Cannot save tags" => "Impossible d’enregistrer les tags",
             "Finish or cancel queued operations before undoing" => {
                 "Terminez ou annulez les opérations en attente avant d’annuler une action"
             }

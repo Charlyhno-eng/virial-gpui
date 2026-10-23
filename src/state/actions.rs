@@ -13,6 +13,7 @@ pub struct Menu {
     pub position: Point<Pixels>,
     pub entry: Option<Entry>,
     pub compression_open: bool,
+    pub tags_open: bool,
 }
 pub(crate) struct InlineRename {
     pub(crate) source: PathBuf,
@@ -82,6 +83,7 @@ pub enum Action {
     NewFile,
     CopyPath,
     Properties,
+    Tags,
     AddWorkspace,
     NewWorkspace,
 }
@@ -105,6 +107,7 @@ impl Action {
             Self::NewFile => "New file…",
             Self::CopyPath => "Copy absolute path",
             Self::Properties => "Properties",
+            Self::Tags => "Tags",
             Self::AddWorkspace => "Add to workspace…",
             Self::NewWorkspace => "New workspace…",
         }
@@ -138,6 +141,7 @@ impl FileManager {
             position,
             entry,
             compression_open: false,
+            tags_open: false,
         });
         cx.notify();
     }

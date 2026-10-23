@@ -17,6 +17,17 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [0.1.3] - 2026-10-23
 
 ### Ajouts
+- Eight persistent color tags for local files and folders, with multi-selection
+  assignment from the Tags context submenu, visible color markers, and sidebar
+  shortcuts to browse all items carrying a color. Tags follow moves, renames,
+  and their undo operations.
+
+### Corrections
+- Prepare the 0.1.3 release with automatic Linux, macOS and Windows builds.
+
+## [0.1.3] - 2026-10-23
+
+### Ajouts
 - Arrow keys navigate preview columns and select nested files without leaving
   the main folder. File previews take two of the four visible column units and
   show content only; metadata remains available through Properties.

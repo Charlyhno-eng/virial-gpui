@@ -115,3 +115,4 @@ pub(crate) fn sync_file(file: &std::path::Path) -> io::Result<()> {
 
 pub mod compression;
 pub(crate) mod extraction;
+pub(crate) mod tags;

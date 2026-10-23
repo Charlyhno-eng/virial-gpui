@@ -434,6 +434,8 @@ impl FileManager {
                     )
                 } else if self.location == crate::domain::location::Location::Trash {
                     ("Trash is empty", "Deleted items appear here")
+                } else if matches!(self.location, crate::domain::location::Location::Tag(_)) {
+                    ("No tagged items", "Right-click a file or folder and choose Tags to add a color")
                 } else if self.location == crate::domain::location::Location::Recent {
                     (
                         "No recent files",
@@ -480,8 +482,8 @@ impl FileManager {
                             .map(|index| {
                                 let entry = &view.entries[index];
                                 let row_path: std::sync::Arc<std::path::Path> = entry.path.as_path().into();
-                                let recent = view.location
-                                    == crate::domain::location::Location::Recent;
+                                let recent = matches!(view.location,
+                                    crate::domain::location::Location::Recent | crate::domain::location::Location::Tag(_));
                                 let row_height = if recent {
                                     crate::ui::theme::RECENT_ROW_HEIGHT
                                 } else {
@@ -562,6 +564,13 @@ impl FileManager {
                                     })
                                     .child(file_icon(entry.icon(), 19.))
                                     .child(name)
+                                    .when(!trash && view.location.remote().is_none() && !view.tags.colors(&entry.path).is_empty(), |row| {
+                                        row.child(div().flex().items_center().gap_1().children(
+                                            view.tags.colors(&entry.path).iter().map(|tag| {
+                                                div().size(px(7.)).flex_shrink_0().rounded_full().bg(color(tag.color()))
+                                            })
+                                        ))
+                                    })
                                     .child(
                                         div()
                                             .w(px(76.))

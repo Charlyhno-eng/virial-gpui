@@ -19,4 +19,5 @@ pub(crate) mod plantuml;
 pub(crate) mod preview;
 pub(crate) mod selection;
 pub(crate) mod ssh;
+pub(crate) mod tags;
 pub(crate) mod workspaces;

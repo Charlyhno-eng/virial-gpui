@@ -251,6 +251,17 @@ fn publish(
     Ok(directory)
 }
 
+fn apply_tagged(data: &Path, moves: &[Move], progress: Option<&Progress>) -> io::Result<()> {
+    let result = apply(moves, progress);
+    // Also handle completed items in a partially failed or recovered batch.
+    for item in moves {
+        if item.info.is_none() && item.restored_info.is_none() && item.at_destination()? {
+            super::super::tags::relocate(data, &path(&item.source)?, &path(&item.destination)?)?;
+        }
+    }
+    result
+}
+
 fn apply(moves: &[Move], progress: Option<&Progress>) -> io::Result<()> {
     if let Some(progress) = progress {
         progress.begin(Phase::Moving, Some(moves.len() as u64));
@@ -383,7 +394,7 @@ pub(super) fn transfer(
         let Some(moves) = load(directory)? else {
             return Ok(false);
         };
-        return finish(directory, &moves, apply(&moves, progress));
+        return finish(directory, &moves, apply_tagged(data, &moves, progress));
     }
     if let Some((_, latest)) = previous.last() {
         super::load(latest)?;
@@ -463,7 +474,7 @@ pub(super) fn transfer(
     }
     let summary = format!("Transfer\t{}", moves.len());
     let directory = publish(&history, &previous, &moves, id, Some(&summary))?;
-    finish(&directory, &moves, apply(&moves, progress))
+    finish(&directory, &moves, apply_tagged(data, &moves, progress))
 }
 
 pub(super) fn rename(
@@ -493,7 +504,7 @@ pub(super) fn rename(
         super::load(latest)?;
     }
     let directory = publish(&history, &previous, &moves, None, None)?;
-    let result = apply(&moves, progress);
+    let result = apply_tagged(data, &moves, progress);
     if result.is_err() && moves[0].matches(&source)? {
         discard_entry(&directory)?;
     } else if result.is_ok() {
@@ -672,6 +683,14 @@ pub(super) fn undo(directory: &Path) -> io::Result<bool> {
         sync_directory(path(&item.source)?.parent().ok_or_else(invalid)?)?;
         sync_directory(path(&item.destination)?.parent().ok_or_else(invalid)?)?;
         item.remove_info()?;
+        if item.info.is_none() && item.restored_info.is_none() {
+            let data = directory
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::parent)
+                .ok_or_else(invalid)?;
+            super::super::tags::relocate(data, &path(&item.destination)?, &path(&item.source)?)?;
+        }
     }
     Ok(true)
 }

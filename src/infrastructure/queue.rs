@@ -795,6 +795,13 @@ fn sync_parent(path: &Path) -> io::Result<()> {
     super::sync_directory(path.parent().ok_or_else(invalid)?)
 }
 
+fn relocate_tags(data: &Path, item: &Item, cut: bool) -> io::Result<()> {
+    if cut && let Some(destination) = &item.destination {
+        super::tags::relocate(data, &path(&item.source)?, &path(destination)?)?;
+    }
+    Ok(())
+}
+
 fn transfer(item: &Item, cut: bool, verify: bool, progress: &Progress) -> io::Result<()> {
     progress.checkpoint()?;
     let source = path(&item.source)?;
@@ -1142,7 +1149,8 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
             };
             if count > 1 {
                 return parallel(plan.len(), count, |index| {
-                    transfer(&plan[index], job.cut, false, progress)
+                    transfer(&plan[index], job.cut, false, progress)?;
+                    relocate_tags(data, &plan[index], job.cut)
                 });
             }
         }
@@ -1150,6 +1158,7 @@ pub fn execute(data: &Path, mut job: Job, progress: &Progress) -> io::Result<()>
             progress.checkpoint()?;
             if job.directory.is_some() {
                 transfer(item, job.cut, false, progress)?;
+                relocate_tags(data, item, job.cut)?;
             } else {
                 let source = path(&item.source)?;
                 if undo::fingerprint_controlled(&source, progress)? != "-" {

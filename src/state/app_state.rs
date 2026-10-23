@@ -38,6 +38,7 @@ pub struct FileManager {
     pub(crate) entries: Vec<Entry>,
     pub(crate) entry_modified: std::collections::HashMap<PathBuf, super::browser::Modified>,
     pub(crate) workspaces: Vec<crate::infrastructure::workspaces::Summary>,
+    pub(crate) tags: crate::infrastructure::tags::Tags,
     pub(crate) folder_count: usize,
     pub(crate) history: History,
     pub(crate) loading: bool,
@@ -113,7 +114,7 @@ pub struct FileManager {
 
 impl FileManager {
     pub(crate) fn row_height(&self) -> f32 {
-        if self.location == Location::Recent {
+        if matches!(self.location, Location::Recent | Location::Tag(_)) {
             crate::ui::theme::RECENT_ROW_HEIGHT
         } else {
             crate::ui::theme::ROW_HEIGHT

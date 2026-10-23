@@ -41,6 +41,7 @@ impl FileManager {
             entries: Vec::new(),
             entry_modified: Default::default(),
             workspaces: Vec::new(),
+            tags: Default::default(),
             folder_count: 0,
             loading: false,
             navigation_generation: 0,
@@ -216,7 +217,12 @@ impl FileManager {
         let ssh_runtime = self.ssh.runtime.handle().clone();
         let local_metadata = !matches!(requested, Location::Remote { .. });
         let read = cx.background_executor().spawn(async move {
+            let tags = crate::infrastructure::tags::read(&data);
             let listed: std::io::Result<Vec<Entry>> = match requested {
+                Location::Tag(tag) => tags
+                    .as_ref()
+                    .map_err(|error| std::io::Error::other(error.to_string()))?
+                    .entries(tag),
                 Location::Directory(path) => read_directory(&path, hidden),
                 Location::Remote { host, path } => {
                     // Browsing a connected host: the SFTP listing replaces
@@ -239,7 +245,7 @@ impl FileManager {
                 Location::Trash => crate::infrastructure::trash::read(&data),
                 Location::Workspaces => {
                     return crate::infrastructure::workspaces::summaries(&data, hidden)
-                        .map(|summaries| (Vec::new(), summaries, Default::default()));
+                        .map(|summaries| (Vec::new(), summaries, Default::default(), tags));
                 }
             };
             listed.map(|mut entries: Vec<Entry>| {
@@ -260,7 +266,7 @@ impl FileManager {
                 } else {
                     Default::default()
                 };
-                (entries, Vec::new(), modified)
+                (entries, Vec::new(), modified, tags)
             })
         });
         // Replacing this task cancels the UI update from an outdated request.
@@ -272,7 +278,16 @@ impl FileManager {
             let _ = view.update(cx, |view, cx| {
                 view.loading = false;
                 match result {
-                    Ok((mut entries, workspaces, mut modified)) => {
+                    Ok((mut entries, workspaces, mut modified, tags)) => {
+                        match tags {
+                            Ok(tags) => view.tags = tags,
+                            Err(error) => {
+                                view.error = Some(format!(
+                                    "{}: {error}",
+                                    view.language.text("Cannot read tags")
+                                ))
+                            }
+                        }
                         if descending != view.name_descending {
                             crate::state::browser::apply_name_direction(&mut entries, true);
                         }

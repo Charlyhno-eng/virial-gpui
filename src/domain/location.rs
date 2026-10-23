@@ -9,6 +9,7 @@ pub enum Location {
         host: crate::infrastructure::ssh::HostId,
         path: PathBuf,
     },
+    Tag(crate::domain::tag::Tag),
     Recent,
     Trash,
     Workspaces,
@@ -40,6 +41,7 @@ impl Location {
     }
     pub fn title(&self, home: &Path, language: Language) -> String {
         match self {
+            Self::Tag(tag) => format!("{} · {}", language.text("Tags"), language.text(tag.label())),
             Self::Workspaces => language.text("Workspaces").into(),
             Self::Recent => language.text("Recent").into(),
             Self::Trash => language.text("Trash").into(),
@@ -56,6 +58,7 @@ impl Location {
     }
     pub fn description(&self, language: Language) -> String {
         match self {
+            Self::Tag(tag) => format!("{} · {}", language.text("Tags"), language.text(tag.label())),
             Self::Workspaces => language.text("Workspaces").into(),
             Self::Directory(path) => path.display().to_string(),
             Self::Remote { host, path } => format!("{host}:{}", path.display()),
@@ -69,6 +72,7 @@ impl Location {
         match self {
             Self::Directory(_) => "folder",
             Self::Remote { .. } => "remote",
+            Self::Tag(_) => "tag",
             Self::Workspaces => "view",
             Self::Recent => "recent",
             Self::Trash => "trash",
@@ -78,6 +82,7 @@ impl Location {
         match self {
             Self::Directory(path) => std::sync::Arc::<Path>::from(path.clone()).into(),
             Self::Remote { path, .. } => std::sync::Arc::<Path>::from(path.clone()).into(),
+            Self::Tag(tag) => gpui::SharedString::from(format!("tag-{}", tag.label())).into(),
             Self::Workspaces => "workspaces".into(),
             Self::Recent => "recent-files".into(),
             Self::Trash => "trash-files".into(),
