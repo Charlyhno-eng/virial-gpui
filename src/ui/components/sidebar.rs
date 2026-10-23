@@ -84,48 +84,53 @@ impl FileManager {
                     .child(section_label(self.language.text("WORKSPACES")))
                     .child(self.place(103, "Workspaces", "view", Location::Workspaces, cx))
                     .child(section_label(self.language.text("TAGS")))
-                    .children(crate::domain::tag::Tag::ALL.into_iter().enumerate().map(
-                        |(index, tag)| {
-                            let active = self.location == Location::Tag(tag);
+                    .child(div().px_3().pb_2().flex().flex_col().gap_1().children(
+                        crate::domain::tag::Tag::ALL.chunks(4).map(|tags| {
                             div()
-                                .id(("sidebar-tag", index))
                                 .flex()
-                                .items_center()
                                 .gap_2()
-                                .px_3()
-                                .h(px(28.))
-                                .mb(px(2.))
-                                .rounded_md()
-                                .cursor_pointer()
-                                .text_size(px(10.5))
-                                .text_color(color(if active { tag.color() } else { TEXT }))
-                                .when(active, |row| row.bg(color(SELECTED)))
-                                .hover(|style| {
-                                    style.bg(color(if active { SELECTED } else { HOVER }))
-                                })
-                                .child(
+                                .children(tags.iter().copied().map(|tag| {
+                                    let active = self.location == Location::Tag(tag);
+                                    let label = self.language.text(tag.label());
                                     div()
-                                        .size(px(10.))
-                                        .mx(px(3.))
+                                        .id(("sidebar-tag", tag as usize))
+                                        .size(px(28.))
                                         .flex_shrink_0()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
                                         .rounded_full()
-                                        .bg(color(tag.color())),
-                                )
-                                .child(div().flex_1().child(self.language.text(tag.label())))
-                                .when(active, |row| {
-                                    row.child(
-                                        div()
-                                            .w(px(3.))
-                                            .h(px(12.))
-                                            .rounded_full()
-                                            .bg(color(tag.color())),
-                                    )
-                                })
-                                .on_click(cx.listener(move |view, _, window, cx| {
-                                    view.focus.focus(window);
-                                    view.navigate_location(Location::Tag(tag), cx);
+                                        .border_1()
+                                        .border_color(if active {
+                                            color(tag.color())
+                                        } else {
+                                            gpui::transparent_black()
+                                        })
+                                        .cursor_pointer()
+                                        .when(active, |button| button.bg(color(SELECTED)))
+                                        .hover(|style| style.bg(color(HOVER)))
+                                        .tooltip(move |_, cx| {
+                                            cx.new(|_| super::modal::StatusTooltip(label.into()))
+                                                .into()
+                                        })
+                                        .child(
+                                            div()
+                                                .size(px(14.))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .rounded_full()
+                                                .bg(color(tag.color()))
+                                                .when(active, |dot| {
+                                                    dot.child(icon("check", 10., SIDEBAR))
+                                                }),
+                                        )
+                                        .on_click(cx.listener(move |view, _, window, cx| {
+                                            view.focus.focus(window);
+                                            view.navigate_location(Location::Tag(tag), cx);
+                                        }))
                                 }))
-                        },
+                        }),
                     )),
             )
             .child(

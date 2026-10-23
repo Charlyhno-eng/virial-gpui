@@ -11,6 +11,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Interface
+- Display sidebar tags as color dots in two compact rows, with hover labels and
+  a marked active color.
+
 ### Corrections
 - Prepare the 0.1.3 release with automatic Linux, macOS and Windows builds.
 
