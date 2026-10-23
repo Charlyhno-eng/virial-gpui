@@ -18,14 +18,38 @@ pub(crate) use crate::state::app_state::FileManager;
 
 impl FileManager {
     pub fn new(path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_pane(path, true, window, cx)
+    }
+
+    pub(crate) fn new_pane(
+        path: PathBuf,
+        recover: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // The portable chain (HOME, USERPROFILE, HOMEDRIVE+HOMEPATH) instead of
         // a bare HOME: a double-clicked exe has no POSIX environment, and the
         // old "/" fallback scattered app data across the drive root.
         let home = crate::config::home();
+        let data_home = crate::infrastructure::recent::data_home(&home);
+        Self::with_paths(path, home, data_home, recover, window, cx)
+    }
+
+    pub(crate) fn with_paths(
+        path: PathBuf,
+        home: PathBuf,
+        data_home: PathBuf,
+        recover: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus = cx.focus_handle();
         focus.focus(window);
-        let data_home = crate::infrastructure::recent::data_home(&home);
         let mut view = Self {
+            embedded: true,
+            compact: false,
+            view_mode: Default::default(),
+            grid_columns: 1,
             #[cfg(all(target_os = "linux", target_env = "gnu"))]
             idle_memory: Default::default(),
             history: History::new(path.clone().into()),
@@ -57,7 +81,7 @@ impl FileManager {
             menu: None,
             dialog: None,
             rename: None,
-            clipboard: None,
+            clipboard: Default::default(),
             busy: false,
             transfer_progress: None,
             operation_queue: Default::default(),
@@ -127,27 +151,19 @@ impl FileManager {
             view.layout.capture(window);
         })
         .detach();
-        let weak = cx.weak_entity();
-        window.on_window_should_close(cx, move |window, cx| {
-            weak.update(cx, |view, cx| {
-                if view.busy || view.queue_running {
-                    view.error = Some(
-                        view.language
-                            .text("Wait for the current operation to finish before closing")
-                            .into(),
-                    );
-                    cx.notify();
-                    return false;
-                }
-                view.layout.capture(window);
+        cx.on_release(|view, _| {
+            if !cfg!(test) {
                 view.layout.save();
-                true
-            })
-            .unwrap_or(true)
-        });
-        cx.on_release(|view, _| view.layout.save()).detach();
+            }
+            for cached in view.remote_cache_files.drain(..) {
+                let _ = std::fs::remove_file(cached);
+            }
+        })
+        .detach();
         cx.on_app_quit(|view, _| {
-            view.layout.save();
+            if !cfg!(test) {
+                view.layout.save();
+            }
             // Tear the SSH sessions down and drop the remote-file cache.
             view.ssh.shutdown();
             for cached in view.remote_cache_files.drain(..) {
@@ -176,7 +192,9 @@ impl FileManager {
         .detach();
         view.navigate(path, cx);
         view.monitor_devices(cx);
-        view.recover_operations(cx);
+        if recover {
+            view.recover_operations(cx);
+        }
         view
     }
 
@@ -498,6 +516,9 @@ impl FileManager {
     }
 
     pub(crate) fn show_preview(&mut self, cx: &mut Context<Self>) {
+        if self.view_mode != crate::state::navigation::ViewMode::List {
+            return;
+        }
         self.cancel_pending_preview();
         self.details_open = true;
         self.preview_active_column = 0;
@@ -648,7 +669,7 @@ impl FileManager {
             && event.keystroke.key == "w"
             && event.keystroke.modifiers.control
             && !event.keystroke.modifiers.alt
-            && !event.keystroke.modifiers.shift
+            && event.keystroke.modifiers.shift
         {
             self.focus.focus(window);
             if self.location == Location::Workspaces {
@@ -712,6 +733,33 @@ impl FileManager {
             cx.notify();
             return;
         }
+        if self.view_mode == crate::state::navigation::ViewMode::Grid
+            && self.preview_active_column == 0
+            && !self.preview_focused
+            && !modifiers.control
+            && !modifiers.alt
+            && !modifiers.platform
+            && matches!(
+                key,
+                "left" | "right" | "up" | "down" | "home" | "end" | "pageup" | "pagedown"
+            )
+        {
+            let height = f32::from(self.scroll.0.borrow().base_handle.bounds().size.height);
+            if let Some(index) = crate::state::navigation::grid_target(
+                key,
+                self.selection.focus,
+                self.entries.len(),
+                self.grid_columns,
+                (height / self.row_height()) as usize,
+            ) {
+                self.selection.click(index, false, modifiers.shift);
+                self.scroll
+                    .scroll_to_item(self.scroll_index(index), ScrollStrategy::Center);
+                cx.notify();
+            }
+            cx.stop_propagation();
+            return;
+        }
         match key {
             "left" if modifiers.alt => self.back(cx),
             "right" if modifiers.alt => self.forward(cx),
@@ -762,7 +810,8 @@ impl FileManager {
                     return;
                 };
                 self.selection.click(index, false, modifiers.shift);
-                self.scroll.scroll_to_item(index, ScrollStrategy::Center);
+                self.scroll
+                    .scroll_to_item(self.scroll_index(index), ScrollStrategy::Center);
                 if !modifiers.shift {
                     self.preview_active_column = 0;
                     self.preview_focused = false;

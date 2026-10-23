@@ -46,7 +46,7 @@ impl FileManager {
             .child(
                 div().text_color(color(MUTED)).child(
                     self.language
-                        .text("Logical groups of folders · Ctrl+W / Escape returns"),
+                        .text("Logical groups of folders · Ctrl+Shift+W / Escape returns"),
                 ),
             );
         if let Some(error) = &self.error {

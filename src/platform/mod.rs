@@ -22,6 +22,7 @@ pub(crate) mod places;
 
 // One module for every target: picking the launcher is a compile-time choice
 // inside it, so there is no per-platform file to keep in step.
+pub(crate) mod locale;
 pub(crate) mod shell_open;
 
 #[cfg(test)]

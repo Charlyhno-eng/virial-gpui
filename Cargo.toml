@@ -28,7 +28,7 @@ winres = { version = "0.1", optional = true }
 windows-resources = ["dep:winres"]
 
 [dependencies]
-gpui = "=0.2.2"
+gpui = { version = "=0.2.2", default-features = false }
 # GPUI's xattr 0.2 dependency uses ENOATTR, removed by newer libc releases.
 libc = "=0.2.186"
 # Load the optional media backend without requiring development headers.
@@ -59,16 +59,16 @@ oxipng = { version = "10.2", default-features = false }
 flate2 = "1"
 
 # GPUI is selected per target: Linux keeps the Wayland/X11 backends, macOS
-# needs the Metal one (`macos-blade`), Windows keeps its own default.
+# needs the Metal one (`macos-blade`), and Windows uses its native backend.
 # All three resolve to the same patched crate thanks to `[patch.crates-io]`.
 [target.'cfg(target_os = "linux")'.dependencies]
-gpui = { version = "=0.2.2", features = ["wayland", "x11"] }
+gpui = { version = "=0.2.2", default-features = false, features = ["wayland", "x11", "font-kit"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui = { version = "=0.2.2", default-features = false, features = ["macos-blade", "font-kit"] }
 
 [target.'cfg(windows)'.dependencies]
-gpui = { version = "=0.2.2", features = ["windows-manifest"] }
+gpui = { version = "=0.2.2", default-features = false, features = ["windows-manifest"] }
 
 # Free-space queries, volume discovery and journal locks, without a COM dependency.
 # The Win32_UI and Win32_System_Com features are required by the brand-identity
@@ -78,6 +78,7 @@ gpui = { version = "=0.2.2", features = ["windows-manifest"] }
 # we bind at runtime.
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_IO",
@@ -87,6 +88,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_Shell",
 ] }
 
+[target.'cfg(target_os = "macos")'.dependencies.core-foundation-sys]
+version = "0.8.7"
+
 # Native outgoing file drags are not exposed by upstream GPUI 0.2.2.
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
@@ -95,3 +99,7 @@ proc-macro-error2 = { path = "vendor/proc-macro-error2" }
 
 # The parent directory contains unrelated manifests; keep this package standalone.
 [workspace]
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+# GPUI's test-support enables X11/Wayland, so keep it Linux-only.
+gpui = { version = "=0.2.2", default-features = false, features = ["test-support"] }

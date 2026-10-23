@@ -259,7 +259,15 @@ impl FileManager {
         let row_height = self.row_height();
         // Rows reserve a narrow left gutter for starting a selection rectangle.
         if event.position.x >= bounds.left() + px(14.)
-            && start.y < px(row_height * self.entries.len() as f32)
+            && start.y
+                < px(row_height
+                    * self.entries.len().div_ceil(
+                        if self.view_mode == crate::state::navigation::ViewMode::Grid {
+                            self.grid_columns
+                        } else {
+                            1
+                        },
+                    ) as f32)
         {
             return;
         }
@@ -314,8 +322,34 @@ impl FileManager {
         marquee.end = position - bounds.origin - handle.offset();
         let top = f32::from(marquee.start.y.min(marquee.end.y));
         let bottom = f32::from(marquee.start.y.max(marquee.end.y));
-        let range = rectangle_rows(top, bottom, self.entries.len(), row_height);
-        self.selection.rectangle(&marquee.baseline, range);
+        if self.view_mode == crate::state::navigation::ViewMode::Grid {
+            let left = f32::from(marquee.start.x.min(marquee.end.x));
+            let right = f32::from(marquee.start.x.max(marquee.end.x));
+            let width = f32::from(bounds.size.width) / self.grid_columns as f32;
+            let rows = rectangle_rows(
+                top,
+                bottom,
+                self.entries.len().div_ceil(self.grid_columns),
+                row_height,
+            );
+            self.selection = marquee.baseline.clone();
+            for row in rows {
+                for col in 0..self.grid_columns {
+                    let index = row * self.grid_columns + col;
+                    if index < self.entries.len()
+                        && right > col as f32 * width
+                        && left < (col + 1) as f32 * width
+                    {
+                        self.selection.indices.insert(index);
+                    }
+                }
+            }
+            self.selection.focus = self.selection.indices.last().copied();
+            self.selection.anchor = self.selection.indices.first().copied();
+        } else {
+            let range = rectangle_rows(top, bottom, self.entries.len(), row_height);
+            self.selection.rectangle(&marquee.baseline, range);
+        }
         cx.notify();
     }
 }

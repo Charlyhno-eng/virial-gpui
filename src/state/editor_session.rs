@@ -92,7 +92,7 @@ impl FileManager {
         cx.notify();
     }
 
-    fn editor_is_dirty(&self, cx: &App) -> bool {
+    pub(crate) fn editor_is_dirty(&self, cx: &App) -> bool {
         self.editor
             .as_ref()
             .is_some_and(|editor| editor.read(cx).is_dirty())

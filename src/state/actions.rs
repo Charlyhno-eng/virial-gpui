@@ -238,7 +238,8 @@ impl FileManager {
         if entry.is_some() {
             match action {
                 Action::Copy | Action::Cut => {
-                    self.clipboard = Some((self.selected_paths(), matches!(action, Action::Cut)));
+                    *self.clipboard.borrow_mut() =
+                        Some((self.selected_paths(), matches!(action, Action::Cut)));
                     cx.notify();
                     return;
                 }
@@ -277,8 +278,8 @@ impl FileManager {
             }
             Action::NewWorkspace => self.workspace_dialog(None, window, cx),
             Action::Paste => {
-                if let (Some((sources, cut)), Some(directory)) = (self.clipboard.clone(), directory)
-                {
+                let clipboard = self.clipboard.borrow().clone();
+                if let (Some((sources, cut)), Some(directory)) = (clipboard, directory) {
                     self.run_operation(
                         Operation::Transfer {
                             sources,
@@ -324,8 +325,10 @@ impl FileManager {
                                 if let Some(index) =
                                     self.entries.iter().position(|item| item.path == entry.path)
                                 {
-                                    self.scroll
-                                        .scroll_to_item(index, gpui::ScrollStrategy::Center);
+                                    self.scroll.scroll_to_item(
+                                        self.scroll_index(index),
+                                        gpui::ScrollStrategy::Center,
+                                    );
                                 }
                                 self.rename = Some(InlineRename {
                                     source: entry.path,

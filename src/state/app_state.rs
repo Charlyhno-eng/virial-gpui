@@ -24,6 +24,10 @@ impl Drop for DirectorySizeTask {
 }
 
 pub struct FileManager {
+    pub(crate) embedded: bool,
+    pub(crate) compact: bool,
+    pub(crate) view_mode: super::navigation::ViewMode,
+    pub(crate) grid_columns: usize,
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     pub(crate) idle_memory: super::memory::IdleMemory,
     pub(crate) location: Location,
@@ -55,7 +59,7 @@ pub struct FileManager {
     pub(crate) menu: Option<crate::state::actions::Menu>,
     pub(crate) rename: Option<crate::state::actions::InlineRename>,
     pub(crate) dialog: Option<crate::state::actions::Dialog>,
-    pub(crate) clipboard: Option<(Vec<PathBuf>, bool)>,
+    pub(crate) clipboard: super::navigation::FileClipboard,
     pub(crate) busy: bool,
     pub(crate) transfer_progress: Option<crate::infrastructure::progress::Progress>,
     pub(crate) operation_queue: std::collections::VecDeque<super::operations::QueuedOperation>,
@@ -114,7 +118,9 @@ pub struct FileManager {
 
 impl FileManager {
     pub(crate) fn row_height(&self) -> f32 {
-        if matches!(self.location, Location::Recent | Location::Tag(_)) {
+        if self.view_mode == super::navigation::ViewMode::Grid {
+            super::navigation::GRID_ROW_HEIGHT
+        } else if matches!(self.location, Location::Recent | Location::Tag(_)) {
             crate::ui::theme::RECENT_ROW_HEIGHT
         } else {
             crate::ui::theme::ROW_HEIGHT
@@ -125,3 +131,6 @@ impl FileManager {
 #[cfg(test)]
 #[path = "../../tests/state/app_state.rs"]
 mod tests;
+
+pub(crate) struct CloseWindow;
+impl gpui::EventEmitter<CloseWindow> for FileManager {}

@@ -95,7 +95,8 @@ impl FileManager {
         self.name_descending = !self.name_descending;
         sort_entries(&mut self.entries, &mut self.selection, self.name_descending);
         if let Some(index) = self.selection.primary() {
-            self.scroll.scroll_to_item(index, ScrollStrategy::Center);
+            self.scroll
+                .scroll_to_item(self.scroll_index(index), ScrollStrategy::Center);
         }
         self.load_directory_sizes(cx);
         cx.notify();

@@ -22,11 +22,11 @@ mod retired_resources;
 #[path = "../tests/performance/memory.rs"]
 mod memory;
 
-use app::FileManager;
 use gpui::{
     App, Application, Bounds, WindowBackgroundAppearance, WindowDecorations, WindowOptions,
     prelude::*, px, size,
 };
+use ui::browser_window::BrowserWindow;
 
 /// AppUserModelID used to group Virial windows on the Windows taskbar. The
 /// value is owned by the platform-specific module so the portable fallback
@@ -86,7 +86,7 @@ fn main() {
             };
             if let Err(error) = cx.open_window(options, |window, cx| {
                 window.set_rem_size(px(14.));
-                cx.new(|cx| FileManager::new(path, window, cx))
+                cx.new(|cx| BrowserWindow::new(path, window, cx))
             }) {
                 eprintln!(
                     "{}: {error}",

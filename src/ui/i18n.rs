@@ -7,13 +7,25 @@ pub enum Language {
 
 impl Language {
     pub fn system() -> Self {
-        Self::detect(|key| std::env::var(key).ok())
+        Self::detect_with_fallback(
+            |key| std::env::var(key).ok(),
+            crate::platform::locale::preferred_languages,
+        )
     }
 
+    #[cfg(test)]
     fn detect(env: impl Fn(&str) -> Option<String>) -> Self {
+        Self::detect_with_fallback(env, || None)
+    }
+
+    fn detect_with_fallback(
+        env: impl Fn(&str) -> Option<String>,
+        native: impl FnOnce() -> Option<String>,
+    ) -> Self {
         let locale = ["LC_ALL", "LC_MESSAGES", "LANG"]
             .iter()
             .find_map(|key| env(key).filter(|value| !value.is_empty()))
+            .or_else(native)
             .unwrap_or_else(|| "C".into());
         let base = locale.split('.').next().unwrap_or("C");
         if base == "C" || base == "POSIX" {
@@ -161,8 +173,8 @@ impl Language {
             "Create an empty workspace, then add folders from the context menu" => {
                 "Créez un espace de travail vide, puis ajoutez des dossiers depuis le menu contextuel"
             }
-            "Logical groups of folders · Ctrl+W / Escape returns" => {
-                "Groupes logiques de dossiers · Ctrl+W / Échap pour revenir"
+            "Logical groups of folders · Ctrl+Shift+W / Escape returns" => {
+                "Groupes logiques de dossiers · Ctrl+Shift+W / Échap pour revenir"
             }
             "No workspaces yet" => "Aucun espace de travail",
             "Right-click a folder to add it to a workspace" => {
@@ -300,6 +312,11 @@ impl Language {
             "Open" => "Ouvrir",
             "Refresh" => "Actualiser",
             "Hidden files" => "Fichiers cachés",
+            "List" => "Liste",
+            "New tab" => "Nouvel onglet",
+            "Close tab" => "Fermer l’onglet",
+            "Two panes" => "Deux panneaux",
+            "Grid" => "Grille",
             "NAME" => "NOM",
             "KIND" => "TYPE",
             "SIZE" => "TAILLE",

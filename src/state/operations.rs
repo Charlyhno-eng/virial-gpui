@@ -238,12 +238,13 @@ impl FileManager {
                         }
                         if cut_sources.as_ref().is_some_and(|sources| {
                             view.clipboard
+                                .borrow()
                                 .as_ref()
                                 .is_some_and(|(paths, cut)| *cut && paths == sources)
                         }) {
                             // Skipped move conflicts keep their sources available for another paste.
                             if cut_completed {
-                                view.clipboard = None;
+                                *view.clipboard.borrow_mut() = None;
                             }
                         }
                     }

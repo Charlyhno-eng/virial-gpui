@@ -38,14 +38,14 @@ impl Render for FileManager {
         }
         let preview_visible =
             self.details_open && self.location != crate::domain::location::Location::Workspaces;
-        let target_width = if preview_visible && !cx.has_active_drag() {
+        let target_width = if self.embedded || (preview_visible && !cx.has_active_drag()) {
             0.
         } else {
             SIDEBAR_WIDTH
         };
         // Keep destinations reachable as soon as a drag starts, even when the
         // selected item's preview had collapsed the navigation sidebar.
-        if cx.has_active_drag() {
+        if cx.has_active_drag() && !self.embedded {
             self.sidebar_width = SIDEBAR_WIDTH;
             self.sidebar_transition = None;
         }
@@ -62,10 +62,12 @@ impl Render for FileManager {
             self.external_drop = None;
             self.drop_hover = None;
         }
-        window.set_window_title(&format!(
-            "{} - Virial",
-            self.location.description(self.language)
-        ));
+        if !self.embedded {
+            window.set_window_title(&format!(
+                "{} - Virial",
+                self.location.description(self.language)
+            ));
+        }
         let fullscreen = window.is_fullscreen();
         let tiled = match window.window_decorations() {
             Decorations::Client { tiling } => {
@@ -102,13 +104,16 @@ impl Render for FileManager {
             .flex_col()
             .overflow_hidden()
             .bg(translucent(BACKGROUND, 0.97))
-            .when(!fullscreen && !window.is_maximized() && !tiled, |root| {
-                root.rounded_lg().border_1().border_color(color(BORDER))
-            })
+            .when(
+                !self.embedded && !fullscreen && !window.is_maximized() && !tiled,
+                |root| root.rounded_lg().border_1().border_color(color(BORDER)),
+            )
             .text_color(color(TEXT))
             .text_size(px(11.))
             .font_family("sans-serif")
-            .when(!fullscreen, |root| root.child(self.titlebar(window, cx)))
+            .when(!self.embedded && !fullscreen, |root| {
+                root.child(self.titlebar(window, cx))
+            })
             .child(
                 div()
                     .flex()
@@ -182,7 +187,7 @@ impl Render for FileManager {
                         .right_0()
                         .bottom_0()
                         // Keep preview controls clear of the window controls in the title bar.
-                        .top(if fullscreen {
+                        .top(if fullscreen || self.embedded {
                             px(0.)
                         } else {
                             px(titlebar::HEIGHT)
@@ -194,7 +199,9 @@ impl Render for FileManager {
                 ))
             })
             .children(self.operation_panel(cx))
-            .children(titlebar::resize_handles(window))
+            .when(!self.embedded, |root| {
+                root.children(titlebar::resize_handles(window))
+            })
             .children(self.context_overlay(window, cx))
             .children(self.global_search_overlay(window, cx))
     }

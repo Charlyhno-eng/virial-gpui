@@ -11,11 +11,24 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouts
+- Add tabs and two independent, resizable file panes with a shared file clipboard.
+  Each pane retains its location, history, selection, previews and display mode.
+- Add explicit List and virtualized Grid views. Use Ctrl+T / Ctrl+W
+  for tabs, Ctrl+Tab / Ctrl+Shift+Tab to switch tabs, Ctrl+1/2 for views,
+  Ctrl+4 for two panes and Ctrl+6 to focus the other pane. Workspaces now use
+  Ctrl+Shift+W.
+
 ### Interface
+- Compact the tab bar and group List, Grid, filter and search controls together.
+  Translate tab tooltips and use system language preferences on Windows and macOS
+  when no locale environment override is set.
 - Display sidebar tags as color dots in two compact rows, with hover labels and
   a marked active color.
 
 ### Corrections
+- Select GPUI features per platform without enabling its Linux backends by
+  default on Windows or macOS; keep graphical test support Linux-only.
 - Prepare the 0.1.3 release with automatic Linux, macOS and Windows builds.
 
 ## [0.1.3] - 2026-10-23

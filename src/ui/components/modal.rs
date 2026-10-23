@@ -242,7 +242,7 @@ impl FileManager {
         let single = self.selection.indices.len() == 1;
         let paste = !trash
             && !remote
-            && self.clipboard.is_some()
+            && self.clipboard.borrow().is_some()
             && (entry.as_ref().is_some_and(|entry| entry.browsable())
                 || self.location.directory().is_some());
         let workspace = !trash

@@ -340,6 +340,9 @@ impl FileManager {
     pub(crate) fn file_list(&self, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
         let title = self.location.title(&self.home, self.language);
         let visible_count = self.entries.len();
+        let grid = self.view_mode == crate::state::navigation::ViewMode::Grid;
+        let columns = if grid { self.grid_columns } else { 1 };
+        let row_count = visible_count.div_ceil(columns);
         let scroll = self.scroll.0.borrow().base_handle.clone();
         let rectangle = self
             .marquee
@@ -399,7 +402,7 @@ impl FileManager {
                     .text_color(color(ERROR))
                     .child(error.clone())
             }))
-            .child(
+            .when(!grid, |area| area.child(
                 div()
                     .flex()
                     .items_center()
@@ -422,8 +425,8 @@ impl FileManager {
                             .text_right()
                             .child(self.language.text("SIZE")),
                     )
-                    .child(div().w(px(150.)).flex_shrink_0().child(self.language.text("MODIFIED"))),
-            )
+                    .when(!self.compact, |row| row.child(div().w(px(150.)).flex_shrink_0().child(self.language.text("MODIFIED")))),
+            ))
             .child(if visible_count == 0 {
                 let (heading, description) = if self.loading {
                     ("Loading folder…", "Reading directory contents")
@@ -469,26 +472,26 @@ impl FileManager {
             } else {
                 let scrollbar = crate::ui::components::scrollbar::render(
                     &self.scroll,
-                    visible_count,
+                    row_count,
                     gpui::rgba(0xff000000),
                 );
                 div().relative().flex().flex_col().flex_1().min_h_0().overflow_hidden()
                 .child(uniform_list(
                     self.location.id(),
-                    visible_count,
+                    row_count,
                     cx.processor(|view, range: std::ops::Range<usize>, _, cx| {
                         let paths = view.selected_paths().into();
                         range
-                            .map(|index| {
+                            .map(|row_index| {
+                                let grid = view.view_mode == crate::state::navigation::ViewMode::Grid;
+                                let columns = if grid { view.grid_columns } else { 1 };
+                                let row_height = view.row_height();
+                                let tiles = (row_index * columns..((row_index + 1) * columns).min(view.entries.len())).map(|index| {
                                 let entry = &view.entries[index];
                                 let row_path: std::sync::Arc<std::path::Path> = entry.path.as_path().into();
                                 let recent = matches!(view.location,
                                     crate::domain::location::Location::Recent | crate::domain::location::Location::Tag(_));
-                                let row_height = if recent {
-                                    crate::ui::theme::RECENT_ROW_HEIGHT
-                                } else {
-                                    ROW_HEIGHT
-                                };
+
                                 let selected = view.selection.indices.contains(&index);
                                 let payload = view.drag_payload(index, &paths);
                                 let trash = view.location == crate::domain::location::Location::Trash;
@@ -562,8 +565,9 @@ impl FileManager {
                                     .hover(|style| {
                                         style.bg(if selected { translucent(ACCENT_BLUE, 0.11) } else { color(HOVER) })
                                     })
-                                    .child(file_icon(entry.icon(), 19.))
-                                    .child(name)
+                                    .when(grid, |row| row.flex_col().justify_center().gap_1().px_2().py_2())
+                                    .child(file_icon(entry.icon(), if grid { 42. } else { 19. }))
+                                    .child(name.when(grid, |name| name.w_full().text_center()))
                                     .when(!trash && view.location.remote().is_none() && !view.tags.colors(&entry.path).is_empty(), |row| {
                                         row.child(div().flex().items_center().gap_1().children(
                                             view.tags.colors(&entry.path).iter().map(|tag| {
@@ -571,7 +575,7 @@ impl FileManager {
                                             })
                                         ))
                                     })
-                                    .child(
+                                    .when(!grid, |row| row.child(
                                         div()
                                             .w(px(76.))
                                             .flex_shrink_0()
@@ -580,8 +584,8 @@ impl FileManager {
                                             .text_color(color(MUTED))
                                             .child(view.language.size(entry.bytes)),
                                     )
-                                    .child(div().w(px(150.)).flex_shrink_0().text_size(px(10.)).text_color(color(MUTED))
-                                        .child(view.entry_modified.get(&entry.path).map(|date| date.display()).unwrap_or_else(|| "—".into())))
+                                    .when(!view.compact, |row| row.child(div().w(px(150.)).flex_shrink_0().text_size(px(10.)).text_color(color(MUTED))
+                                        .child(view.entry_modified.get(&entry.path).map(|date| date.display()).unwrap_or_else(|| "—".into())))))
                                     .on_mouse_down(gpui::MouseButton::Right, {
                                         let row_path = row_path.clone();
                                         cx.listener(
@@ -677,8 +681,8 @@ impl FileManager {
                                 let row = if let Some(directory) = directory {
                                     view.drop_target(row, directory, cx)
                                 } else { row };
-                                div().w_full().h(px(row_height)).flex()
-                                    .child(div().w(px(14.)).h_full().flex_shrink_0())
+                                div().w(gpui::relative(1. / columns as f32)).h(px(row_height)).flex()
+                                    .child(div().w(px(if grid { 4. } else { 14. })).h_full().flex_shrink_0())
                                     // Selection changes on mouse-down must preserve the
                                     // row's pending drag gesture across the next render.
                                     .child(row.with_animation(
@@ -688,6 +692,8 @@ impl FileManager {
                                             if selected { row.bg(translucent(ACCENT_BLUE, 0.04 + 0.04 * delta)) } else { row }
                                         },
                                     ))
+                                }).collect::<Vec<_>>();
+                                div().w_full().h(px(row_height)).flex().children(tiles)
                             })
                             .collect()
                     }),
@@ -709,6 +715,21 @@ impl FileManager {
                     }).absolute().size_full()
                 }))
                 .child(scrollbar)
+                .when(grid, |area| {
+                    let entity = cx.entity().downgrade();
+                    area.child(gpui::canvas(|_, _, _| (), move |bounds, _, _, cx| {
+                        let columns = crate::state::navigation::grid_columns(f32::from(bounds.size.width));
+                        let _ = entity.update(cx, |view, cx| {
+                            if columns != view.grid_columns {
+                                view.grid_columns = columns;
+                                if let Some(index) = view.selection.primary() {
+                                    view.scroll.scroll_to_item(index / columns, gpui::ScrollStrategy::Center);
+                                }
+                                cx.notify();
+                            }
+                        });
+                    }).absolute().size_full())
+                })
                 .into_any_element()
             })
             .child(

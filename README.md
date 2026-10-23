@@ -6,6 +6,7 @@ Virial is a file manager for local and remote files on Linux, macOS and Windows.
 
 ## Features
 
+- **Tabs and views:** Open tabs with `Ctrl+T`, close them with `Ctrl+W`, and switch with `Ctrl+Tab` or `Ctrl+Shift+Tab`. Choose List or Grid with `Ctrl+1/2`. Toggle two independent panes with `Ctrl+4`, resize their divider, and focus the other pane with `Ctrl+6`. Copy and cut files between panes or tabs. Open Workspaces with `Ctrl+Shift+W`. On macOS, tab and view shortcuts also accept Command.
 - **Browse anywhere:** Navigate local folders, recent files, persistent workspaces, mounted drives, ZIP archives, and remote servers over SSH/SFTP. Save host favorites and connect with your SSH agent, a private key, or a password; credentials are not saved.
 - **Manage files safely:** Copy, move, rename, trash, and restore items with drag and drop, progress controls, and conflict handling. Destinations are never overwritten. Undo spans file and workspace changes, while local transfers and Trash jobs can recover after interruption.
 - **Find files quickly:** Search by name or path across accessible locations, or filter a folder by file extension. A local index provides progressive results and keeps itself up to date.

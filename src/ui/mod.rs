@@ -4,3 +4,5 @@ pub(crate) mod icons;
 mod screens;
 mod shell;
 pub(crate) mod theme;
+
+pub(crate) mod browser_window;

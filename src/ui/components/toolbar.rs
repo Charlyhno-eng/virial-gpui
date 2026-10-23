@@ -8,6 +8,7 @@ impl FileManager {
         let search_label = self.language.text("Search everywhere · Ctrl+P");
         let breadcrumbs = self.location.breadcrumbs(&self.home, self.language);
         let hidden_count = breadcrumbs.len().saturating_sub(2);
+        let mode = self.view_mode;
         let navigation = div()
             .flex()
             .flex_wrap()
@@ -138,33 +139,6 @@ impl FileManager {
                     )),
             )
             .when(
-                self.location != crate::domain::location::Location::Workspaces,
-                |bar| {
-                    bar.child(
-                        toolbar_button(
-                            "toggle-filter",
-                            "filter",
-                            "",
-                            true,
-                            self.filter_open || !self.extension_filter.is_empty(),
-                        )
-                        .tooltip(move |_, cx| {
-                            cx.new(|_| super::modal::StatusTooltip(filter_label.into()))
-                                .into()
-                        })
-                        .on_click(cx.listener(|view, _, window, cx| {
-                            view.filter_open = !view.filter_open;
-                            if view.filter_open {
-                                view.extension_input.read(cx).focus(window);
-                            } else {
-                                view.focus.focus(window);
-                            }
-                            cx.notify();
-                        })),
-                    )
-                },
-            )
-            .when(
                 self.location == crate::domain::location::Location::Trash,
                 |bar| {
                     bar.child(
@@ -197,13 +171,86 @@ impl FileManager {
                 },
             )
             .child(
-                toolbar_button("toggle-search", "search", "", true, self.search_open)
-                    .tooltip(move |_, cx| {
-                        cx.new(|_| super::modal::StatusTooltip(search_label.into()))
-                            .into()
-                    })
-                    .on_click(
-                        cx.listener(|view, _, window, cx| view.toggle_global_search(window, cx)),
+                div()
+                    .id("view-controls")
+                    .debug_selector(|| "view-controls".into())
+                    .flex()
+                    .items_center()
+                    .flex_shrink_0()
+                    .gap_1()
+                    .children(
+                        [
+                            (
+                                "view-list",
+                                "List",
+                                crate::state::navigation::ViewMode::List,
+                            ),
+                            (
+                                "view-grid",
+                                "Grid",
+                                crate::state::navigation::ViewMode::Grid,
+                            ),
+                        ]
+                        .into_iter()
+                        .map(|(id, label, target)| {
+                            div()
+                                .id(id)
+                                .debug_selector(move || id.into())
+                                .px_2()
+                                .h(px(28.))
+                                .flex()
+                                .items_center()
+                                .rounded_sm()
+                                .cursor_pointer()
+                                .bg(color(if mode == target { SELECTED } else { SURFACE }))
+                                .child(self.language.text(label))
+                                .on_click(cx.listener(move |view, _, window, cx| {
+                                    view.focus.focus(window);
+                                    view.set_view_mode(target, cx);
+                                }))
+                        }),
+                    )
+                    .child(div().w(px(1.)).h(px(16.)).mx_1().bg(color(BORDER)))
+                    .when(
+                        self.location != crate::domain::location::Location::Workspaces,
+                        |bar| {
+                            bar.child(
+                                toolbar_button(
+                                    "toggle-filter",
+                                    "filter",
+                                    "",
+                                    true,
+                                    self.filter_open || !self.extension_filter.is_empty(),
+                                )
+                                .debug_selector(|| "toggle-filter".into())
+                                .tooltip(move |_, cx| {
+                                    cx.new(|_| super::modal::StatusTooltip(filter_label.into()))
+                                        .into()
+                                })
+                                .on_click(cx.listener(
+                                    |view, _, window, cx| {
+                                        view.filter_open = !view.filter_open;
+                                        if view.filter_open {
+                                            view.extension_input.read(cx).focus(window);
+                                        } else {
+                                            view.focus.focus(window);
+                                        }
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                        },
+                    )
+                    .child(
+                        toolbar_button("toggle-search", "search", "", true, self.search_open)
+                            .debug_selector(|| "toggle-search".into())
+                            .tooltip(move |_, cx| {
+                                cx.new(|_| super::modal::StatusTooltip(search_label.into()))
+                                    .into()
+                            })
+                            .on_click(cx.listener(|view, _, window, cx| {
+                                view.toggle_global_search(window, cx)
+                            })),
                     ),
             )
             .when(window.is_fullscreen(), |bar| {
