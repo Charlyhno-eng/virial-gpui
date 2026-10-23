@@ -99,6 +99,7 @@ pub struct FileManager {
     pub(crate) editor_task: Option<Task<()>>,
     pub(crate) preview_media_image: Option<Arc<gpui::RenderImage>>,
     pub(crate) preview_task: Option<Task<()>>,
+    pub(crate) pending_preview: Option<Task<()>>,
     pub(crate) preview_media_updates: Option<Task<()>>,
     pub(crate) preview_image_cache: gpui::Entity<gpui::RetainAllImageCache>,
     pub(crate) opened_archive_files: Vec<crate::infrastructure::archive::Materialized>,

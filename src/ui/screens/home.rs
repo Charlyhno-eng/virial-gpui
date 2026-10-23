@@ -650,7 +650,16 @@ impl FileManager {
                                                     }
                                                 }
                                                 if click_count == 1 && !modifiers.control && !modifiers.shift && view.selection.indices.len() == 1 {
-                                                    view.show_preview(cx);
+                                                    let path = row_path.clone();
+                                                    view.schedule_preview(cx, move |view, cx| {
+                                                        if view.selection.indices.len() == 1
+                                                            && view.selection.primary()
+                                                                .and_then(|index| view.entries.get(index))
+                                                                .is_some_and(|entry| entry.path == path.as_ref())
+                                                        {
+                                                            view.show_preview(cx);
+                                                        }
+                                                    });
                                                 }
                                                 cx.notify();
                                             },

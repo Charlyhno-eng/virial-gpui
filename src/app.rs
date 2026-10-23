@@ -111,6 +111,7 @@ impl FileManager {
             editor_disk: None,
             editor_task: None,
             preview_task: None,
+            pending_preview: None,
             preview_media_image: None,
             preview_image_cache: gpui::RetainAllImageCache::new(cx),
             preview_media_updates: None,
@@ -456,9 +457,29 @@ impl FileManager {
     }
 
     pub(crate) fn cancel_pending_preview(&mut self) {
+        self.pending_preview = None;
         if let crate::state::preview::Preview::Media(media) = &self.preview {
             media.control(crate::infrastructure::media::Control::Pause(true));
         }
+    }
+
+    pub(crate) fn schedule_preview(
+        &mut self,
+        cx: &mut Context<Self>,
+        preview: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
+    ) {
+        self.cancel_pending_preview();
+        self.pending_preview = Some(cx.spawn(async move |view, cx| {
+            // Match GPUI's Linux double-click interval. A second mouse-down
+            // cancels this task before it can change the column layout.
+            cx.background_executor()
+                .timer(Duration::from_millis(400))
+                .await;
+            let _ = view.update(cx, |view, cx| {
+                view.pending_preview = None;
+                preview(view, cx);
+            });
+        }));
     }
 
     pub(crate) fn show_preview(&mut self, cx: &mut Context<Self>) {
@@ -550,6 +571,7 @@ impl FileManager {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.pending_preview = None;
         if event.keystroke.key == "f11" && !event.keystroke.modifiers.modified() {
             self.titlebar_drag = None;
             window.toggle_fullscreen();
