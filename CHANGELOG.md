@@ -27,6 +27,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   a marked active color.
 
 ### Corrections
+- Open Linux packages in an available graphical installer and launch AppImages
+  with execute permission; report failures from the system file launcher.
+- Keep context menus above the file panes and within the window, with scrolling
+  when needed so the last action remains accessible.
 - Select GPUI features per platform without enabling its Linux backends by
   default on Windows or macOS; keep graphical test support Linux-only.
 - Prepare the 0.1.3 release with automatic Linux, macOS and Windows builds.

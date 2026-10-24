@@ -352,11 +352,14 @@ impl FileManager {
         let y = menu.position.y.min(bounds.height - px(height)).max(px(0.));
         let panel = div()
             .id("context-menu")
+            .debug_selector(|| "context-menu".into())
             .occlude()
             .absolute()
             .left(x)
             .top(y)
             .w(px(220.))
+            .max_h(bounds.height)
+            .overflow_y_scroll()
             .p_1()
             .rounded_md()
             .bg(color(SURFACE))
@@ -367,6 +370,7 @@ impl FileManager {
                 let Some(action) = action else {
                     return div()
                         .h(px(9.))
+                        .flex_shrink_0()
                         .px_2()
                         .flex()
                         .items_center()
@@ -376,7 +380,9 @@ impl FileManager {
                 let entry = entry.clone();
                 div()
                     .id(("context-action", index))
+                    .debug_selector(move || format!("context-action-{}", action.label()))
                     .h(px(28.))
+                    .flex_shrink_0()
                     .px_3()
                     .flex()
                     .items_center()

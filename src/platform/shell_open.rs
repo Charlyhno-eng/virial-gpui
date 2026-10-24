@@ -10,10 +10,64 @@ use std::path::Path;
 /// Hand `path` to the desktop the way the host expects, waiting for the
 /// launcher to report that it accepted the request.
 ///
-/// Folders and files take the same route: the desktop decides from the path,
-/// so a directory opens in the file manager and a document in its application.
+/// The desktop resolves folders and documents. Linux packages use an available
+/// graphical installer, and AppImages run directly.
 pub(crate) fn open(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    if path.is_file() {
+        let extension = path.extension().unwrap_or_default().to_ascii_lowercase();
+        if extension == "appimage" {
+            use std::os::unix::fs::PermissionsExt;
+            let path = path.canonicalize()?;
+            let mut permissions = path.metadata()?.permissions();
+            permissions.set_mode(permissions.mode() | 0o100);
+            std::fs::set_permissions(&path, permissions)?;
+            return spawn_application(std::process::Command::new(path));
+        }
+        if extension == "deb" || extension == "rpm" {
+            // Use a package installer rather than an archive association.
+            let candidates: &[(&str, &[&str])] = if extension == "deb" {
+                &[
+                    ("gdebi-gtk", &[]),
+                    ("gnome-software", &["--local-filename"]),
+                    ("plasma-discover", &["--local-filename"]),
+                ]
+            } else {
+                &[
+                    ("gnome-software", &["--local-filename"]),
+                    ("plasma-discover", &["--local-filename"]),
+                ]
+            };
+            if open_package(path, candidates)? {
+                return Ok(());
+            }
+        }
+    }
     launcher().run(path)
+}
+
+#[cfg(target_os = "linux")]
+fn open_package(path: &Path, candidates: &[(&str, &[&str])]) -> std::io::Result<bool> {
+    let path = path.canonicalize()?;
+    for (program, arguments) in candidates {
+        let mut command = std::process::Command::new(program);
+        command.args(*arguments).arg(&path);
+        match spawn_application(command) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            result => return result.map(|()| true),
+        }
+    }
+    Ok(false)
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_application(mut command: std::process::Command) -> std::io::Result<()> {
+    let mut child = command.spawn()?;
+    // Applications outlive the open request; reap them when they finish.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 /// The command that opens a path on this host.
@@ -39,7 +93,15 @@ impl Launcher {
         command.args(self.leading).arg(path);
         if !self.detached {
             // Wait for the launcher so a failure is reported to the user.
-            return command.status().map(|_| ());
+            let status = command.status()?;
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(std::io::Error::other(format!(
+                    "{} failed ({status})",
+                    self.program
+                )))
+            };
         }
         // `explorer.exe` would keep the manager's console open for as long as
         // the window is displayed, and flashes one when spawned normally.

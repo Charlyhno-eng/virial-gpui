@@ -537,6 +537,7 @@ impl Render for BrowserWindow {
                     ),
             )
             .children(titlebar::resize_handles(window))
+            .children(active.update(cx, |pane, cx| pane.context_overlay(window, cx)))
     }
 }
 

@@ -202,7 +202,9 @@ impl Render for FileManager {
             .when(!self.embedded, |root| {
                 root.children(titlebar::resize_handles(window))
             })
-            .children(self.context_overlay(window, cx))
+            .when(!self.embedded, |root| {
+                root.children(self.context_overlay(window, cx))
+            })
             .children(self.global_search_overlay(window, cx))
     }
 }

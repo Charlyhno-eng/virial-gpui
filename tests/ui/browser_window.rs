@@ -9,6 +9,66 @@ fn settle(cx: &mut TestAppContext) {
     cx.run_until_parked();
 }
 
+#[test]
+fn context_menu_keeps_properties_visible_at_the_bottom_of_the_window() {
+    let (_temp, mut cx, window) = setup();
+    for split in [false, true] {
+        window
+            .update(&mut cx, |view, window, cx| {
+                if split {
+                    view.toggle_split(window, cx);
+                }
+            })
+            .unwrap();
+        settle(&mut cx);
+        for height in [580., 360.] {
+            cx.simulate_window_resize(window.into(), gpui::size(px(900.), px(height)));
+            window
+                .update(&mut cx, |view, _, cx| {
+                    view.active().update(cx, |pane, cx| {
+                        pane.selection.click(0, false, false);
+                        pane.menu = Some(crate::state::actions::Menu {
+                            position: gpui::point(px(850.), px(height - 5.)),
+                            entry: Some(pane.entries[0].clone()),
+                            compression_open: false,
+                            tags_open: false,
+                        });
+                        cx.notify();
+                    });
+                })
+                .unwrap();
+            settle(&mut cx);
+            let mut visual = gpui::VisualTestContext::from_window(window.into(), &cx);
+            let menu = visual.debug_bounds("context-menu").unwrap();
+            assert!(menu.bottom() <= px(height));
+            assert!(menu.right() <= px(900.));
+            if height == 360. {
+                visual.simulate_event(gpui::ScrollWheelEvent {
+                    position: menu.center(),
+                    delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-1000.))),
+                    ..Default::default()
+                });
+                visual.run_until_parked();
+            }
+            {
+                let properties = visual.debug_bounds("context-action-Properties").unwrap();
+                assert!(properties.bottom() <= menu.bottom());
+                visual.simulate_click(properties.center(), Default::default());
+                window
+                    .update(&mut cx, |view, _, cx| {
+                        assert!(view.active().read(cx).dialog.is_some());
+                        view.active().update(cx, |pane, cx| {
+                            pane.dialog = None;
+                            cx.notify();
+                        });
+                    })
+                    .unwrap();
+            }
+        }
+    }
+    cx.quit();
+}
+
 fn setup() -> (
     tempfile::TempDir,
     TestAppContext,
