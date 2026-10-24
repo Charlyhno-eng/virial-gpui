@@ -11,8 +11,16 @@ use std::path::Path;
 /// launcher to report that it accepted the request.
 ///
 /// The desktop resolves folders and documents. Linux packages use an available
-/// graphical installer, and AppImages run directly.
+/// graphical installer, and AppImages run directly. Shell scripts and Windows
+/// executables run in their containing folder (using Wine on Unix for `.exe`).
 pub(crate) fn open(path: &Path) -> std::io::Result<()> {
+    if path.is_file() {
+        let extension = path.extension().unwrap_or_default().to_ascii_lowercase();
+        if extension == "sh" || extension == "exe" {
+            let path = path.canonicalize()?;
+            return spawn_application(execution_command(&path));
+        }
+    }
     #[cfg(target_os = "linux")]
     if path.is_file() {
         let extension = path.extension().unwrap_or_default().to_ascii_lowercase();
@@ -60,7 +68,26 @@ fn open_package(path: &Path, candidates: &[(&str, &[&str])]) -> std::io::Result<
     Ok(false)
 }
 
-#[cfg(target_os = "linux")]
+/// `path` is absolute so changing the working directory cannot change its target.
+fn execution_command(path: &Path) -> std::process::Command {
+    let extension = path.extension().unwrap_or_default().to_ascii_lowercase();
+    let mut command = if extension == "sh" {
+        let mut command = std::process::Command::new("sh");
+        command.arg(path);
+        command
+    } else if cfg!(windows) {
+        std::process::Command::new(path)
+    } else {
+        let mut command = std::process::Command::new("wine");
+        command.arg(path);
+        command
+    };
+    if let Some(parent) = path.parent() {
+        command.current_dir(parent);
+    }
+    command
+}
+
 fn spawn_application(mut command: std::process::Command) -> std::io::Result<()> {
     let mut child = command.spawn()?;
     // Applications outlive the open request; reap them when they finish.

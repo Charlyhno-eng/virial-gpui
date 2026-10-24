@@ -158,15 +158,77 @@ fn non_utf8_paths_round_trip_as_file_urls() {
     use std::{ffi::OsString, os::unix::ffi::OsStringExt};
     let root = tempfile::tempdir().unwrap();
     let file = root.path().join(OsString::from_vec(vec![b'f', 0xff]));
-    fs::write(&file, "hello").unwrap();
+    // Test storage independently of filename restrictions (APFS rejects 0xff).
+    update(root.path(), |tags| {
+        tags.0.insert(normalized(&file), vec![Tag::Gray]);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(read(root.path()).unwrap().colors(&file), &[Tag::Gray]);
+}
+
+#[cfg(unix)]
+#[test]
+fn tags_follow_moves_through_a_symlinked_parent_and_keep_symlinks_distinct() {
+    use std::os::unix::fs::symlink;
+    let root = tempfile::tempdir().unwrap();
+    let data = root.path().join("data");
+    let real = root.path().join("real");
+    let alias = root.path().join("alias");
+    fs::create_dir(&real).unwrap();
+    symlink(&real, &alias).unwrap();
+    let folder = alias.join("original");
+    fs::create_dir(&folder).unwrap();
+    fs::write(folder.join("nested"), "hello").unwrap();
+    let link = alias.join("link");
+    symlink(folder.join("nested"), &link).unwrap();
     set(
-        root.path(),
-        std::slice::from_ref(&file),
-        Some(Tag::Gray),
+        &data,
+        &[folder.clone(), folder.join("nested")],
+        Some(Tag::Orange),
         true,
     )
     .unwrap();
-    assert_eq!(read(root.path()).unwrap().colors(&file), &[Tag::Gray]);
+    set(&data, std::slice::from_ref(&link), Some(Tag::Blue), true).unwrap();
+    // Older versions persisted the alias. Loading must migrate it before a
+    // move reports canonical source paths, even after descendants disappear.
+    let stored = fs::read_to_string(data.join("virial/tags.json")).unwrap();
+    let canonical_uri = Url::from_directory_path(real.canonicalize().unwrap()).unwrap();
+    let alias_uri = Url::from_directory_path(&alias).unwrap();
+    fs::write(
+        data.join("virial/tags.json"),
+        stored.replace(canonical_uri.as_str(), alias_uri.as_str()),
+    )
+    .unwrap();
+    assert_eq!(read(&data).unwrap().colors(&link), &[Tag::Blue]);
+    assert_eq!(
+        read(&data).unwrap().colors(&real.join("original/nested")),
+        &[Tag::Orange]
+    );
+    undo::execute(
+        &data,
+        Operation::Rename {
+            source: folder.clone(),
+            name: "renamed".into(),
+        },
+    )
+    .unwrap();
+    let renamed = alias.join("renamed");
+    assert_eq!(
+        read(&data).unwrap().colors(&renamed.join("nested")),
+        &[Tag::Orange]
+    );
+    assert!(
+        read(&data)
+            .unwrap()
+            .colors(&folder.join("nested"))
+            .is_empty()
+    );
+    undo::undo(&data).unwrap();
+    assert_eq!(
+        read(&data).unwrap().colors(&folder.join("nested")),
+        &[Tag::Orange]
+    );
 }
 
 #[cfg(unix)]

@@ -27,6 +27,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   a marked active color.
 
 ### Corrections
+- Preserve tags through moves and undo when parent folders use symbolic links,
+  including macOS temporary folders; make the non-UTF-8 storage test portable.
+- Execute `.sh` scripts and `.exe` programs on double-click, using Wine for
+  Windows programs on Linux and macOS, with the file's folder as working directory.
 - Open Linux packages in an available graphical installer and launch AppImages
   with execute permission; report failures from the system file launcher.
 - Keep context menus above the file panes and within the window, with scrolling

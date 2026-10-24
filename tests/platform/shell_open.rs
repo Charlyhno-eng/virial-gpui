@@ -1,5 +1,40 @@
 use crate::platform::shell_open;
 
+#[cfg(unix)]
+#[test]
+fn shell_script_runs_without_execute_permission_in_its_own_folder() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let script = directory.path().join("test script '$file.SH");
+    std::fs::write(&script, "printf launched > started\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o600)).unwrap();
+    shell_open::open(&script).unwrap();
+    let marker = directory.path().join("started");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !marker.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(std::fs::read_to_string(marker).unwrap(), "launched");
+}
+
+#[test]
+fn windows_executable_uses_the_platform_runtime_and_its_own_folder() {
+    let directory = tempfile::tempdir().unwrap();
+    let executable = directory.path().join("test program.EXE");
+    let command = super::execution_command(&executable);
+    assert_eq!(command.get_current_dir(), Some(directory.path()));
+    if cfg!(windows) {
+        assert_eq!(command.get_program(), executable.as_os_str());
+        assert_eq!(command.get_args().count(), 0);
+    } else {
+        assert_eq!(command.get_program(), "wine");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            [executable.as_os_str()]
+        );
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn failed_launcher_returns_an_error() {

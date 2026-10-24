@@ -22,9 +22,24 @@ struct Record {
     colors: Vec<Tag>,
 }
 
+/// Match operation paths without following the tagged item itself. Resolve the
+/// nearest available parent so moved descendants and offline items stay usable.
+fn normalized(path: &Path) -> PathBuf {
+    for parent in path.ancestors().skip(1) {
+        if let Ok(resolved) = parent.canonicalize() {
+            return resolved.join(path.strip_prefix(parent).expect("ancestor prefix"));
+        }
+    }
+    path.to_path_buf()
+}
+
 impl Tags {
     pub fn colors(&self, path: &Path) -> &[Tag] {
-        self.0.get(path).map(Vec::as_slice).unwrap_or_default()
+        self.0
+            .get(path)
+            .or_else(|| self.0.get(&normalized(path)))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub fn entries(&self, tag: Tag) -> io::Result<Vec<Entry>> {
@@ -75,7 +90,7 @@ pub(crate) fn read(data: &Path) -> io::Result<Tags> {
             .ok()
             .and_then(|uri| uri.to_file_path().ok())
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Invalid tagged path"))?;
-        let colors = tags.0.entry(path).or_default();
+        let colors = tags.0.entry(normalized(&path)).or_default();
         for color in record.colors {
             if !colors.contains(&color) {
                 colors.push(color);
@@ -143,7 +158,7 @@ pub(crate) fn set(
             fs::symlink_metadata(path)?;
         }
         for path in paths {
-            let colors = tags.0.entry(path.clone()).or_default();
+            let colors = tags.0.entry(normalized(path)).or_default();
             if let Some(tag) = tag {
                 colors.retain(|color| *color != tag);
                 if enabled {
@@ -162,12 +177,14 @@ pub(crate) fn relocate(data: &Path, source: &Path, destination: &Path) -> io::Re
     if !data.join("virial/tags.json").exists() {
         return Ok(());
     }
+    let source = normalized(source);
+    let destination = normalized(destination);
     update(data, |tags| {
         let moved: Vec<_> = tags
             .0
             .keys()
             .filter_map(|path| {
-                path.strip_prefix(source)
+                path.strip_prefix(&source)
                     .ok()
                     .map(|suffix| (path.clone(), destination.join(suffix)))
             })
